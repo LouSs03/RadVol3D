@@ -4,17 +4,17 @@ Usar enumerados en lugar de cadenas sueltas evita el error mas comun entre capas
 que una escriba "completado" y otra espere "completed".
 """
 
-from enum import Enum
+from enum import Enum, StrEnum
 
 
-class OrganName(str, Enum):
+class OrganName(StrEnum):
     """Organos que el sistema reconstruye. Alcance vigente: dos."""
 
     LUNG = "lung"
     LIVER = "liver"
 
 
-class StudyStatus(str, Enum):
+class StudyStatus(StrEnum):
     """Estado de un estudio a lo largo de su procesamiento."""
 
     PENDING = "pending"
@@ -32,7 +32,7 @@ class StageNumber(int, Enum):
     MESHING = 4
 
 
-class StageStatus(str, Enum):
+class StageStatus(StrEnum):
     """Estado de una etapa dentro de un estudio."""
 
     WAITING = "waiting"
