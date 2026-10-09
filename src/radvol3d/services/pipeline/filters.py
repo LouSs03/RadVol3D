@@ -63,7 +63,11 @@ class SegmentationFilter:
 
 
 class MeshingFilter:
-    """Etapa 4: genera las mallas desde el volumen y la mascara del tumor."""
+    """Etapa 4: genera las mallas desde el volumen, la mascara y las regiones con lesion.
+
+    Las regiones salen del resumen de la segmentacion; las que no son lesion
+    (has_lesion distinto de true) no generan malla, igual que no generan fila.
+    """
 
     stage_number = StageNumber.MESHING
     model: tuple[str, str] | None = None
@@ -72,6 +76,12 @@ class MeshingFilter:
         self._strategy = strategy
 
     def apply(self, data: PipelineData) -> PipelineData:
+        regions = [
+            region
+            for region in data.segmentation.summary.get("regions", [])
+            if region.get("has_lesion", True) is True
+        ]
         return replace(
-            data, meshes=self._strategy.build_meshes(data.volume, data.segmentation.mask)
+            data,
+            meshes=self._strategy.build_meshes(data.volume, data.segmentation.mask, regions),
         )

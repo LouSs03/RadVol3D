@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from radvol3d.domain.entities import Lesion
+from radvol3d.domain.enums import OrganName
 from radvol3d.domain.exceptions import (
     InvalidLesionError,
     InvalidStudyIdError,
@@ -37,8 +38,8 @@ def test_add_many_stores_every_field_of_every_lesion() -> None:
     LesionRepository(connection).add_many("it_a", lesions)
 
     assert connection.params_of("insert into lesion") == [
-        (7, "centro del lobulo", 8000.0, 25.5, 0.9, MESH),
-        (7, "borde", 120.5, 25.5, 0.61, MESH),
+        (7, "centro del lobulo", 8000.0, 25.5, 0.9, MESH, 7),
+        (7, "borde", 120.5, 25.5, 0.61, MESH, 7),
     ]
 
 
@@ -155,6 +156,7 @@ def test_list_by_study_returns_the_same_values_that_were_stored() -> None:
                     "max_diameter_mm": Decimal("25.50"),
                     "confidence": Decimal("0.9000"),
                     "mesh_path": MESH,
+                    "organ": "lung",
                 },
                 {
                     "location": "borde",
@@ -162,6 +164,7 @@ def test_list_by_study_returns_the_same_values_that_were_stored() -> None:
                     "max_diameter_mm": None,
                     "confidence": Decimal("0.6100"),
                     "mesh_path": None,
+                    "organ": "lung",
                 },
             ]
         ]
@@ -170,10 +173,12 @@ def test_list_by_study_returns_the_same_values_that_were_stored() -> None:
     lesions = LesionRepository(connection).list_by_study("it_a")
 
     assert lesions == [
-        make_lesion(),
+        make_lesion(organ=OrganName.LUNG),
         make_lesion(location="borde", volume_mm3=120.5, confidence=0.61,
-                    max_diameter_mm=None, mesh_path=None),
+                    max_diameter_mm=None, mesh_path=None, organ=OrganName.LUNG),
     ]
+    assert all(lesion.organ is OrganName.LUNG for lesion in lesions)
+    assert "l.organ" in connection.statements()[0]
     assert all(isinstance(lesion.volume_mm3, float) for lesion in lesions)
     assert all(isinstance(lesion.confidence, float) for lesion in lesions)
     assert "order by l.lesion_id" in connection.statements()[0]
@@ -209,3 +214,16 @@ def test_values_that_are_not_numbers_are_rejected_as_invalid_lesions(bad: dict) 
         LesionRepository(connection).add_many("it_a", [make_lesion(**bad)])
 
     assert connection.calls == []
+
+
+@pytest.mark.unit
+def test_the_organ_of_each_lesion_comes_from_its_study_not_from_the_entity() -> None:
+    connection = FakeConnection([STUDY_LOOKUP])
+
+    LesionRepository(connection).add_many("it_a", [make_lesion(organ=OrganName.LIVER)])
+
+    statement = connection.statements()[-1]
+    assert "insert into lesion" in statement
+    assert "organ)" in statement
+    assert "o.name from study s join organ o on o.organ_id = s.organ_id" in statement
+    assert "liver" not in connection.params_of("insert into lesion")[0]

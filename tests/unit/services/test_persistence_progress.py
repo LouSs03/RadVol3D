@@ -63,19 +63,25 @@ def test_save_volume_goes_to_the_metadata_store(stores, progress: PersistencePro
 
 
 @pytest.mark.unit
-def test_save_result_passes_mask_probability_summary_and_both_meshes(
+def test_save_result_passes_mask_probability_summary_and_every_mesh(
     stores, progress: PersistenceProgress
 ) -> None:
     mask = np.zeros((2, 2, 2), dtype=np.uint8)
     probability = np.zeros((2, 2, 2), dtype=np.float32)
     summary = {"model_name": "m", "model_version": "1.0.0", "regions": []}
     segmentation = SegmentationResult(mask, probability, 0.9, summary=summary)
-    meshes = MeshSet(organ=b"glTF-organ", tumor=b"glTF-tumor")
+    meshes = MeshSet(organ=b"glTF-organ", tumor=b"glTF-tumor", lesions=(b"glTF-1", b"glTF-2"))
 
     progress.save_result(CODE, segmentation, meshes)
 
     stores[2].save_result.assert_called_once_with(
-        CODE, mask, probability, summary, b"glTF-organ", b"glTF-tumor"
+        CODE,
+        mask,
+        probability,
+        summary,
+        b"glTF-organ",
+        b"glTF-tumor",
+        (b"glTF-1", b"glTF-2"),
     )
 
 

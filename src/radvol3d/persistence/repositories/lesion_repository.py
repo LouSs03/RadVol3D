@@ -7,12 +7,17 @@ se rechaza el lote entero y no se guarda ninguna.
 Reglas (las mismas del esquema, que sigue activo como ultima defensa):
 volume_mm3 > 0 (numeric(12, 2)); 0 <= confidence <= 1 (numeric(5, 4)); location
 no vacia (varchar(128)); max_diameter_mm opcional (numeric(8, 2)).
+
+La columna organ (migracion 002) no se recibe: el insert la toma del organo del
+estudio, asi no puede quedar desalineada. Lesion.organ se ignora al guardar y se
+llena al leer.
 """
 
 from collections.abc import Iterable
 from typing import Any
 
 from radvol3d.domain.entities import Lesion
+from radvol3d.domain.enums import OrganName
 from radvol3d.domain.exceptions import InvalidLesionError
 from radvol3d.persistence.database_errors import execute_translated
 from radvol3d.persistence.repositories.study_repository import find_study_id
@@ -75,8 +80,9 @@ class LesionRepository:
             execute_translated(
                 self._connection,
                 "insert into lesion "
-                "(study_id, location, volume_mm3, max_diameter_mm, confidence, mesh_path) "
-                "values (%s, %s, %s, %s, %s, %s)",
+                "(study_id, location, volume_mm3, max_diameter_mm, confidence, mesh_path, organ) "
+                "select %s, %s, %s, %s, %s, %s, o.name "
+                "from study s join organ o on o.organ_id = s.organ_id where s.study_id = %s",
                 (
                     study_id,
                     lesion.location,
@@ -84,6 +90,7 @@ class LesionRepository:
                     lesion.max_diameter_mm,
                     lesion.confidence,
                     lesion.mesh_path,
+                    study_id,
                 ),
             )
 
@@ -92,7 +99,8 @@ class LesionRepository:
         validate_study_code(study_code)
         rows = execute_translated(
             self._connection,
-            "select l.location, l.volume_mm3, l.max_diameter_mm, l.confidence, l.mesh_path "
+            "select l.location, l.volume_mm3, l.max_diameter_mm, l.confidence, l.mesh_path, "
+            "l.organ "
             "from lesion l join study s on s.study_id = l.study_id "
             "where s.study_code = %s order by l.lesion_id",
             (study_code,),
@@ -102,10 +110,12 @@ class LesionRepository:
     @staticmethod
     def _to_entity(row: Any) -> Lesion:
         diameter = row["max_diameter_mm"]
+        organ = row["organ"]
         return Lesion(
             location=row["location"],
             volume_mm3=float(row["volume_mm3"]),
             confidence=float(row["confidence"]),
             max_diameter_mm=float(diameter) if diameter is not None else None,
             mesh_path=row["mesh_path"],
+            organ=OrganName(organ) if organ is not None else None,
         )

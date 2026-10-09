@@ -77,6 +77,13 @@ def test_a_study_runs_end_to_end_and_everything_is_recorded(
     ):
         assert object_storage.exists(path), path
 
+    # Funcionalidad 004: cada lesion tiene su propia malla y su organo como texto.
+    # Necesita la migracion docs/database/schema/002_add_lesion_organ.sql aplicada.
+    (lesion,) = result.lesions
+    assert lesion.mesh_path == f"{code}/meshes/lesion_001.glb"
+    assert lesion.organ is OrganName.LUNG
+    assert object_storage.exists(lesion.mesh_path)
+
 
 def test_while_segmenting_the_stages_show_how_far_the_pipeline_went(
     database: Database,

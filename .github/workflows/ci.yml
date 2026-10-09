@@ -26,6 +26,16 @@ jobs:
           ruff check src tests
           python scripts/check_naming_convention.py
 
+      # La logica del visor se prueba con el ejecutor de Node, sin npm ni dependencias
+      # (research.md R14 de la funcionalidad 004). Desde Node 22, --test recibe patrones
+      # de archivo y no carpetas: por eso el patron entre comillas.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Pruebas del visor
+        run: node --test "tests/unit/web/*.js"
+
       - name: Limites entre capas
         run: pytest -m architecture -v
 
@@ -40,3 +50,7 @@ jobs:
           coverage report --include="src/radvol3d/services/*"
           --omit="*/en1_network.py,*/en1_reconstructor.py,*/lung_unet_network.py,*/lung_segmenter.py"
           --fail-under=80
+
+      # SC-007 de la funcionalidad 004: la capa de presentacion tambien con al menos 80 %.
+      - name: Cobertura de api
+        run: coverage report --include="src/radvol3d/api/*" --fail-under=80

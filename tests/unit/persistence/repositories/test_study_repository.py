@@ -382,3 +382,24 @@ def test_lock_and_delete_reject_an_invalid_code_before_touching_the_database(cal
         getattr(StudyRepository(connection), call)("../x")
 
     assert connection.calls == []
+
+
+@pytest.mark.unit
+def test_list_codes_by_status_returns_the_codes_from_oldest_to_newest() -> None:
+    connection = FakeConnection([[{"study_code": "it_a"}, {"study_code": "it_b"}]])
+
+    codes = StudyRepository(connection).list_codes_by_status(StudyStatus.PROCESSING)
+
+    assert codes == ["it_a", "it_b"]
+    assert connection.params_of("where status = %s") == [("processing",)]
+    assert "order by created_at, study_id" in connection.statements()[0]
+
+
+@pytest.mark.unit
+def test_list_codes_by_status_rejects_an_unknown_status_before_touching_the_database() -> None:
+    connection = FakeConnection()
+
+    with pytest.raises(PersistenceError):
+        StudyRepository(connection).list_codes_by_status("perdido")
+
+    assert connection.calls == []

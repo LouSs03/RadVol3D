@@ -6,6 +6,10 @@ limpieza de conftest.py los borra al terminar, igual que los estudios y sus arch
 Desde la funcionalidad 002 (research.md R7), save_result sube los archivos e inserta
 las lesiones, pero NO cierra las etapas 3 y 4: eso lo hace la tuberia con
 ProcessingProgressStore. Hasta entonces get_result sigue vacio.
+
+Desde la funcionalidad 004 (research.md R10 y R11), cada lesion tiene su propia malla
+(lesion_<NNN>.glb, enlazada por mesh_path) y su organo como texto en lesion.organ.
+Necesita docs/database/schema/002_add_lesion_organ.sql aplicada en la base de prueba.
 """
 
 import json
@@ -14,6 +18,8 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
+import psycopg
+import psycopg.errors
 import pytest
 
 from radvol3d.domain.entities import Lesion, StoredResult
@@ -26,7 +32,9 @@ from radvol3d.persistence.repositories.processing_stage_repository import (
     ProcessingStageRepository,
 )
 from radvol3d.persistence.result_store import ResultStore
+from radvol3d.persistence.settings import Settings
 from radvol3d.persistence.study_metadata_store import ProjectionUpload, StudyMetadataStore
+from tests.integration.conftest import SESSION_PREFIX
 
 pytestmark = pytest.mark.integration
 
@@ -67,7 +75,7 @@ def make_region(region_id: int, volume: float, diameter: float, confidence: floa
 
 
 def make_model_name() -> str:
-    return f"it_seg_{uuid.uuid4().hex[:8]}"
+    return f"{SESSION_PREFIX}seg_{uuid.uuid4().hex[:8]}"
 
 
 def register_ready(database: Database, storage: ObjectStorage, code: str) -> StudyMetadataStore:
@@ -88,7 +96,9 @@ def close_stages(database: Database, code: str, model_name: str) -> None:
     progress.complete_stage(code, StageNumber.MESHING)
 
 
-def save(store: ResultStore, code: str, summary: dict[str, Any]) -> StoredResult:
+def save(
+    store: ResultStore, code: str, summary: dict[str, Any], lesion_meshes: list[bytes]
+) -> StoredResult:
     return store.save_result(
         code,
         np.ones((4, 4, 4), dtype=np.uint8),
@@ -96,6 +106,7 @@ def save(store: ResultStore, code: str, summary: dict[str, Any]) -> StoredResult
         summary,
         b"glTF-organ",
         b"glTF-tumor",
+        lesion_meshes=lesion_meshes,
     )
 
 
@@ -110,16 +121,16 @@ def test_a_saved_result_comes_back_with_the_same_lesions_and_files(
     model_name = make_model_name()
     regions = [make_region(1, 8000.0, 26.5, 0.885), make_region(2, 500.25, 11.75, 0.7123)]
     summary = make_summary(regions, model_name)
-    tumor_mesh = f"{code}/meshes/tumor.glb"
+    lesion_meshes = [f"{code}/meshes/lesion_001.glb", f"{code}/meshes/lesion_002.glb"]
 
-    saved = save(results, code, summary)
+    saved = save(results, code, summary, lesion_meshes=[b"glTF-lesion-1", b"glTF-lesion-2"])
     assert results.get_result(code) == StoredResult(code)  # etapas aun abiertas
     close_stages(database, code, model_name)
     result = results.get_result(code)
 
     expected = [
-        Lesion("posicion 1", 8000.0, 0.885, 26.5, tumor_mesh),
-        Lesion("posicion 2", 500.25, 0.7123, 11.75, tumor_mesh),
+        Lesion("posicion 1", 8000.0, 0.885, 26.5, lesion_meshes[0], OrganName.LUNG),
+        Lesion("posicion 2", 500.25, 0.7123, 11.75, lesion_meshes[1], OrganName.LUNG),
     ]
     assert saved.lesions == expected
     assert result.lesions == expected
@@ -134,6 +145,9 @@ def test_a_saved_result_comes_back_with_the_same_lesions_and_files(
     assert json.loads(object_storage.download_bytes(result.summary_path)) == summary
     assert object_storage.download_bytes(result.organ_mesh_path) == b"glTF-organ"
     assert object_storage.download_bytes(result.tumor_mesh_path) == b"glTF-tumor"
+    for number, path in enumerate(lesion_meshes, 1):
+        assert object_storage.exists(path), path
+        assert object_storage.download_bytes(path) == f"glTF-lesion-{number}".encode()
     stages = {s.stage_number: s for s in metadata.get_study(code).stages}
     assert stages[StageNumber.SEGMENTATION].status is StageStatus.COMPLETED
     assert stages[StageNumber.SEGMENTATION].model.model_name == model_name
@@ -150,7 +164,7 @@ def test_a_result_without_lesions_still_has_its_five_paths(
     results = ResultStore(database, object_storage)
 
     model_name = make_model_name()
-    save(results, code, make_summary([], model_name))
+    save(results, code, make_summary([], model_name), lesion_meshes=[])
     close_stages(database, code, model_name)
     result = results.get_result(code)
 
@@ -172,7 +186,7 @@ def test_an_invalid_lesion_leaves_the_stages_as_they_were_and_uploads_nothing(
     summary = make_summary([make_region(1, 8000.0, 26.5, 2.0)], make_model_name())
 
     with pytest.raises(InvalidLesionError):
-        save(results, code, summary)
+        save(results, code, summary, lesion_meshes=[b"glTF-lesion-1"])
 
     stages = {s.stage_number: s for s in metadata.get_study(code).stages}
     assert stages[StageNumber.SEGMENTATION].status is StageStatus.WAITING
@@ -205,8 +219,32 @@ def test_an_unknown_study_is_rejected_and_nothing_is_uploaded(
     results = ResultStore(database, object_storage)
 
     with pytest.raises(StudyNotFoundError):
-        save(results, code, make_summary([], make_model_name()))
+        save(results, code, make_summary([], make_model_name()), lesion_meshes=[])
     with pytest.raises(StudyNotFoundError):
         results.get_result(code)
 
     assert object_storage.exists(f"{code}/segmentation/mask.npy") is False
+
+
+def test_the_database_rejects_an_organ_outside_the_scope_in_a_lesion(
+    database: Database,
+    object_storage: ObjectStorage,
+    make_study_code: Callable[[], str],
+    test_settings: Settings,
+) -> None:
+    code = make_study_code()
+    register_ready(database, object_storage, code)
+
+    # SQL a mano y con una conexion propia, a proposito: prueba la ultima defensa de la
+    # base, que la aplicacion nunca llega a usar porque toma el organo del estudio.
+    # Database.transaction() traduciria el error y ocultaria el nombre de la restriccion.
+    with psycopg.connect(test_settings.database_url.get_secret_value()) as connection:
+        with pytest.raises(psycopg.errors.CheckViolation) as raised:
+            connection.execute(
+                "insert into lesion (study_id, location, volume_mm3, confidence, organ) "
+                "select study_id, 'a mano', 1, 0.5, 'kidney' from study where study_code = %s",
+                (code,),
+            )
+        connection.rollback()
+
+    assert raised.value.diag.constraint_name == "lesion_organ_allowed"

@@ -80,15 +80,40 @@ def test_fake_segmentation_summary_has_what_the_result_store_requires() -> None:
 
 
 @pytest.mark.unit
-def test_fake_meshing_returns_two_glb_files() -> None:
+def test_fake_segmentation_regions_match_their_mask_like_en2() -> None:
+    from radvol3d.services.meshing.lesion_regions import split_lesion_masks
+
+    volume = np.zeros((config.GRID_SIZE,) * 3, dtype=np.float32)
+
+    result = FakeSegmentationStrategy().segment(volume, "it_a")
+    region = result.summary["regions"][0]
+
+    assert region["voxels"] == int(result.mask.sum()) == 512
+    assert region["centroid_voxel"] == [64, 64, 64]
+    (only,) = split_lesion_masks(result.mask, result.summary["regions"])
+    assert np.array_equal(only, result.mask > 0)
+
+
+@pytest.mark.unit
+def test_fake_meshing_returns_organ_tumor_and_one_glb_per_region() -> None:
     mask = np.zeros((8, 8, 8), dtype=np.uint8)
     volume = np.zeros((8, 8, 8), dtype=np.float32)
 
-    meshes = FakeMeshingStrategy().build_meshes(volume, mask)
+    meshes = FakeMeshingStrategy().build_meshes(volume, mask, [{}, {}])
 
     assert isinstance(meshes, MeshSet)
     assert meshes.organ.startswith(b"glTF")
     assert meshes.tumor.startswith(b"glTF")
+    assert len(meshes.lesions) == 2
+    assert all(glb.startswith(b"glTF") for glb in meshes.lesions)
+    assert len({meshes.organ, meshes.tumor, *meshes.lesions}) == 4
+
+
+@pytest.mark.unit
+def test_fake_meshing_without_regions_has_no_lesion_meshes() -> None:
+    mask = np.zeros((8, 8, 8), dtype=np.uint8)
+
+    assert FakeMeshingStrategy().build_meshes(mask, mask, []).lesions == ()
 
 
 @pytest.mark.unit

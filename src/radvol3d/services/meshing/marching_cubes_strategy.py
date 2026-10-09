@@ -1,6 +1,8 @@
 """Extrae las superficies con marching cubes y las exporta en GLB (research.md R19).
 
 - Tumor: la superficie de la mascara de segmentacion, a resolucion completa.
+- Lesiones: una superficie por region del resumen, separada de la mascara con
+  split_lesion_masks (research.md R9 de 004), con el mismo paso que el tumor.
 - Organo: la superficie del volumen reconstruido. El umbral sale del propio volumen
   por el metodo de Otsu, sin ningun numero fijado a mano. Se conserva solo la region
   conexa mas grande, con sus huecos rellenos, para descartar islas de ruido, y se
@@ -10,11 +12,14 @@
 La malla del organo depende de la calidad de la reconstruccion: si el volumen sale
 borroso, la superficie tambien (FR-026a). Un umbral fijo en HU queda como mejora.
 
-Las dos mallas comparten coordenadas: milimetros (config.MM_PER_VOXEL por voxel),
+Todas las mallas comparten coordenadas: milimetros (config.MM_PER_VOXEL por voxel),
 ejes de numpy en orden (0, 1, 2) y origen en el centro del volumen. Asi el visor
 las superpone sin transformarlas. Si no hay superficie, se devuelve un .glb valido
 sin geometria.
 """
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import trimesh
@@ -23,6 +28,7 @@ from skimage.filters import threshold_otsu
 from skimage.measure import marching_cubes
 
 from radvol3d import config
+from radvol3d.services.meshing.lesion_regions import split_lesion_masks
 from radvol3d.services.meshing.meshing_strategy import MeshingStrategy, MeshSet
 
 # Paso de marching cubes para cada malla, en voxeles.
@@ -39,12 +45,18 @@ class MarchingCubesStrategy(MeshingStrategy):
     def __init__(self, mm_per_voxel: float = config.MM_PER_VOXEL) -> None:
         self._mm_per_voxel = float(mm_per_voxel)
 
-    def build_meshes(self, volume, mask) -> MeshSet:
+    def build_meshes(
+        self, volume: Any, mask: Any, regions: Sequence[Mapping[str, Any]]
+    ) -> MeshSet:
         volume = np.asarray(volume, dtype=np.float32)
         tumor = np.asarray(mask) > 0
+        lesions = split_lesion_masks(tumor, regions)
         return MeshSet(
             organ=self._surface(self._organ_region(volume), volume.shape, ORGAN_STEP),
             tumor=self._surface(tumor, volume.shape, TUMOR_STEP),
+            lesions=tuple(
+                self._surface(lesion, volume.shape, TUMOR_STEP) for lesion in lesions
+            ),
         )
 
     @staticmethod

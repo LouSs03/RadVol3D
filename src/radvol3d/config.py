@@ -21,3 +21,8 @@ HU_WINDOW: Final[tuple[float, float]] = (-1000.0, 1000.0)
 # Formatos aceptados al subir una proyeccion: solo .npy en el convenio de TA-2.
 # PNG no tiene la escala que espera EN-1 (integrales de linea sin normalizar).
 ACCEPTED_FORMATS: Final[tuple[str, ...]] = (".npy",)
+
+# Tamano maximo de cada archivo de proyeccion que se sube, en bytes: 1 MiB.
+# Un .npy de 128 x 128 pesa 65 664 bytes en float32 y 131 200 en float64, asi que el
+# limite deja margen sin aceptar archivos absurdos (research.md R7 de la funcionalidad 004).
+MAX_PROJECTION_BYTES: Final[int] = 1_048_576

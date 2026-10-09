@@ -200,3 +200,23 @@ def test_default_builders_without_weights_leave_the_models_unavailable(tmp_path:
     status = container.model_status()
     assert status["reconstruction:en1"] is False
     assert status["segmentation:lung"] is False
+
+
+@pytest.mark.unit
+def test_the_container_recovers_interrupted_studies_once_and_logs_only_how_many(
+    monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    calls: list[StudyService] = []
+
+    def recover(service: StudyService) -> list[str]:
+        calls.append(service)
+        return ["it_colgado_a", "it_colgado_b"]
+
+    monkeypatch.setattr(StudyService, "recover_interrupted_studies", recover)
+
+    with caplog.at_level("INFO"):
+        container = World().build()
+
+    assert calls == [container.study_service]
+    assert "2" in caplog.text
+    assert "it_colgado_a" not in caplog.text

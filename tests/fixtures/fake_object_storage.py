@@ -1,9 +1,13 @@
 """Doble del bucket de Supabase Storage.
 
-Imita las operaciones de storage3 que usa ObjectStorage: upload, download, exists y
-remove. Guarda los archivos en memoria, asi que ninguna prueba unitaria toca la
+Imita las operaciones de storage3 que usa ObjectStorage: upload, download, exists,
+remove y list. Guarda los archivos en memoria, asi que ninguna prueba unitaria toca la
 red ni un bucket real.
 """
+
+# list() se llama como el metodo de storage3 y tapa al tipo list dentro de la clase:
+# las anotaciones se dejan sin evaluar para que list[str] siga siendo el tipo.
+from __future__ import annotations
 
 from typing import Any
 
@@ -71,6 +75,21 @@ class InMemoryBucket:
                 self.content_types.pop(path, None)
                 removed.append({"name": path})
         return removed
+
+    def list(self, path: str | None = None, options: dict[str, Any] | None = None) -> list[dict]:
+        """Como storage3: lo que hay directamente en la carpeta. Los archivos traen id; las
+        subcarpetas, id None. Una carpeta que no existe da una lista vacia."""
+        self.events.append(f"list:{path}")
+        self._raise_if_failing("list")
+        prefix = f"{path.rstrip('/')}/" if path else ""
+        entries: dict[str, dict[str, Any]] = {}
+        for stored in sorted(self.files):
+            if not stored.startswith(prefix):
+                continue
+            rest = stored[len(prefix):]
+            name, _, below = rest.partition("/")
+            entries.setdefault(name, {"name": name, "id": None if below else f"id-{stored}"})
+        return list(entries.values())
 
     def uploaded_paths(self) -> list[str]:
         """Rutas de los archivos que hay ahora en el bucket, en orden alfabetico."""

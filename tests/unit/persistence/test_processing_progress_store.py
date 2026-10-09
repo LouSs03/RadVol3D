@@ -255,3 +255,112 @@ def test_fail_from_stage_of_an_unknown_study_raises_not_found(
         store.fail_from_stage("it_no_existe", StageNumber.SEGMENTATION)
 
     assert database.rolled_back == 1
+
+
+# ---------------------------------------------------------------------------
+# fail_interrupted_studies (funcionalidad 004, research.md R5)
+# ---------------------------------------------------------------------------
+
+
+def stage_rows(*statuses: str) -> list[dict]:
+    return [
+        {
+            "stage_number": number,
+            "stage_status": status,
+            "started_at": None,
+            "finished_at": None,
+            "model_name": None,
+            "version": None,
+            "trained_on": None,
+            "description": None,
+        }
+        for number, status in enumerate(statuses, 1)
+    ]
+
+
+def interrupted(database: FakeDatabase, codes: list[str], stages: list[dict]) -> None:
+    connection = database.connection
+    connection.rules.insert(0, ("where status = %s", [{"study_code": c} for c in codes], False))
+    connection.rules.insert(0, ("for update", [{"status": "processing"}], False))
+    connection.rules.insert(0, ("from processing_stage ps join study", stages, False))
+
+
+@pytest.mark.unit
+def test_an_interrupted_study_fails_from_its_running_stage(
+    database: FakeDatabase, store: ProcessingProgressStore
+) -> None:
+    interrupted(database, [CODE], stage_rows("completed", "running", "waiting", "waiting"))
+
+    recovered = store.fail_interrupted_studies()
+
+    connection = database.connection
+    assert recovered == [CODE]
+    assert connection.params_of("where status = %s") == [("processing",)]
+    assert connection.params_of("update processing_stage") == [
+        ("failed", CODE, 2),
+        ("skipped", CODE, 3),
+        ("skipped", CODE, 4),
+    ]
+    assert connection.params_of("update study set status") == [("failed", CODE)]
+
+
+@pytest.mark.unit
+def test_without_a_running_stage_the_first_waiting_one_fails(
+    database: FakeDatabase, store: ProcessingProgressStore
+) -> None:
+    interrupted(database, [CODE], stage_rows("completed", "completed", "waiting", "waiting"))
+
+    store.fail_interrupted_studies()
+
+    assert database.connection.params_of("update processing_stage") == [
+        ("failed", CODE, 3),
+        ("skipped", CODE, 4),
+    ]
+
+
+@pytest.mark.unit
+def test_an_interrupted_study_with_every_stage_done_only_fails_the_study(
+    database: FakeDatabase, store: ProcessingProgressStore
+) -> None:
+    interrupted(database, [CODE], stage_rows(*["completed"] * 4))
+
+    store.fail_interrupted_studies()
+
+    assert database.connection.params_of("update processing_stage") == []
+    assert database.connection.params_of("update study set status") == [("failed", CODE)]
+
+
+@pytest.mark.unit
+def test_each_interrupted_study_is_its_own_unit_of_work(
+    database: FakeDatabase, store: ProcessingProgressStore
+) -> None:
+    interrupted(database, ["it_a", "it_b"], stage_rows("running", "waiting", "waiting", "waiting"))
+
+    recovered = store.fail_interrupted_studies()
+
+    assert recovered == ["it_a", "it_b"]
+    # Una transaccion para listar y una por estudio.
+    assert database.committed == 3
+
+
+@pytest.mark.unit
+def test_with_no_study_in_processing_nothing_changes(
+    database: FakeDatabase, store: ProcessingProgressStore
+) -> None:
+    interrupted(database, [], [])
+
+    assert store.fail_interrupted_studies() == []
+    assert database.connection.params_of("update study") == []
+    assert database.connection.params_of("update processing_stage") == []
+
+
+@pytest.mark.unit
+def test_a_study_that_left_processing_meanwhile_is_not_touched(
+    database: FakeDatabase, store: ProcessingProgressStore
+) -> None:
+    interrupted(database, [CODE], stage_rows(*["completed"] * 4))
+    database.connection.rules.insert(0, ("for update", [{"status": "completed"}], False))
+
+    assert store.fail_interrupted_studies() == []
+    assert database.connection.params_of("update study") == []
+    assert database.connection.params_of("update processing_stage") == []

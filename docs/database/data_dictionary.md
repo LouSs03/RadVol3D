@@ -3,11 +3,11 @@
 Una seccion por tabla. Para cada campo: nombre, tipo, si acepta nulos, valor por defecto,
 clave, que significa y de donde sale.
 
-Este documento se genero a partir de `docs/database/schema/001_create_tables.sql`: los tipos, los
-nulos, los valores por defecto, las restricciones y las descripciones salen de ahi (de los
-`comment on column`; donde el SQL no trae comentario, la descripcion se dedujo del esquema). La
-columna **Origen** sale del codigo de `src/radvol3d/persistence/`. Si el SQL cambia, hay que
-actualizar este documento.
+Este documento se genero a partir de `docs/database/schema/001_create_tables.sql` y de las
+migraciones que se aplican encima (`002_add_lesion_organ.sql`): los tipos, los nulos, los valores
+por defecto, las restricciones y las descripciones salen de ahi (de los `comment on column`; donde
+el SQL no trae comentario, la descripcion se dedujo del esquema). La columna **Origen** sale del
+codigo de `src/radvol3d/persistence/`. Si el SQL cambia, hay que actualizar este documento.
 
 ## Relaciones
 
@@ -179,13 +179,15 @@ Regiones marcadas como lesion por el segmentador.
 | `volume_mm3` | `numeric(12, 2)` | no | - | - | Volumen de la lesion en milimetros cubicos. | campo volume_mm3 de la region |
 | `max_diameter_mm` | `numeric(8, 2)` | si | - | - | Diametro maximo. Opcional: el segmentador puede no entregarlo. | campo max_diameter_mm de la region. Opcional |
 | `confidence` | `numeric(5, 4)` | no | - | - | Confianza media de la region, entre 0 y 1. | campo confidence (probabilidad media) de la region |
-| `mesh_path` | `text` | si | - | - | Ruta del .glb de la lesion dentro del bucket. | storage_layout.tumor_mesh_path: todas las lesiones de un estudio apuntan al mismo .glb |
+| `mesh_path` | `text` | si | - | - | Ruta del .glb de la lesion dentro del bucket. Es el unico enlace entre la fila y su malla: la tabla no guarda `region_id`. | storage_layout.lesion_mesh_path: `<study_code>/meshes/lesion_<NNN>.glb`, una por lesion, numeradas desde 001 en el orden del resumen (desde la funcionalidad 004; antes todas apuntaban a `tumor.glb`) |
 | `created_at` | `timestamptz` | no | `now()` | - | momento en que se guardo la lesion | valor por defecto de la base |
+| `organ` | `varchar(32)` | no | - | - | Órgano al que pertenece la lesión: lung o liver. | migracion 002. LesionRepository la toma del organo del estudio en el mismo insert; no la recibe del segmentador |
 
 **Restricciones**
 
 - `lesion_volume_positive`: `check (volume_mm3 > 0)`
 - `lesion_confidence_range`: `check (confidence >= 0 and confidence <= 1)`
+- `lesion_organ_allowed`: `check (organ in ('lung', 'liver'))` (migracion 002)
 
 **Indices**
 
@@ -224,3 +226,7 @@ ejecutada el 2026-10-08 en Supabase:
 
 Repetida el 2026-10-09 en el proyecto de Supabase de prueba, que estaba vacio, con el mismo
 resultado: siete tablas, `patient` con 1 fila, `organ` con 2 y el resto en 0.
+
+La migracion `002_add_lesion_organ.sql` estaba aplicada en el Supabase de prueba el 2026-10-09:
+`lesion.organ` es `character varying(32)`, no nula, con `lesion_organ_allowed` y su comentario, y
+ninguna fila con `organ` nulo. En la base real se aplica despues de fusionar la funcionalidad 004.

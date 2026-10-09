@@ -55,4 +55,5 @@ class PersistenceProgress:
             segmentation.summary,
             meshes.organ,
             meshes.tumor,
+            meshes.lesions,
         )

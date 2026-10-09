@@ -79,3 +79,8 @@ def test_study_in_progress_error_carries_a_spanish_message() -> None:
     error = exceptions.StudyInProgressError("El estudio it_a se esta procesando.")
 
     assert str(error) == "El estudio it_a se esta procesando."
+
+
+@pytest.mark.unit
+def test_an_invalid_study_state_is_a_domain_error() -> None:
+    assert issubclass(exceptions.InvalidStudyStateError, RadVol3DError)
