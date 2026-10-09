@@ -65,6 +65,10 @@ class FakeSegmentationStrategy(SegmentationStrategy):
                     "volume_mm3": _LESION.volume_mm3,
                     "max_diameter_mm": _LESION.max_diameter_mm,
                     "confidence": _LESION.confidence,
+                    # Como EN-2: los voxeles y el centroide de la region, que usa la
+                    # etapa de mallas para separar cada lesion (research.md R9 de 004).
+                    "voxels": 512,
+                    "centroid_voxel": [64, 64, 64],
                     "region_id": 1,
                 }
             ],
@@ -87,10 +91,15 @@ class FakeSegmentationStrategy(SegmentationStrategy):
 
 
 class FakeMeshingStrategy(MeshingStrategy):
-    """Devuelve dos GLB minimos, validos en su cabecera y distintos entre si."""
+    """Devuelve GLB minimos, validos en su cabecera y distintos entre si: el del organo,
+    el del tumor y uno por region."""
 
-    def build_meshes(self, volume, mask) -> MeshSet:
-        return MeshSet(organ=b"glTF" + b"\x01" * 16, tumor=b"glTF" + b"\x02" * 16)
+    def build_meshes(self, volume, mask, regions) -> MeshSet:
+        return MeshSet(
+            organ=b"glTF" + b"\x01" * 16,
+            tumor=b"glTF" + b"\x02" * 16,
+            lesions=tuple(b"glTF" + bytes([3 + i]) * 16 for i in range(len(regions))),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -112,5 +121,5 @@ class FailingSegmentationStrategy(FakeSegmentationStrategy):
 
 
 class FailingMeshingStrategy(FakeMeshingStrategy):
-    def build_meshes(self, volume, mask) -> MeshSet:
+    def build_meshes(self, volume, mask, regions) -> MeshSet:
         raise RuntimeError(INTERNAL_DETAIL)

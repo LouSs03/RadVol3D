@@ -331,7 +331,7 @@ generar el HTML con plantillas en el servidor (agrega Jinja2 sin necesidad).
 **Decision**: `tests/unit/web/test_viewer_state.js` prueba `viewer_state.js` con el
 ejecutor de pruebas que trae Node (`node:test` y `node:assert`), sin npm ni dependencias. El
 CI agrega `actions/setup-node@v4` con Node 22, que detecta solo los módulos ES, y el paso
-`node --test tests/unit/web/`. Lo que necesita un navegador (que la escena se dibuje) se
+`node --test "tests/unit/web/*.js"`. Lo que necesita un navegador (que la escena se dibuje) se
 verifica a mano con quickstart.md.
 
 **Rationale**: Principio IV (toda funcionalidad con su prueba unitaria en `tests/unit/`).

@@ -11,15 +11,21 @@ cuelgan del codigo del estudio:
     <study_code>/segmentation/summary.json
     <study_code>/meshes/organ.glb
     <study_code>/meshes/tumor.glb
+    <study_code>/meshes/lesion_001.glb       (una por lesion: 002, 003, ...)
 
-La ruta <study_code>/meshes/lesion_<region_id>.glb esta reservada para una malla
-por lesion. No se genera ni se registra todavia.
+El numero de cada malla de lesion es la posicion de su region en el resumen, desde 1.
+No es region_id: el enlace entre la fila de lesion y su malla es la columna
+mesh_path (research.md R10 de la funcionalidad 004).
 """
 
 import re
 
 from radvol3d import config
-from radvol3d.domain.exceptions import InvalidProjectionError, InvalidStudyIdError
+from radvol3d.domain.exceptions import (
+    InvalidLesionError,
+    InvalidProjectionError,
+    InvalidStudyIdError,
+)
 
 # fullmatch y no "$": un codigo terminado en salto de linea no debe pasar.
 STUDY_CODE_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -84,3 +90,15 @@ def organ_mesh_path(study_code: str) -> str:
 def tumor_mesh_path(study_code: str) -> str:
     """Ruta de la malla del tumor, que contiene todas las lesiones del estudio."""
     return f"{validate_study_code(study_code)}/meshes/tumor.glb"
+
+
+def lesion_mesh_path(study_code: str, lesion_number: int) -> str:
+    """Ruta de la malla de una lesion: lesion_001.glb, lesion_002.glb, etc."""
+    validate_study_code(study_code)
+    if (
+        isinstance(lesion_number, bool)
+        or not isinstance(lesion_number, int)
+        or lesion_number < 1
+    ):
+        raise InvalidLesionError("El numero de una lesion debe ser un entero desde 1.")
+    return f"{study_code}/meshes/lesion_{lesion_number:03d}.glb"

@@ -20,8 +20,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from radvol3d.domain.entities import PatientDetails, StoredResult, Study
-from radvol3d.domain.enums import OrganName, StageNumber
-from radvol3d.domain.exceptions import StageFailedError
+from radvol3d.domain.enums import OrganName, ResultFile, StageNumber, StudyStatus
+from radvol3d.domain.exceptions import InvalidStudyStateError, StageFailedError
 from radvol3d.persistence.processing_progress_store import ProcessingProgressStore
 from radvol3d.persistence.result_store import ResultStore
 from radvol3d.persistence.study_metadata_store import ProjectionUpload, StudyMetadataStore
@@ -145,6 +145,25 @@ class StudyService:
             )
             self._record_failure(study_code, failed_stage)
 
+    def get_completed_result(self, study_code: str) -> StoredResult:
+        """Devuelve el resultado de un estudio completed, con sus lesiones y sus rutas.
+
+        Lanza InvalidStudyStateError si el estudio no termino: a diferencia de
+        get_result, aqui un resultado vacio no tiene sentido.
+        """
+        self._require_completed(study_code)
+        return self._result_store.get_result(study_code)
+
+    def read_result_file(self, study_code: str, file: ResultFile) -> bytes:
+        """Bytes de la malla del organo, la del tumor o el volumen de un estudio completed."""
+        self._require_completed(study_code)
+        return self._result_store.read_file(study_code, file)
+
+    def read_lesion_mesh(self, study_code: str, lesion_number: int) -> bytes:
+        """Bytes de la malla de la lesion numero lesion_number (desde 1)."""
+        self._require_completed(study_code)
+        return self._result_store.read_lesion_mesh(study_code, lesion_number)
+
     def recover_interrupted_studies(self) -> list[str]:
         """Pasa a failed los estudios que quedaron en processing al apagarse el servicio."""
         return self._progress_store.fail_interrupted_studies()
@@ -182,6 +201,15 @@ class StudyService:
             int(data.volume.shape[0]),
             time.perf_counter() - started,
         )
+
+    def _require_completed(self, study_code: str) -> None:
+        """Lanza InvalidStudyStateError si el estudio no esta en completed."""
+        status = self._metadata_store.get_study(study_code).status
+        if status is not StudyStatus.COMPLETED:
+            raise InvalidStudyStateError(
+                f"El estudio '{study_code}' esta en {status.value}: el resultado solo "
+                "existe cuando el estudio termina (completed)."
+            )
 
     def _record_failure(self, study_code: str, stage: StageNumber) -> None:
         """Marca el estudio como fallido. Si eso tambien falla, solo queda en el registro."""

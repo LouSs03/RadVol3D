@@ -27,7 +27,7 @@ repiten.
 ruff check src tests
 python scripts/check_naming_convention.py
 pytest -m "unit or architecture"
-node --test tests/unit/web/
+node --test "tests/unit/web/*.js"
 coverage run -m pytest -m unit && coverage report --include="src/radvol3d/api/*" --fail-under=80
 ```
 

@@ -6,6 +6,9 @@ insertan al final, en una sola transaccion.
 
 Desde la funcionalidad 002 (research.md R7), save_result ya no marca las etapas 3 y
 4 ni registra el modelo: eso lo hace la tuberia con ProcessingProgressStore.
+
+Desde la funcionalidad 004 (research.md R10), save_result recibe una malla por lesion
+y cada fila de lesion apunta a la suya; el organo de cada fila sale del estudio.
 """
 
 import json
@@ -17,11 +20,13 @@ import pytest
 from storage3.utils import StorageException
 
 from radvol3d.domain.entities import Lesion, StoredResult
+from radvol3d.domain.enums import OrganName, ResultFile
 from radvol3d.domain.exceptions import (
     InvalidLesionError,
     InvalidStudyIdError,
     PersistenceError,
     StorageError,
+    StorageObjectNotFoundError,
     StudyNotFoundError,
 )
 from radvol3d.persistence.object_storage import ObjectStorage
@@ -32,6 +37,13 @@ from tests.fixtures.fake_object_storage import InMemoryBucket
 CODE = "it_a"
 FINISHED = datetime(2026, 10, 9, 12, 5, tzinfo=UTC)
 TUMOR_MESH = f"{CODE}/meshes/tumor.glb"
+VOLUME = f"{CODE}/volume.npy"
+
+
+def lesion_mesh(number: int) -> str:
+    return f"{CODE}/meshes/lesion_{number:03d}.glb"
+
+
 MODEL_ROW = {
     "model_name": "segmentation_lung",
     "version": "1.0.0",
@@ -122,9 +134,22 @@ class World:
         self.connection.when("from lesion l", self.lesion_rows)
         self.connection.when("from processing_stage ps", stage_rows())
 
-    def save(self, summary: dict[str, Any] | None = None, code: str = CODE) -> StoredResult:
+    def save(
+        self,
+        summary: dict[str, Any] | None = None,
+        code: str = CODE,
+        lesion_meshes: list[bytes] | None = None,
+    ) -> StoredResult:
         if summary is None:
             summary = make_summary([make_region(1), make_region(2, 500.0)])
+        if lesion_meshes is None:
+            regions = summary.get("regions") if isinstance(summary, dict) else None
+            count = (
+                sum(1 for r in regions if isinstance(r, dict) and r.get("has_lesion", True) is True)
+                if isinstance(regions, list)
+                else 0
+            )
+            lesion_meshes = [f"glTF-lesion-{n}".encode() for n in range(1, count + 1)]
         return self.store.save_result(
             code,
             np.zeros((2, 2, 2), dtype=np.uint8),
@@ -132,6 +157,7 @@ class World:
             summary,
             b"glTF-organ",
             b"glTF-tumor",
+            lesion_meshes,
         )
 
     def set_stage_rows(self, rows: list[dict[str, Any]]) -> None:
@@ -157,10 +183,10 @@ def world() -> World:
 
 
 @pytest.mark.unit
-def test_save_result_uploads_the_five_files_to_their_paths(world: World) -> None:
+def test_save_result_uploads_the_five_files_and_one_mesh_per_lesion(world: World) -> None:
     world.save()
 
-    assert sorted(world.uploaded()) == sorted(FILES)
+    assert sorted(world.uploaded()) == sorted([*FILES, lesion_mesh(1), lesion_mesh(2)])
 
 
 @pytest.mark.unit
@@ -173,6 +199,8 @@ def test_arrays_meshes_and_summary_have_their_content_types(world: World) -> Non
     assert types[FILES[2]] == "application/json"
     assert types[FILES[3]] == "model/gltf-binary"
     assert types[FILES[4]] == "model/gltf-binary"
+    assert types[lesion_mesh(1)] == "model/gltf-binary"
+    assert types[lesion_mesh(2)] == "model/gltf-binary"
 
 
 @pytest.mark.unit
@@ -195,13 +223,14 @@ def test_arrays_and_meshes_come_back_identical(world: World) -> None:
     assert np.array_equal(storage.download_array(FILES[0]), np.zeros((2, 2, 2), dtype=np.uint8))
     assert storage.download_bytes(FILES[3]) == b"glTF-organ"
     assert storage.download_bytes(FILES[4]) == b"glTF-tumor"
+    assert storage.download_bytes(lesion_mesh(2)) == b"glTF-lesion-2"
 
 
 # --- save_result: lesiones ---
 
 
 @pytest.mark.unit
-def test_each_region_becomes_one_lesion_row_pointing_to_the_tumor_mesh(world: World) -> None:
+def test_each_region_becomes_one_lesion_row_pointing_to_its_own_mesh(world: World) -> None:
     summary = make_summary([make_region(1), make_region(2, 500.0), make_region(3, 90.0)])
 
     world.save(summary)
@@ -215,9 +244,10 @@ def test_each_region_becomes_one_lesion_row_pointing_to_the_tumor_mesh(world: Wo
         first["volume_mm3"],
         first["max_diameter_mm"],
         first["confidence"],
-        TUMOR_MESH,
+        lesion_mesh(1),
+        1,
     )
-    assert all(p[5] == TUMOR_MESH for p in params)
+    assert [p[5] for p in params] == [lesion_mesh(1), lesion_mesh(2), lesion_mesh(3)]
 
 
 @pytest.mark.unit
@@ -225,7 +255,7 @@ def test_region_data_without_a_column_never_reaches_the_database(world: World) -
     world.save(make_summary([make_region(1)]))
 
     params = world.connection.params_of("insert into lesion")[0]
-    assert len(params) == 6
+    assert len(params) == 7  # study_id, cinco columnas, mesh_path y study_id del organo
     for value in (0.5, 0.99, 7001, [60, 61, 62]):
         assert value not in params
 
@@ -244,10 +274,24 @@ def test_a_region_without_diameter_is_accepted(world: World) -> None:
 def test_no_regions_means_no_lesion_rows_but_the_five_files_are_uploaded(
     world: World,
 ) -> None:
-    world.save(make_summary([]))
+    world.save(make_summary([]), lesion_meshes=[])
 
     assert not world.connection.params_of("insert into lesion")
     assert sorted(world.uploaded()) == sorted(FILES)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("meshes", [[], [b"glTF-1"], [b"glTF-1", b"glTF-2", b"glTF-3"]])
+def test_a_different_number_of_lesion_meshes_is_rejected_before_uploading(
+    world: World, meshes: list[bytes]
+) -> None:
+    summary = make_summary([make_region(1), make_region(2, 500.0)])
+
+    with pytest.raises(PersistenceError, match="mallas de lesion"):
+        world.save(summary, lesion_meshes=meshes)
+
+    assert world.uploaded() == []
+    assert world.events == []
 
 
 @pytest.mark.unit
@@ -436,7 +480,8 @@ def test_save_result_returns_the_stored_result_with_paths_and_lesions(world: Wor
             "volume_mm3": 8000.0,
             "max_diameter_mm": 26.5,
             "confidence": 0.89,
-            "mesh_path": TUMOR_MESH,
+            "mesh_path": lesion_mesh(1),
+            "organ": "lung",
         }
     )
 
@@ -444,7 +489,8 @@ def test_save_result_returns_the_stored_result_with_paths_and_lesions(world: Wor
 
     assert result == StoredResult(
         study_code=CODE,
-        lesions=[Lesion("posicion 1", 8000.0, 0.89, 26.5, TUMOR_MESH)],
+        lesions=[Lesion("posicion 1", 8000.0, 0.89, 26.5, lesion_mesh(1), OrganName.LUNG)],
+        volume_path=VOLUME,
         mask_path=FILES[0],
         probability_path=FILES[1],
         summary_path=FILES[2],
@@ -467,18 +513,22 @@ def test_get_result_with_stages_three_and_four_completed_returns_paths_and_lesio
             "volume_mm3": 10.0,
             "max_diameter_mm": None,
             "confidence": 0.7,
-            "mesh_path": TUMOR_MESH,
+            "mesh_path": lesion_mesh(1),
+            "organ": "lung",
         }
     )
 
     result = world.store.get_result(CODE)
 
+    assert result.volume_path == VOLUME
     assert result.mask_path == FILES[0]
     assert result.probability_path == FILES[1]
     assert result.summary_path == FILES[2]
     assert result.organ_mesh_path == FILES[3]
     assert result.tumor_mesh_path == FILES[4]
-    assert result.lesions == [Lesion("centro", 10.0, 0.7, None, TUMOR_MESH)]
+    assert result.lesions == [
+        Lesion("centro", 10.0, 0.7, None, lesion_mesh(1), OrganName.LUNG)
+    ]
 
 
 @pytest.mark.unit
@@ -519,7 +569,8 @@ def test_get_result_after_a_failed_save_that_uploaded_files_is_still_empty(world
     )
     with pytest.raises(InvalidLesionError):
         world.save()
-    assert sorted(world.bucket.files) == sorted(FILES)  # los archivos quedaron sueltos
+    # los archivos quedaron sueltos, tambien las mallas de las lesiones
+    assert sorted(world.bucket.files) == sorted([*FILES, lesion_mesh(1), lesion_mesh(2)])
 
     result = world.store.get_result(CODE)
 
@@ -567,3 +618,74 @@ def test_get_result_rejects_an_invalid_code_before_touching_anything(world: Worl
         world.store.get_result("a b")
 
     assert world.events == []
+
+
+# --- read_file y read_lesion_mesh (funcionalidad 004, research.md R6) ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("file", "path", "content"),
+    [
+        (ResultFile.ORGAN_MESH, f"{CODE}/meshes/organ.glb", b"glTF-organ"),
+        (ResultFile.TUMOR_MESH, f"{CODE}/meshes/tumor.glb", b"glTF-tumor"),
+        (ResultFile.VOLUME, VOLUME, b"npy-del-volumen"),
+    ],
+)
+def test_read_file_downloads_the_file_of_the_result(
+    world: World, file: ResultFile, path: str, content: bytes
+) -> None:
+    world.bucket.files[path] = content
+
+    assert world.store.read_file(CODE, file) == content
+
+
+@pytest.mark.unit
+def test_read_file_of_a_missing_file_is_not_found(world: World) -> None:
+    with pytest.raises(StorageObjectNotFoundError):
+        world.store.read_file(CODE, ResultFile.ORGAN_MESH)
+
+
+@pytest.mark.unit
+def test_read_lesion_mesh_downloads_the_mesh_path_of_that_row(world: World) -> None:
+    for number in (1, 2):
+        world.lesion_rows.append(
+            {
+                "location": f"posicion {number}",
+                "volume_mm3": 10.0,
+                "max_diameter_mm": None,
+                "confidence": 0.7,
+                "mesh_path": lesion_mesh(number),
+                "organ": "lung",
+            }
+        )
+        world.bucket.files[lesion_mesh(number)] = f"glTF-{number}".encode()
+
+    assert world.store.read_lesion_mesh(CODE, 2) == b"glTF-2"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("number", [3, 0, -1])
+def test_read_lesion_mesh_outside_the_list_is_not_found(world: World, number: int) -> None:
+    for n in (1, 2):
+        world.lesion_rows.append(
+            {
+                "location": "x",
+                "volume_mm3": 1.0,
+                "max_diameter_mm": None,
+                "confidence": 0.5,
+                "mesh_path": lesion_mesh(n),
+                "organ": "lung",
+            }
+        )
+
+    with pytest.raises(StorageObjectNotFoundError):
+        world.store.read_lesion_mesh(CODE, number)
+
+
+@pytest.mark.unit
+def test_read_file_and_read_lesion_mesh_reject_an_invalid_code(world: World) -> None:
+    with pytest.raises(InvalidStudyIdError):
+        world.store.read_file("../otro", ResultFile.VOLUME)
+    with pytest.raises(InvalidStudyIdError):
+        world.store.read_lesion_mesh("../otro", 1)

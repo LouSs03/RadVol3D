@@ -432,3 +432,52 @@ def test_recover_interrupted_studies_delegates_to_the_progress_store(harness: Ha
     harness.progress.fail_interrupted_studies.return_value = ["it_a", "it_b"]
 
     assert harness.service.recover_interrupted_studies() == ["it_a", "it_b"]
+
+
+# ---------------------------------------------------------------------------
+# Resultado y descargas (funcionalidad 004, historia 3)
+# ---------------------------------------------------------------------------
+
+
+def stored_result() -> StoredResult:
+    return StoredResult(CODE, volume_path=f"{CODE}/volume.npy")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("status", ["pending", "processing", "failed"])
+def test_the_result_of_a_study_that_is_not_completed_is_rejected_with_its_state(
+    harness: Harness, status: str
+) -> None:
+    from radvol3d.domain.enums import ResultFile
+    from radvol3d.domain.exceptions import InvalidStudyStateError
+
+    harness.metadata.get_study.return_value = Study(CODE, OrganName.LUNG, StudyStatus(status))
+
+    for call in (
+        lambda: harness.service.get_completed_result(CODE),
+        lambda: harness.service.read_result_file(CODE, ResultFile.ORGAN_MESH),
+        lambda: harness.service.read_lesion_mesh(CODE, 1),
+    ):
+        with pytest.raises(InvalidStudyStateError, match=status):
+            call()
+
+    harness.results.get_result.assert_not_called()
+    harness.results.read_file.assert_not_called()
+    harness.results.read_lesion_mesh.assert_not_called()
+
+
+@pytest.mark.unit
+def test_a_completed_study_delegates_its_result_and_files_to_the_result_store(
+    harness: Harness,
+) -> None:
+    from radvol3d.domain.enums import ResultFile
+
+    harness.results.get_result.return_value = stored_result()
+    harness.results.read_file.return_value = b"glTF-organ"
+    harness.results.read_lesion_mesh.return_value = b"glTF-1"
+
+    assert harness.service.get_completed_result(CODE) == stored_result()
+    assert harness.service.read_result_file(CODE, ResultFile.ORGAN_MESH) == b"glTF-organ"
+    assert harness.service.read_lesion_mesh(CODE, 1) == b"glTF-1"
+    harness.results.read_file.assert_called_once_with(CODE, ResultFile.ORGAN_MESH)
+    harness.results.read_lesion_mesh.assert_called_once_with(CODE, 1)

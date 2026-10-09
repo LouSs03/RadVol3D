@@ -69,21 +69,26 @@ def test_segmentation_receives_the_study_code_and_fills_the_result() -> None:
 
 
 @pytest.mark.unit
-def test_meshing_uses_the_volume_and_the_mask() -> None:
+def test_meshing_uses_the_volume_the_mask_and_the_regions_with_lesion() -> None:
     received = {}
 
     class SpyMeshing(FakeMeshingStrategy):
-        def build_meshes(self, volume, mask):
+        def build_meshes(self, volume, mask, regions):
             received["volume"], received["mask"] = volume, mask
-            return super().build_meshes(volume, mask)
+            received["regions"] = list(regions)
+            return super().build_meshes(volume, mask, regions)
 
     data = SegmentationFilter(FakeSegmentationStrategy()).apply(after_reconstruction())
+    with_lesion = data.segmentation.summary["regions"][0]
+    data.segmentation.summary["regions"].append({"has_lesion": False, "location": "x"})
 
     result = MeshingFilter(SpyMeshing()).apply(data)
 
     assert received["volume"] is data.volume
     assert received["mask"] is data.segmentation.mask
+    assert received["regions"] == [with_lesion]
     assert result.meshes.tumor.startswith(b"glTF")
+    assert len(result.meshes.lesions) == 1
 
 
 @pytest.mark.unit

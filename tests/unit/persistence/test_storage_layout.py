@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from radvol3d.domain.exceptions import InvalidProjectionError, InvalidStudyIdError
+from radvol3d.domain.exceptions import (
+    InvalidLesionError,
+    InvalidProjectionError,
+    InvalidStudyIdError,
+)
 from radvol3d.persistence import storage_layout
 from radvol3d.persistence.storage_layout import (
     mask_path,
@@ -97,10 +101,24 @@ def test_an_angle_outside_the_allowed_set_is_rejected(angle) -> None:
 
 
 @pytest.mark.unit
-def test_there_is_no_path_for_a_mesh_per_lesion() -> None:
-    public_names = [name for name in dir(storage_layout) if not name.startswith("_")]
+@pytest.mark.parametrize(
+    ("number", "file_name"), [(1, "lesion_001.glb"), (12, "lesion_012.glb"), (999, "lesion_999.glb")]
+)
+def test_each_lesion_mesh_has_a_three_digit_number(number: int, file_name: str) -> None:
+    assert storage_layout.lesion_mesh_path("lung_028", number) == f"lung_028/meshes/{file_name}"
 
-    assert not [name for name in public_names if "lesion" in name]
+
+@pytest.mark.unit
+@pytest.mark.parametrize("number", [0, -1, True, "1", 1.0, None])
+def test_a_lesion_number_that_is_not_a_positive_integer_is_rejected(number) -> None:
+    with pytest.raises(InvalidLesionError):
+        storage_layout.lesion_mesh_path(CODE, number)
+
+
+@pytest.mark.unit
+def test_a_lesion_mesh_path_rejects_an_invalid_study_code() -> None:
+    with pytest.raises(InvalidStudyIdError):
+        storage_layout.lesion_mesh_path("../otro", 1)
 
 
 @pytest.mark.unit

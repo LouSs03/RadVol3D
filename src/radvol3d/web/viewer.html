@@ -4,13 +4,65 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RadVol3D - Visor 3D</title>
-  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="/css/main.css">
+  <!--
+    Three.js desde jsDelivr, con version fija (research.md R13). La version 0.186.1
+    se comprobo en https://www.npmjs.com/package/three el 2026-10-09, y los tres
+    archivos que se usan respondieron 200 en cdn.jsdelivr.net ese mismo dia.
+  -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+      }
+    }
+  </script>
 </head>
-<body>
-  <main>
+<body class="viewer_page">
+  <header class="viewer_header">
     <h1>Visor 3D</h1>
-    <!-- TODO: lienzo del visor -->
+    <p id="study_title" class="study_title"></p>
+  </header>
+
+  <main class="viewer_layout">
+    <section class="viewer_stage" aria-label="Escena 3D">
+      <div id="viewer_canvas" class="viewer_canvas"></div>
+      <p id="status_message" class="status_message" role="status"></p>
+      <button id="reset_view" class="reset_view hidden" type="button">Vista inicial</button>
+    </section>
+
+    <aside class="lesion_panel" aria-label="Lesiones detectadas">
+      <h2>Lesiones</h2>
+      <p class="panel_hint">Elige una fila para resaltar su malla. Otro clic lo deshace.</p>
+      <p id="no_lesions" class="no_lesions hidden">No se detectaron lesiones.</p>
+      <table id="lesion_table" class="lesion_table hidden">
+        <thead>
+          <tr>
+            <th scope="col"><span class="visually_hidden">Color</span></th>
+            <th scope="col">N.º</th>
+            <th scope="col">Órgano</th>
+            <th scope="col">Ubicación</th>
+            <th scope="col">Volumen (mm³)</th>
+            <th scope="col">Diámetro máx. (mm)</th>
+            <th scope="col">Confianza</th>
+            <th scope="col">Malla</th>
+          </tr>
+        </thead>
+        <tbody id="lesion_rows"></tbody>
+      </table>
+
+      <section id="downloads" class="downloads hidden" aria-label="Descargas">
+        <h2>Descargas</h2>
+        <ul>
+          <li><a id="organ_link" href="#" download>Malla del órgano (.glb)</a></li>
+          <li><a id="tumor_link" href="#" download>Malla del tumor completo (.glb)</a></li>
+          <li><a id="volume_link" href="#" download>Volumen reconstruido (.npy)</a></li>
+        </ul>
+      </section>
+    </aside>
   </main>
-  <script type="module" src="js/viewer_3d.js"></script>
+
+  <script type="module" src="/js/viewer_3d.js"></script>
 </body>
 </html>

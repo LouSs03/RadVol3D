@@ -26,6 +26,16 @@ jobs:
           ruff check src tests
           python scripts/check_naming_convention.py
 
+      # La logica del visor se prueba con el ejecutor de Node, sin npm ni dependencias
+      # (research.md R14 de la funcionalidad 004). Desde Node 22, --test recibe patrones
+      # de archivo y no carpetas: por eso el patron entre comillas.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Pruebas del visor
+        run: node --test "tests/unit/web/*.js"
+
       - name: Limites entre capas
         run: pytest -m architecture -v
 

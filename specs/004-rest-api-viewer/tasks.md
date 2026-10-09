@@ -50,7 +50,7 @@ Reglas de todas las tareas:
   paciente, ni el contenido de un archivo (FR-029).
 - Ninguna prueba `unit` usa la red, la base, el bucket real ni `torch`.
 - Antes de cada commit: `pytest -m "unit or architecture"`, `ruff check src tests`,
-  `python scripts/check_naming_convention.py` y, desde US3, `node --test tests/unit/web/`.
+  `python scripts/check_naming_convention.py` y, desde US3, `node --test "tests/unit/web/*.js"`.
 
 ---
 
@@ -256,15 +256,15 @@ tests/unit/web/` y las pruebas de `result_router` y `viewer_router` en verde.
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T034 [P] [US3] En `tests/unit/persistence/test_storage_layout.py`, probar `lesion_mesh_path`:
+- [X] T034 [P] [US3] En `tests/unit/persistence/test_storage_layout.py`, probar `lesion_mesh_path`:
   - `("lung_028", 1)` → `"lung_028/meshes/lesion_001.glb"`;
   - `12` → `lesion_012.glb`;
   - `0`, `-1`, `True` y `"1"` → `InvalidLesionError`;
   - un código inválido → `InvalidStudyIdError`.
-- [ ] T035 [P] [US3] En `tests/unit/persistence/repositories/test_lesion_repository.py`, probar:
+- [X] T035 [P] [US3] En `tests/unit/persistence/repositories/test_lesion_repository.py`, probar:
   - `add_many` emite un `insert into lesion (... organ) select ... from study s join organ o` que toma `o.name`, y no usa `Lesion.organ`;
   - `list_by_study` devuelve `Lesion.organ` como `OrganName`.
-- [ ] T036 [P] [US3] En `tests/unit/persistence/test_result_store.py`, probar:
+- [X] T036 [P] [US3] En `tests/unit/persistence/test_result_store.py`, probar:
   - `save_result(..., lesion_meshes=[...])` lanza `PersistenceError` si `len(lesion_meshes)` no es igual al número de regiones con lesión, sin subir nada;
   - con dos regiones, sube `lesion_001.glb` y `lesion_002.glb` con tipo `model/gltf-binary`, y cada fila guarda su propio `mesh_path`;
   - con `regions: []` y `lesion_meshes=[]`, no sube mallas de lesión;
@@ -272,31 +272,31 @@ tests/unit/web/` y las pruebas de `result_router` y `viewer_router` en verde.
   - `read_file(code, ResultFile.ORGAN_MESH)` baja `organ.glb`, y lo mismo con `TUMOR_MESH` y `VOLUME`;
   - `read_lesion_mesh(code, 2)` baja el `mesh_path` de la segunda fila; con `3`, sobre dos lesiones, lanza `StorageObjectNotFoundError`.
   Actualizar las pruebas existentes de `save_result` a la firma nueva.
-- [ ] T037 [P] [US3] Crear `tests/unit/services/test_lesion_regions.py` (research.md R9) y probar `split_lesion_masks`:
+- [X] T037 [P] [US3] Crear `tests/unit/services/test_lesion_regions.py` (research.md R9) y probar `split_lesion_masks`:
   - con una máscara sintética de tres regiones y sus regiones de `summarize_regions(mask, probability, 2.5)`, devuelve tres máscaras booleanas en el orden del resumen, cada una igual a su componente;
   - una región con `voxels` o `centroid_voxel` que no coincide con ninguna componente lanza `ValueError`;
   - `regions=[]` devuelve `[]`;
   - con la entrada de `tests/unit/services/reference/lung_region_summary_reference.json`, la suma de las máscaras es igual a `mask > 0`. Ese archivo todavía no existe (lo genera `scripts/generate_regression_reference.py` con `models/`): si falta, este caso se omite con `pytest.skip`, igual que `test_lung_region_summary.py`.
-- [ ] T038 [P] [US3] En `tests/unit/services/test_marching_cubes_strategy.py`, probar `build_meshes(volume, mask, regions)` con dos regiones:
+- [X] T038 [P] [US3] En `tests/unit/services/test_marching_cubes_strategy.py`, probar `build_meshes(volume, mask, regions)` con dos regiones:
   - `MeshSet.lesions` tiene dos `.glb` válidos (`trimesh.load` las abre), distintos entre sí, y cada uno solo cubre su región (cajas límite disjuntas, en mm y centradas como el órgano);
   - una región que no da superficie produce un `.glb` válido sin geometría;
   - `MeshSet(organ, tumor)` sin `lesions` deja `()`.
   Actualizar las llamadas existentes a la firma nueva.
-- [ ] T039 [P] [US3] En `tests/unit/services/test_study_service.py`, probar:
+- [X] T039 [P] [US3] En `tests/unit/services/test_study_service.py`, probar:
   - `get_completed_result`, `read_result_file` y `read_lesion_mesh` lanzan `InvalidStudyStateError` si el estudio no está `completed`, con el estado en el mensaje;
   - en `completed`, delegan en `ResultStore`.
-- [ ] T040 [P] [US3] Crear `tests/unit/api/test_result_router.py` (contrato http_api.md, "Resultados") y probar:
+- [X] T040 [P] [US3] Crear `tests/unit/api/test_result_router.py` (contrato http_api.md, "Resultados") y probar:
   - `GET /result`: 200 con `organ_mesh_url`, `tumor_mesh_url`, `volume_url` y `lesions[*]` con `lesion_number` desde 1, `organ`, `location`, `volume_mm3`, `max_diameter_mm`, `confidence` y `mesh_url` = `/studies/{code}/result/lesions/{n}.glb`, sin `region_id` ni `lesion_id`;
   - `organ.glb` y `tumor.glb`: `model/gltf-binary`;
   - `volume.npy`: `application/octet-stream` con `Content-Disposition: attachment; filename="<code>_volume.npy"`;
   - `lesions/{n}.glb`: `model/gltf-binary`, y 404 si el servicio lanza `StorageObjectNotFoundError`;
   - 409 si el servicio lanza `InvalidStudyStateError`.
-- [ ] T041 [P] [US3] Crear `tests/unit/api/test_viewer_router.py` y probar `GET /viewer/{code}`:
+- [X] T041 [P] [US3] Crear `tests/unit/api/test_viewer_router.py` y probar `GET /viewer/{code}`:
   - estudio existente: 200, `text/html`, con el contenido de `src/radvol3d/web/viewer.html`;
   - estudio inexistente: 404 con la misma página;
   - código inválido: 400;
   - la página referencia `/css/main.css` y `/js/viewer_3d.js` con ruta absoluta, y tiene un `importmap` con `three@<versión exacta>` (no `latest`).
-- [ ] T042 [P] [US3] Crear `tests/unit/web/test_viewer_state.js` (`node:test` y `node:assert/strict`; sin npm), que importe `../../../src/radvol3d/web/js/viewer_state.js`, y probar:
+- [X] T042 [P] [US3] Crear `tests/unit/web/test_viewer_state.js` (`node:test` y `node:assert/strict`; sin npm), que importe `../../../src/radvol3d/web/js/viewer_state.js`, y probar:
   - `LESION_PALETTE` tiene exactamente `["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"]`;
   - `lesion_color(index)` repite la paleta desde la octava lesión;
   - `ORGAN_COLOR` es un gris claro distinto de la paleta;
@@ -306,48 +306,48 @@ tests/unit/web/` y las pruebas de `result_router` y `viewer_router` en verde.
 
 ### Implementation for User Story 3
 
-- [ ] T043 [P] [US3] Crear `docs/database/schema/002_add_lesion_organ.sql` (research.md R11) con:
+- [X] T043 [P] [US3] Crear `docs/database/schema/002_add_lesion_organ.sql` (research.md R11) con:
   - `alter table lesion add column organ varchar(32);`
   - `update lesion l set organ = o.name from study s join organ o on o.organ_id = s.organ_id where s.study_id = l.study_id;`
   - `alter table lesion alter column organ set not null;`
   - `alter table lesion add constraint lesion_organ_allowed check (organ in ('lung', 'liver'));`
   - un `comment on column lesion.organ` en español.
   Aplicarla en el Supabase de prueba con el editor SQL.
-- [ ] T044 [US3] Implementar `lesion_mesh_path` en `src/radvol3d/persistence/storage_layout.py` y reemplazar en el docstring la nota "ruta reservada `lesion_<region_id>.glb`" por la ruta nueva (pasa T034).
-- [ ] T045 [US3] Actualizar `src/radvol3d/persistence/repositories/lesion_repository.py`: el `insert ... select` toma `organ` del estudio; `list_by_study` lee `l.organ` y lo convierte a `OrganName` (pasa T035).
-- [ ] T046 [US3] Actualizar `src/radvol3d/persistence/result_store.py` (pasa T036):
+- [X] T044 [US3] Implementar `lesion_mesh_path` en `src/radvol3d/persistence/storage_layout.py` y reemplazar en el docstring la nota "ruta reservada `lesion_<region_id>.glb`" por la ruta nueva (pasa T034).
+- [X] T045 [US3] Actualizar `src/radvol3d/persistence/repositories/lesion_repository.py`: el `insert ... select` toma `organ` del estudio; `list_by_study` lee `l.organ` y lo convierte a `OrganName` (pasa T035).
+- [X] T046 [US3] Actualizar `src/radvol3d/persistence/result_store.py` (pasa T036):
   - `save_result(..., lesion_meshes: Sequence[bytes])`: valida la cantidad antes de subir; sube cada malla con `lesion_mesh_path(code, n)`; arma cada `Lesion` con su `mesh_path`;
   - `get_result` devuelve `volume_path`;
   - nuevos `read_file(study_code, file: ResultFile)` y `read_lesion_mesh(study_code, lesion_number)`.
   El docstring del módulo pasa de cinco archivos a "cinco archivos más una malla por lesión". Depende de T044 y T045. Commit `feat(persistence)!`.
-- [ ] T047 [P] [US3] Crear `src/radvol3d/services/meshing/lesion_regions.py` con `split_lesion_masks(mask, regions)`, usando `scipy.ndimage.label` con la conectividad por omisión y el emparejamiento por `voxels` y `centroid_voxel` (pasa T037). Solo numpy y scipy.
-- [ ] T048 [US3] Actualizar las mallas (pasa T038). Depende de T047. Commit `feat(services)!`.
+- [X] T047 [P] [US3] Crear `src/radvol3d/services/meshing/lesion_regions.py` con `split_lesion_masks(mask, regions)`, usando `scipy.ndimage.label` con la conectividad por omisión y el emparejamiento por `voxels` y `centroid_voxel` (pasa T037). Solo numpy y scipy.
+- [X] T048 [US3] Actualizar las mallas (pasa T038). Depende de T047. Commit `feat(services)!`.
   - `src/radvol3d/services/meshing/meshing_strategy.py`:
     - `MeshSet.lesions: tuple[bytes, ...] = ()`;
     - `build_meshes(self, volume, mask, regions)`, con su docstring.
   - `src/radvol3d/services/meshing/marching_cubes_strategy.py`: genera `lesions` con `split_lesion_masks` y `_surface(region, volume.shape, TUMOR_STEP)`.
-- [ ] T049 [US3] Actualizar los dobles en `tests/fixtures/fake_strategies.py`:
+- [X] T049 [US3] Actualizar los dobles en `tests/fixtures/fake_strategies.py`:
   - la región de `FakeSegmentationStrategy` agrega `"voxels": 512` y `"centroid_voxel": [64, 64, 64]` (el cubo `[60:68]³`);
   - `FakeMeshingStrategy.build_meshes(volume, mask, regions)` devuelve `lesions` con un `b"glTF" + bytes([3 + i]) * 16` por región;
   - `FailingMeshingStrategy` usa la firma nueva.
   Actualizar `tests/unit/services/test_fake_strategies.py`.
-- [ ] T050 [US3] En `src/radvol3d/services/pipeline/filters.py`, hacer que `MeshingFilter` pase `[r for r in summary["regions"] if r.get("has_lesion", True) is True]`. En `src/radvol3d/services/pipeline/persistence_progress.py`, hacer que `save_result` pase `meshes.lesions`. Actualizar `tests/unit/services/test_pipeline_filters.py`, `tests/unit/services/test_persistence_progress.py` y `tests/unit/services/test_processing_pipeline.py` si fallan. Depende de T046, T048 y T049.
-- [ ] T051 [US3] Implementar `get_completed_result`, `read_result_file` y `read_lesion_mesh` en `src/radvol3d/services/study_service.py` (pasa T039).
-- [ ] T052 [P] [US3] Crear `src/radvol3d/api/content_types.py` con `GLB_CONTENT_TYPE = "model/gltf-binary"` y `NPY_CONTENT_TYPE = "application/octet-stream"`. Crear `src/radvol3d/api/schemas/result_schema.py` con `LesionResponse` y `ResultResponse` (data-model.md §5), sin `region_id` ni `lesion_id`.
-- [ ] T053 [US3] Crear `src/radvol3d/api/routers/result_router.py` con `GET /studies/{study_code}/result` y las cuatro descargas de research.md R6 (`Response` con los bytes y el tipo de contenido). Las URL se arman con el código y `lesion_number`, nunca con rutas del bucket (pasa T040). Depende de T051 y T052.
-- [ ] T054 [US3] Crear `src/radvol3d/api/routers/viewer_router.py` con `GET /viewer/{study_code}` (pasa T041):
+- [X] T050 [US3] En `src/radvol3d/services/pipeline/filters.py`, hacer que `MeshingFilter` pase `[r for r in summary["regions"] if r.get("has_lesion", True) is True]`. En `src/radvol3d/services/pipeline/persistence_progress.py`, hacer que `save_result` pase `meshes.lesions`. Actualizar `tests/unit/services/test_pipeline_filters.py`, `tests/unit/services/test_persistence_progress.py` y `tests/unit/services/test_processing_pipeline.py` si fallan. Depende de T046, T048 y T049.
+- [X] T051 [US3] Implementar `get_completed_result`, `read_result_file` y `read_lesion_mesh` en `src/radvol3d/services/study_service.py` (pasa T039).
+- [X] T052 [P] [US3] Crear `src/radvol3d/api/content_types.py` con `GLB_CONTENT_TYPE = "model/gltf-binary"` y `NPY_CONTENT_TYPE = "application/octet-stream"`. Crear `src/radvol3d/api/schemas/result_schema.py` con `LesionResponse` y `ResultResponse` (data-model.md §5), sin `region_id` ni `lesion_id`.
+- [X] T053 [US3] Crear `src/radvol3d/api/routers/result_router.py` con `GET /studies/{study_code}/result` y las cuatro descargas de research.md R6 (`Response` con los bytes y el tipo de contenido). Las URL se arman con el código y `lesion_number`, nunca con rutas del bucket (pasa T040). Depende de T051 y T052.
+- [X] T054 [US3] Crear `src/radvol3d/api/routers/viewer_router.py` con `GET /viewer/{study_code}` (pasa T041):
   - valida el código con `service.get_study`;
   - devuelve `FileResponse` de `src/radvol3d/web/viewer.html`, con 404 y la misma página si lanza `StudyNotFoundError`;
   - la ruta del HTML se calcula con `Path(__file__)`; no importa nada de `main.py`.
-- [ ] T055 [US3] Montar `result_router` y `viewer_router` en `src/radvol3d/main.py`, antes de `StaticFiles`.
-- [ ] T056 [P] [US3] Crear `src/radvol3d/web/js/viewer_state.js` (pasa T042): solo funciones puras y constantes exportadas, sin DOM ni Three.js.
-- [ ] T057 [US3] Reescribir `src/radvol3d/web/viewer.html`:
+- [X] T055 [US3] Montar `result_router` y `viewer_router` en `src/radvol3d/main.py`, antes de `StaticFiles`.
+- [X] T056 [P] [US3] Crear `src/radvol3d/web/js/viewer_state.js` (pasa T042): solo funciones puras y constantes exportadas, sin DOM ni Three.js.
+- [X] T057 [US3] Reescribir `src/radvol3d/web/viewer.html`:
   - `importmap` con `three` y `three/addons/` apuntando a `https://cdn.jsdelivr.net/npm/three@<versión>/build/three.module.js` y `.../examples/jsm/`, con una versión exacta comprobada en `https://www.npmjs.com/package/three` el día de la implementación y anotada en un comentario con esa fecha;
   - contenedor del lienzo, lista de lesiones, zona de avisos, botón "Vista inicial";
   - enlaces de descarga ocultos para el caso sin WebGL;
   - rutas absolutas `/css/main.css` y `/js/viewer_3d.js`;
   - textos en español.
-- [ ] T058 [US3] Reescribir `src/radvol3d/web/js/viewer_3d.js` según research.md R13 y http_api.md, "Visor", pasos 1 a 7:
+- [X] T058 [US3] Reescribir `src/radvol3d/web/js/viewer_3d.js` según research.md R13 y http_api.md, "Visor", pasos 1 a 7:
   - lee el código de `location.pathname` y pide el estado con `fetch`, refrescándolo con `status_view`;
   - en `completed`:
     - pide el resultado y carga cada `.glb` con `GLTFLoader`;
@@ -358,12 +358,12 @@ tests/unit/web/` y las pruebas de `result_router` y `viewer_router` en verde.
   - elegir una fila resalta su malla (emisivo) y baja la opacidad de las demás; otro clic lo deshace;
   - sin WebGL, o si falla el `import` de Three.js, muestra el aviso y los enlaces de descarga.
   Las declaraciones van en snake_case. Depende de T056 y T057.
-- [ ] T059 [P] [US3] Agregar a `src/radvol3d/web/css/main.css` los estilos del visor: lienzo a pantalla, lista lateral con la muestra de color de cada fila, fila resaltada y avisos. Las clases van en snake_case.
-- [ ] T060 [US3] En `.github/workflows/ci.yml`, agregar `actions/setup-node@v4` con `node-version: "22"` y el paso `node --test tests/unit/web/`, después de "Estilo y convencion de nombres".
-- [ ] T061 [US3] Actualizar `tests/integration/persistence/test_result_storage_integration.py`, con la migración 002 aplicada en la base de prueba. Probar:
+- [X] T059 [P] [US3] Agregar a `src/radvol3d/web/css/main.css` los estilos del visor: lienzo a pantalla, lista lateral con la muestra de color de cada fila, fila resaltada y avisos. Las clases van en snake_case.
+- [X] T060 [US3] En `.github/workflows/ci.yml`, agregar `actions/setup-node@v4` con `node-version: "22"` y el paso `node --test "tests/unit/web/*.js"`, después de "Estilo y convencion de nombres".
+- [X] T061 [US3] Actualizar `tests/integration/persistence/test_result_storage_integration.py`, con la migración 002 aplicada en la base de prueba. Probar:
   - cada fila de `lesion` tiene `organ = 'lung'` y su propio `mesh_path` `lesion_<NNN>.glb`, que existe en el bucket;
   - un `insert` con `organ = 'kidney'` hecho a mano viola `lesion_organ_allowed`.
-- [ ] T062 [US3] Actualizar `tests/integration/services/test_pipeline_integration.py`: el estudio procesado con los dobles tiene `lesion_001.glb` en el bucket, y su `get_result().lesions[0].mesh_path` apunta a ese archivo.
+- [X] T062 [US3] Actualizar `tests/integration/services/test_pipeline_integration.py`: el estudio procesado con los dobles tiene `lesion_001.glb` en el bucket, y su `get_result().lesions[0].mesh_path` apunta a ese archivo.
 
 **Checkpoint**: el resultado se ve en el visor con una malla por lesión.
 

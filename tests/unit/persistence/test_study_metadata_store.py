@@ -432,14 +432,17 @@ def test_get_study_returns_the_lesions_too(world: World) -> None:
                 "volume_mm3": 8000.0,
                 "max_diameter_mm": 25.5,
                 "confidence": 0.9,
-                "mesh_path": f"{CODE}/meshes/tumor.glb",
+                "mesh_path": f"{CODE}/meshes/lesion_001.glb",
+                "organ": "lung",
             }
         ],
     )
 
     study = world.store.get_study(CODE)
 
-    assert study.lesions == [Lesion("centro", 8000.0, 0.9, 25.5, f"{CODE}/meshes/tumor.glb")]
+    assert study.lesions == [
+        Lesion("centro", 8000.0, 0.9, 25.5, f"{CODE}/meshes/lesion_001.glb", OrganName.LUNG)
+    ]
     assert world.connection.params_of("from lesion l") == [(CODE,)]
 
 

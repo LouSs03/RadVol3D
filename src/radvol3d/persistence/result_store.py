@@ -1,14 +1,18 @@
 """Guarda y consulta los resultados de la segmentacion de un estudio.
 
 Un resultado son cinco archivos del bucket (mascara, probabilidad, resumen y las
-mallas del organo y del tumor) y las filas de lesion.
+mallas del organo y del tumor), mas una malla por lesion, y las filas de lesion. Cada
+fila apunta a su propia malla en mesh_path: es el unico enlace entre la fila y su
+malla (research.md R10 de 004). El organo de cada fila lo pone el insert, desde el
+estudio.
 
-Orden de save_result (research.md R8 y R12 de 001; R7 de 002):
+Orden de save_result (research.md R8 y R12 de 001; R7 de 002; R10 de 004):
 
-1. Se valida TODO sin tocar nada: el codigo, el resumen y las lesiones.
+1. Se valida TODO sin tocar nada: el codigo, el resumen, las lesiones y que haya
+   exactamente una malla por lesion.
 2. Se comprueba que el estudio existe, en una transaccion corta que suelta la
    conexion antes de subir nada. Asi no se acumulan archivos de un estudio inexistente.
-3. Se suben los cinco archivos.
+3. Se suben los cinco archivos y las mallas de las lesiones.
 4. En UNA sola unidad de trabajo se insertan las lesiones.
 
 save_result NO cambia el estado de las etapas ni registra el modelo: eso lo hace la
@@ -24,14 +28,18 @@ filas de lesion; para rehacerlo, se borra el estudio.
 """
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
 
 from radvol3d.domain.entities import Lesion, StoredResult
-from radvol3d.domain.enums import StageNumber, StageStatus
-from radvol3d.domain.exceptions import InvalidLesionError, PersistenceError
+from radvol3d.domain.enums import ResultFile, StageNumber, StageStatus
+from radvol3d.domain.exceptions import (
+    InvalidLesionError,
+    PersistenceError,
+    StorageObjectNotFoundError,
+)
 from radvol3d.persistence.connection import Database
 from radvol3d.persistence.object_storage import (
     CONTENT_TYPE_JSON,
@@ -47,12 +55,14 @@ from radvol3d.persistence.repositories.processing_stage_repository import (
 )
 from radvol3d.persistence.repositories.study_repository import find_study_id
 from radvol3d.persistence.storage_layout import (
+    lesion_mesh_path,
     mask_path,
     organ_mesh_path,
     probability_path,
     summary_path,
     tumor_mesh_path,
     validate_study_code,
+    volume_path,
 )
 
 # Claves que debe traer cada region del resumen para poder guardarla como lesion.
@@ -74,10 +84,20 @@ class ResultStore:
         summary: Mapping[str, Any],
         organ_mesh: bytes,
         tumor_mesh: bytes,
+        lesion_meshes: Sequence[bytes],
     ) -> StoredResult:
-        """Guarda los archivos del resultado y sus lesiones. No toca las etapas."""
+        """Guarda los archivos del resultado, una malla por lesion y las lesiones.
+
+        lesion_meshes trae una malla por region con lesion, en el orden del resumen.
+        No toca las etapas.
+        """
         validate_study_code(study_code)
-        lesions = self._lesions_from_summary(summary, tumor_mesh_path(study_code))
+        lesions = self._lesions_from_summary(summary, study_code)
+        if len(lesion_meshes) != len(lesions):
+            raise PersistenceError(
+                f"El resultado trae {len(lesion_meshes)} mallas de lesion para "
+                f"{len(lesions)} lesiones."
+            )
         self._model_of(summary)
         summary_bytes = self._summary_as_json(summary)
 
@@ -90,6 +110,8 @@ class ResultStore:
         self._storage.upload_bytes(summary_path(study_code), summary_bytes, CONTENT_TYPE_JSON)
         self._storage.upload_bytes(organ_mesh_path(study_code), organ_mesh, CONTENT_TYPE_MESH)
         self._storage.upload_bytes(tumor_mesh_path(study_code), tumor_mesh, CONTENT_TYPE_MESH)
+        for lesion, mesh in zip(lesions, lesion_meshes, strict=True):
+            self._storage.upload_bytes(lesion.mesh_path, mesh, CONTENT_TYPE_MESH)
 
         with self._database.transaction() as connection:
             lesion_repository = LesionRepository(connection)
@@ -118,11 +140,38 @@ class ResultStore:
             lesions = LesionRepository(connection).list_by_study(study_code)
         return self._build_result(study_code, lesions)
 
+    def read_file(self, study_code: str, file: ResultFile) -> bytes:
+        """Baja la malla del organo, la del tumor o el volumen (.npy tal cual).
+
+        No comprueba el estado del estudio: eso lo hace el servicio.
+        """
+        paths = {
+            ResultFile.ORGAN_MESH: organ_mesh_path,
+            ResultFile.TUMOR_MESH: tumor_mesh_path,
+            ResultFile.VOLUME: volume_path,
+        }
+        return self._storage.download_bytes(paths[ResultFile(file)](study_code))
+
+    def read_lesion_mesh(self, study_code: str, lesion_number: int) -> bytes:
+        """Baja la malla de la lesion numero lesion_number (desde 1, en orden de guardado).
+
+        Lanza StorageObjectNotFoundError si el estudio no tiene esa lesion.
+        """
+        validate_study_code(study_code)
+        with self._database.transaction() as connection:
+            lesions = LesionRepository(connection).list_by_study(study_code)
+        if not 1 <= lesion_number <= len(lesions) or lesions[lesion_number - 1].mesh_path is None:
+            raise StorageObjectNotFoundError(
+                f"El estudio '{study_code}' no tiene la lesion {lesion_number}."
+            )
+        return self._storage.download_bytes(lesions[lesion_number - 1].mesh_path)
+
     @staticmethod
     def _build_result(study_code: str, lesions: list[Lesion]) -> StoredResult:
         return StoredResult(
             study_code=study_code,
             lesions=lesions,
+            volume_path=volume_path(study_code),
             mask_path=mask_path(study_code),
             probability_path=probability_path(study_code),
             summary_path=summary_path(study_code),
@@ -131,8 +180,10 @@ class ResultStore:
         )
 
     @staticmethod
-    def _lesions_from_summary(summary: Mapping[str, Any], mesh_path: str) -> list[Lesion]:
-        """Cada region del resumen genera una lesion (FR-047a).
+    def _lesions_from_summary(summary: Mapping[str, Any], study_code: str) -> list[Lesion]:
+        """Cada region del resumen genera una lesion (FR-047a), con su propia malla.
+
+        La lesion n (desde 1, en el orden del resumen) apunta a lesion_<nnn>.glb.
 
         Las claves region_id, confidence_min, confidence_max, voxels y centroid_voxel
         no tienen columna en lesion: se quedan solo en summary.json. Una region con
@@ -157,7 +208,7 @@ class ResultStore:
                     volume_mm3=region["volume_mm3"],
                     confidence=region["confidence"],
                     max_diameter_mm=region.get("max_diameter_mm"),
-                    mesh_path=mesh_path,
+                    mesh_path=lesion_mesh_path(study_code, len(lesions) + 1),
                 )
             )
         validate_lesions(lesions)

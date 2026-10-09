@@ -16,7 +16,13 @@ from fastapi.staticfiles import StaticFiles
 
 from radvol3d import __version__
 from radvol3d.api.error_handlers import register_error_handlers
-from radvol3d.api.routers import health_router, projection_router, study_router
+from radvol3d.api.routers import (
+    health_router,
+    projection_router,
+    result_router,
+    study_router,
+    viewer_router,
+)
 from radvol3d.persistence.settings import get_model_settings, get_settings
 from radvol3d.services.service_container import build_service_container
 
@@ -72,6 +78,8 @@ def create_app(container_builder: Callable[[], Any] | None = None) -> FastAPI:
     app.include_router(health_router.router)
     app.include_router(study_router.router)
     app.include_router(projection_router.router)
+    app.include_router(result_router.router)
+    app.include_router(viewer_router.router)
 
     if WEB_DIRECTORY.is_dir():
         app.mount("/", StaticFiles(directory=WEB_DIRECTORY, html=True), name="web")
