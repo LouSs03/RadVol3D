@@ -27,15 +27,24 @@ dimensionar las pruebas.
 
 - **Decisión**: `torch` va como extra `ml` en `pyproject.toml`
   (`[project.optional-dependencies] ml = ["torch>=2.6"]`) y no entra en `requirements.txt`.
-  Ningún módulo que se importe al arrancar sin modelos importa `torch` en su nivel superior.
-  Solo cuatro módulos lo importan:
+  Ningún módulo de `src/`, `tests/` ni `scripts/` importa `torch` en su nivel superior. Solo
+  cuatro módulos lo usan:
   - `reconstruction/en1_network.py`
   - `reconstruction/en1_reconstructor.py`
   - `segmentation/lung_unet_network.py`
   - `segmentation/lung_segmenter.py`
 
-  Las estrategias (`neural_en1_strategy.py`, `lung_unet_strategy.py`) los importan dentro de
-  su método de construcción `from_weights(...)`, nunca en el nivel superior.
+  Los cuatro lo importan dentro de sus funciones y métodos. Las redes definen sus clases
+  (que heredan de `nn.Module`) dentro de una función con caché y las entregan con el
+  `__getattr__` del módulo (PEP 562), así que `from ... import ResidualUnet3d` sigue
+  funcionando. Las estrategias (`neural_en1_strategy.py`, `lung_unet_strategy.py`) importan
+  el motor dentro de `from_weights(...)`, y las pruebas `ml`, dentro de sus fixtures.
+- **Corrección (2026-10-09).** En la primera versión, los cuatro módulos importaban torch en
+  su nivel superior, y `tests/ml/test_en2_regression.py` importaba `LungSegmenter` también en
+  su nivel superior. El CI, que no tiene torch, fallaba al coleccionar las pruebas, antes de
+  que el marcador `ml` pudiera omitirlas. Se verificó que, con torch bloqueado, la colección
+  pasa completa y las pruebas `ml` se omiten. Con torch, la salida sigue idéntica a la de
+  los originales (EN-1 y EN-2, bit a bit).
 - **Motivo**: así el CI no instala torch, y `api/` puede importar `services` sin arrastrar torch
   (Principio I). La fábrica y el contenedor se pueden importar y probar sin torch.
 - **Alternativas**:
@@ -317,7 +326,7 @@ repite en la descripción del pull request.
 ## R16. Regresión numérica (FR-034)
 
 - **Decisión**:
-  - **Generación.** `scripts/build_regression_reference.py` carga los scripts originales de
+  - **Generación.** `scripts/generate_regression_reference.py` carga los scripts originales de
     `models/` por ruta, sin modificarlos, y corre en CPU sobre tres casos deterministas sin
     datos de pacientes:
     1. EN-1 sobre las proyecciones del fantoma elipsoide de su autoprueba
@@ -351,6 +360,17 @@ repite en la descripción del pull request.
   - Comparar en vivo contra los originales en cada corrida. Se descarta porque exige tener
     `models/` local y no sirve en otra máquina.
   - Guardar solo estadísticas (media, máximo). Se descarta porque no detecta un vóxel cambiado.
+
+- **Verificación previa a la referencia (2026-10-09, T081 a T098).** Antes de entregar la
+  migración se comparó, en la carpeta temporal y sin escribir nada en el repositorio, el
+  código migrado con los originales de `models/` sobre las mismas entradas:
+  - caso 4: `clean_mask` y `summarize_regions` idénticos;
+  - EN-1 sobre el fantoma: diferencia máxima 0,0;
+  - EN-2, con el `.pth` de exportación de prueba de R18, sobre la salida de EN-1: máscara
+    idéntica, diferencia máxima de probabilidad 0,0 y resumen idéntico (31 lesiones, 344 s).
+
+  No reemplaza la referencia de `scripts/generate_regression_reference.py`, que corre el
+  usuario.
 
 ## R17. Cobertura del 80 % sin torch en el CI
 

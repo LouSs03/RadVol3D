@@ -66,12 +66,16 @@ pytest -m concurrency tests/concurrency -v
 ### D1. Preparar los artefactos (una sola vez, por quien tiene `models/`)
 
 ```bash
-python scripts/export_en2_weights.py --checkpoint models/en2_pulmon_mejor.pth \
-  --metrics models/metricas_test.json --output .cache/models/segmentation_lung.pth
-python scripts/build_regression_reference.py --models-dir models \
-  --en2-weights .cache/models/segmentation_lung.pth --output-dir .cache/models/regression
-python scripts/publish_model_artifacts.py      # sube pesos y referencias a MODEL_BUCKET
+python scripts/export_en2_weights.py --checkpoint models/en2_pulmon_mejor.pth   --metrics models/metricas_test.json   --output .cache/models/segmentation_lung/1.0.0/weights.pth
+python scripts/generate_regression_reference.py --models-dir models   --en2-weights .cache/models/segmentation_lung/1.0.0/weights.pth   --output-dir .cache/models
+mkdir -p .cache/models/reconstruction_en1/1.0.0
+cp "models/en1_pesos_liviano (2).pth" .cache/models/reconstruction_en1/1.0.0/weights.pth
+python scripts/publish_model_artifacts.py --env-file .env.test   --en1-weights "models/en1_pesos_liviano (2).pth"   --en2-weights .cache/models/segmentation_lung/1.0.0/weights.pth   --regression-dir .cache/models/regression
 ```
+
+`generate_regression_reference.py` tarda varios minutos (EN-2 corre dos veces con TTA). La
+copia de EN-1 a `.cache/models/` deja la caché local con la misma estructura que el
+bucket: así las pruebas `ml` no necesitan bajar nada.
 
 **Resultado esperado:**
 

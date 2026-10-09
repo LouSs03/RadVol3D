@@ -500,13 +500,13 @@ prueban también sin torch, con `pytest -m unit`.
 
 ### Mallas (sin torch)
 
-- [ ] T081 [P] [US5] Escribir `tests/unit/services/test_marching_cubes_strategy.py`. Las mallas se vuelven a abrir con `trimesh.load(..., file_type="glb")`.
+- [X] T081 [P] [US5] Escribir `tests/unit/services/test_marching_cubes_strategy.py`. Las mallas se vuelven a abrir con `trimesh.load(..., file_type="glb")`.
   - **Esfera.** Con una máscara esférica de radio 10 vóxeles en el centro, `tumor` empieza con `b"glTF"`, tiene vértices, y su caja envolvente mide ≈ 2·10·2,5 mm por eje (tolerancia de un vóxel), centrada en el origen.
   - **Máscara vacía.** `tumor` es un `.glb` válido sin vértices y no lanza.
   - **Volumen constante.** `organ` es un `.glb` válido sin vértices y no lanza.
   - **Dos regiones.** Con dos esferas separadas de distinto tamaño en el volumen, la malla del órgano cubre solo la mayor: su caja envolvente coincide con la esfera grande.
   - **Coordenadas compartidas.** El tumor y el órgano usan el mismo sistema: un tumor en el centro de un órgano esférico queda dentro de la caja del órgano.
-- [ ] T082 [US5] Implementar `MarchingCubesStrategy.build_meshes(volume, mask) -> MeshSet` en `src/radvol3d/services/meshing/marching_cubes_strategy.py`, según research.md R19:
+- [X] T082 [US5] Implementar `MarchingCubesStrategy.build_meshes(volume, mask) -> MeshSet` en `src/radvol3d/services/meshing/marching_cubes_strategy.py`, según research.md R19:
   - **Tumor.** Borde de 1 vóxel con `np.pad`, `marching_cubes(level=0.5, step_size=1, spacing=(config.MM_PER_VOXEL,)*3)`.
   - **Órgano.** `threshold_otsu`, binarizar, quedarse con la componente más grande (`scipy.ndimage.label`), `binary_fill_holes`, y `marching_cubes(level=0.5, step_size=2)`.
   - **Coordenadas.** Restar el borde y el centro del volumen: `(N·2,5)/2` mm.
@@ -518,17 +518,17 @@ prueban también sin torch, con `pytest -m unit`.
 
 ### Artefactos de referencia, antes de migrar nada (research.md R16 y R18)
 
-- [ ] T083 [P] [US5] Escribir `tests/unit/scripts/test_export_en2_weights.py`, que carga `scripts/export_en2_weights.py` con `importlib` por ruta, sin torch. `build_export_payload(checkpoint: dict, metrics: dict) -> dict`:
+- [X] T083 [P] [US5] Escribir `tests/unit/scripts/test_export_en2_weights.py`, que carga `scripts/export_en2_weights.py` con `importlib` por ruta, sin torch. `build_export_payload(checkpoint: dict, metrics: dict) -> dict`:
   - devuelve exactamente las ocho claves de [contracts/model_artifacts.md](contracts/model_artifacts.md#pth-de-exportación-de-en-2) con sus fuentes: `pesos` ← `modelo`, `canales` ← `canales`, `parche` y `rejilla` ← `cfg`, `mm_por_voxel` ← 2,5, y `umbral`, `min_voxeles` y `tta` ← métricas;
   - no escribe `solape`, `supervision`, `ventana_hu`, `organo`, `nombre_modelo` ni `version`;
   - si falta una clave de origen, lanza `KeyError` con su nombre.
-- [ ] T084 [US5] Crear `scripts/export_en2_weights.py`:
+- [X] T084 [US5] Crear `scripts/export_en2_weights.py`:
   - argumentos `--checkpoint`, `--metrics` y `--output`;
   - `build_export_payload`, sin torch;
   - `main()`, que importa torch, lee con `torch.load(..., weights_only=True)`, guarda con `torch.save` y comprueba que el resultado se vuelve a abrir con `weights_only=True`.
 
   El docstring, en español, dice de dónde sale cada valor y que el `.pth` original de exportación, si llega, lo reemplaza sin cambiar código. Hace pasar T083.
-- [ ] T085 [US5] Crear `scripts/build_regression_reference.py` (research.md R16), con los argumentos `--models-dir`, `--en2-weights` y `--output-dir`:
+- [X] T085 [US5] Crear `scripts/generate_regression_reference.py` (research.md R16), con los argumentos `--models-dir`, `--en2-weights` y `--output-dir`:
   - carga `en1_inferencia_nuevo (1).py` y `en2_inferencia.py` de `--models-dir` con `importlib.util.spec_from_file_location`, sin modificarlos, y fuerza `dispositivo="cpu"`;
   - corre los casos 1, 2 y 3 de [contracts/model_artifacts.md](contracts/model_artifacts.md#bucket-de-modelos-model_bucket) y escribe las salidas en `--output-dir` con los nombres `regression/...`;
   - corre el caso 4 (`resumen_regiones` y `_limpiar` originales sobre una máscara y una probabilidad sintéticas con `np.random.default_rng(20261009)`, con tres regiones y una menor que `min_voxeles=10`), y escribe la entrada y la salida en `tests/unit/services/reference/lung_region_summary_reference.json`;
@@ -536,21 +536,22 @@ prueban también sin torch, con `pytest -m unit`.
 - [ ] T086 [US5] Ejecutar T084 y T085 en la máquina que tiene `models/`, con el extra `ml` instalado, siguiendo quickstart.md D1, antes de crear cualquier módulo de T089 a T098.
   - Versionar solo `tests/ml/reference/manifest.json` y `tests/unit/services/reference/lung_region_summary_reference.json`.
   - Comprobar con `git status` que ningún `.pth` ni `.npy` entra al repositorio.
+  - **Pendiente, lo ejecuta el usuario (2026-10-09).** `scripts/export_en2_weights.py` y `scripts/generate_regression_reference.py` están creados y probados, pero no se ejecutaron: se corren en la máquina con `models/`. Hasta entonces, la comparación con el caso 4 y las pruebas `ml` se omiten con un mensaje.
 
 ### Migración de EN-1 (research.md R14 y R15)
 
-- [ ] T087 [P] [US5] Escribir `tests/unit/services/test_en1_geometry.py`, sin torch:
+- [X] T087 [P] [US5] Escribir `tests/unit/services/test_en1_geometry.py`, sin torch:
   - `project(ellipsoid_phantom())` da `(4, 128, 128)` float32, y las extensiones de la vista 0 en los ejes 0 y 2 son distintas (la comprobación de la autoprueba original);
   - `back_project` da `(128, 128, 128)`, y con tres proyecciones lanza `ValueError`;
   - `ramp_filter` conserva la forma;
   - `apply_affine` recorta a [0, 1];
   - las constantes valen `G == 128`, `FOV_MM == 320.0`, `ANGLES == (0.0, 45.0, 90.0, 135.0)`, `FILTER_EXPONENT == 0.5`, `FBP_CALIBRATION == (17.7935, -0.0110)` y `BP_CALIBRATION == (1.4131, -0.0591)`.
-- [ ] T088 [P] [US5] Escribir `tests/unit/services/test_neural_en1_strategy.py`, sin torch, con un motor falso inyectado (`NeuralEn1Strategy(engine)`):
+- [X] T088 [P] [US5] Escribir `tests/unit/services/test_neural_en1_strategy.py`, sin torch, con un motor falso inyectado (`NeuralEn1Strategy(engine)`):
   - `reconstruct` delega en `engine.reconstruct` y devuelve `(128, 128, 128)` float32;
   - una salida de forma incorrecta lanza `RuntimeError`, que la tubería convierte en un fallo de la etapa 2;
   - `model_name == "reconstruction_en1"` y `model_version == "1.0.0"`;
   - dos hilos que llaman a la vez se serializan: el motor falso registra que nunca hubo dos llamadas a la vez.
-- [ ] T089 [US5] Crear `src/radvol3d/services/reconstruction/en1_geometry.py`, solo con numpy y scipy, con lo que no es red de `models/en1_inferencia_nuevo (1).py`, renombrado así:
+- [X] T089 [US5] Crear `src/radvol3d/services/reconstruction/en1_geometry.py`, solo con numpy y scipy, con lo que no es red de `models/en1_inferencia_nuevo (1).py`, renombrado así:
 
   | Original | Migrado |
   |---|---|
@@ -571,15 +572,15 @@ prueban también sin torch, con `pytest -m unit`.
   | `fantoma_elipsoide` | `ellipsoid_phantom` |
 
   Las variables locales también van en inglés. Las operaciones, su orden, los valores por omisión y las constantes son idénticos. Los comentarios conservan las explicaciones del original (por qué el relleno de la FFT, por qué el exponente parcial). Hace pasar T087.
-- [ ] T090 [US5] Crear `src/radvol3d/services/reconstruction/en1_network.py`, con torch: `conv_block` (era `bloque`) y `ResidualUnet3d` (era `UNet3DResidual`). Los atributos `e1`, `e2`, `e3`, `e4`, `cuello`, `d4`, `d3`, `d2`, `d1`, `salida` y `reducir` **no se renombran**, porque `load_state_dict(strict=True)` compara esos nombres con los del `.pth`. Agregar un comentario que lo explique. Los parámetros del constructor sí pasan a `in_channels` y `base`.
-- [ ] T091 [US5] Crear `src/radvol3d/services/reconstruction/en1_reconstructor.py`, con torch, y en él `En1Reconstructor` (era `ReconstructorEN1`):
+- [X] T090 [US5] Crear `src/radvol3d/services/reconstruction/en1_network.py`, con torch: `conv_block` (era `bloque`) y `ResidualUnet3d` (era `UNet3DResidual`). Los atributos `e1`, `e2`, `e3`, `e4`, `cuello`, `d4`, `d3`, `d2`, `d1`, `salida` y `reducir` **no se renombran**, porque `load_state_dict(strict=True)` compara esos nombres con los del `.pth`. Agregar un comentario que lo explique. Los parámetros del constructor sí pasan a `in_channels` y `base`.
+- [X] T091 [US5] Crear `src/radvol3d/services/reconstruction/en1_reconstructor.py`, con torch, y en él `En1Reconstructor` (era `ReconstructorEN1`):
   - métodos `reconstruct`, `prepare_input`, `baseline` (era `linea_base`) y `describe`;
   - la misma preferencia de claves que el original: `mejores_pesos`, `pesos`, `modelo`, `state_dict` y archivo plano;
   - `torch.load(path, map_location="cpu", weights_only=True)` (R15);
   - `device="cpu"` por omisión.
 
   No migrar `reconstruir_lote`, `a_hu`, `de_hu`, `espaciado_mm`, `autoprueba` ni `main` (R14).
-- [ ] T092 [US5] Implementar `src/radvol3d/services/reconstruction/neural_en1_strategy.py`:
+- [X] T092 [US5] Implementar `src/radvol3d/services/reconstruction/neural_en1_strategy.py`:
   - `NeuralEn1Strategy(engine)`, con un `threading.Lock` alrededor de `engine.reconstruct`;
   - el classmethod `from_weights(path)`, que importa `En1Reconstructor` dentro del método;
   - una comprobación de la forma de salida.
@@ -588,18 +589,18 @@ prueban también sin torch, con `pytest -m unit`.
 
 ### Migración de EN-2 (research.md R14 y R15)
 
-- [ ] T093 [P] [US5] Escribir `tests/unit/services/test_lung_region_summary.py`, sin torch:
+- [X] T093 [P] [US5] Escribir `tests/unit/services/test_lung_region_summary.py`, sin torch:
   - **Referencia del caso 4.** Con la entrada de `tests/unit/services/reference/lung_region_summary_reference.json`, `summarize_regions` y `clean_mask` devuelven exactamente la salida de referencia: mismas regiones, orden, `region_id`, `volume_mm3`, `max_diameter_mm`, `confidence`, `confidence_min`, `confidence_max`, `voxels` y `centroid_voxel`.
   - **`describe_position`.** Devuelve los textos en español del original, por ejemplo "medio del eje 0 · medio del eje 1 · medio del eje 2".
   - **`patch_positions(128, 96, 0.5) == [0, 32]`**.
   - **`gaussian_weight_map(96)`.** Su máximo es 1.0.
-- [ ] T094 [P] [US5] Escribir `tests/unit/services/test_lung_unet_strategy.py`, sin torch, con un motor falso que devuelve el diccionario del original (`mask`, `probability` y un `summary` con `organ: "pulmon"`, `model_name: "segmentacion_pulmon"` y `study_id`):
+- [X] T094 [P] [US5] Escribir `tests/unit/services/test_lung_unet_strategy.py`, sin torch, con un motor falso que devuelve el diccionario del original (`mask`, `probability` y un `summary` con `organ: "pulmon"`, `model_name: "segmentacion_pulmon"` y `study_id`):
   - `segment(volume, "it_a")` devuelve un `SegmentationResult` con `summary["study_code"] == "it_a"`, sin la clave `study_id`, con `organ == "lung"`, `model_name == "segmentation_lung"` y `model_version == "1.0.0"`, y con los números iguales (FR-025);
   - una `Lesion` por región, con `location`, `volume_mm3`, `max_diameter_mm` y `confidence`;
   - `global_confidence == summary["global_confidence"]`;
   - `InvalidVolumeError` del motor se propaga, y la tubería lo convierte en un fallo de la etapa 3;
   - el candado serializa dos hilos, como en T088.
-- [ ] T095 [US5] Crear `src/radvol3d/services/segmentation/lung_region_summary.py`, solo con numpy y scipy, con lo que no es red de `models/en2_inferencia.py`:
+- [X] T095 [US5] Crear `src/radvol3d/services/segmentation/lung_region_summary.py`, solo con numpy y scipy, con lo que no es red de `models/en2_inferencia.py`:
 
   | Original | Migrado |
   |---|---|
@@ -613,15 +614,15 @@ prueban también sin torch, con `pytest -m unit`.
   | `resumen_regiones` | `summarize_regions` |
 
   Las claves del resumen (`has_lesion`, `location`, ...) ya están en inglés y no cambian. Hace pasar T093.
-- [ ] T096 [US5] Crear `src/radvol3d/services/segmentation/lung_unet_network.py`, con torch: `ResidualBlock` (era `BloqueResidual`) y `SegmentationUnet3d` (era `UNet3DSegmentacion`), con `features` (era `caracteristicas`). Los nombres de submódulos y atributos que aparecen en el `state_dict` **no se renombran**: `c1`, `n1`, `c2`, `n2`, `act`, `salto`, `entrada`, `bajadas`, `subidas`, `fusiones` y `cabezas`. Agregar un comentario que lo explique, como en T090.
-- [ ] T097 [US5] Crear `src/radvol3d/services/segmentation/lung_segmenter.py`, con torch, y en él `LungSegmenter` (era `SegmentadorPulmon`):
+- [X] T096 [US5] Crear `src/radvol3d/services/segmentation/lung_unet_network.py`, con torch: `ResidualBlock` (era `BloqueResidual`) y `SegmentationUnet3d` (era `UNet3DSegmentacion`), con `features` (era `caracteristicas`). Los nombres de submódulos y atributos que aparecen en el `state_dict` **no se renombran**: `c1`, `n1`, `c2`, `n2`, `act`, `salto`, `entrada`, `bajadas`, `subidas`, `fusiones` y `cabezas`. Agregar un comentario que lo explique, como en T090.
+- [X] T097 [US5] Crear `src/radvol3d/services/segmentation/lung_segmenter.py`, con torch, y en él `LungSegmenter` (era `SegmentadorPulmon`):
   - métodos `segment` (era `segmentar`), `probability` (era `probabilidad`), `describe` (era `describir`) y `_validate` (era `_validar`);
   - lee las mismas claves del `.pth`, con los mismos valores por omisión;
   - `torch.load(..., weights_only=True)` (R15);
   - TTA, ventanas, pesos gaussianos y umbral idénticos.
 
   No migrar `autoprueba` ni el `__main__` (R14).
-- [ ] T098 [US5] Implementar `src/radvol3d/services/segmentation/lung_unet_strategy.py`:
+- [X] T098 [US5] Implementar `src/radvol3d/services/segmentation/lung_unet_strategy.py`:
   - `LungUnetStrategy(engine)`, con candado;
   - `from_weights(path)`, que importa `LungSegmenter` dentro del método;
   - `segment(volume, study_code)`, que llama a `engine.segment(volume)`, alinea los identificadores del resumen como en T094 (research.md R14; FR-023a: la alineación ocurre en la estrategia, no en el motor) y arma las `Lesion`.
@@ -630,20 +631,20 @@ prueban también sin torch, con `pytest -m unit`.
 
 ### Pruebas `ml` y publicación
 
-- [ ] T099 [US5] Crear `tests/ml/conftest.py`:
+- [X] T099 [US5] Crear `tests/ml/conftest.py`:
   - todas las pruebas de la carpeta llevan `pytestmark = pytest.mark.ml`, mediante `pytest_collection_modifyitems` o un `pytestmark` en cada módulo;
   - llama a `pytest.importorskip("torch")`;
   - expone la fixture `model_artifacts`, que obtiene los objetos del manifiesto desde `MODEL_CACHE_DIR` o, si faltan, con `ModelWeightsStore` sobre el bucket de modelos de `.env.test`;
   - verifica el SHA-256 de cada objeto contra `tests/ml/reference/manifest.json`;
   - omite las pruebas con un mensaje claro si faltan los artefactos o el bucket.
-- [ ] T100 [P] [US5] Escribir `tests/ml/test_en1_regression.py`. `NeuralEn1Strategy.from_weights(...)` sobre `regression/en1_phantom_projections.npy` da una diferencia absoluta máxima menor o igual a `1e-5` contra `regression/en1_phantom_volume.npy`. Si falla, el mensaje incluye la diferencia y el entorno del manifiesto frente al actual.
-- [ ] T101 [P] [US5] Escribir `tests/ml/test_en2_regression.py`, con los casos 2 y 3. Usa `LungSegmenter` directo para comparar el resumen sin alinear:
+- [X] T100 [P] [US5] Escribir `tests/ml/test_en1_regression.py`. `NeuralEn1Strategy.from_weights(...)` sobre `regression/en1_phantom_projections.npy` da una diferencia absoluta máxima menor o igual a `1e-5` contra `regression/en1_phantom_volume.npy`. Si falla, el mensaje incluye la diferencia y el entorno del manifiesto frente al actual.
+- [X] T101 [P] [US5] Escribir `tests/ml/test_en2_regression.py`, con los casos 2 y 3. Usa `LungSegmenter` directo para comparar el resumen sin alinear:
   - la máscara es idéntica (`np.array_equal`);
   - la probabilidad difiere en `1e-5` o menos;
   - el resumen es igual campo por campo.
 
   Además, `LungUnetStrategy` produce el resumen alineado de FR-025 con los mismos números.
-- [ ] T102 [US5] Escribir `tests/ml/test_example_study.py` (historia 5, escenarios 1 a 4; SC-003; criterio de aceptación 2). Arma `StudyService` con las estrategias reales (`build_service_container` sobre `.env.test`) y procesa como estudio `it_` las proyecciones del fantoma (`regression/en1_phantom_projections.npy` repartidas en cuatro `.npy`). Comprueba:
+- [X] T102 [US5] Escribir `tests/ml/test_example_study.py` (historia 5, escenarios 1 a 4; SC-003; criterio de aceptación 2). Arma `StudyService` con las estrategias reales (`build_service_container` sobre `.env.test`) y procesa como estudio `it_` las proyecciones del fantoma (`regression/en1_phantom_projections.npy` repartidas en cuatro `.npy`). Comprueba:
   - el estudio queda en `completed`;
   - el bucket tiene `volume.npy`, `mask.npy`, `probability.npy`, `summary.json`, `organ.glb` y `tumor.glb`;
   - las dos mallas empiezan con `glTF` y trimesh las vuelve a abrir;
@@ -655,10 +656,12 @@ prueban también sin torch, con `pytest -m unit`.
   - el `.pth` de EN-1, sin cambios;
   - el `.pth` de exportación de EN-2;
   - los objetos `regression/` de T086.
+  - **Pendiente, lo ejecuta el usuario.** `scripts/publish_model_artifacts.py` está creado, pero no se ejecutó, porque los artefactos de T086 todavía no existen.
 
   Las rutas son las de [contracts/model_artifacts.md](contracts/model_artifacts.md). No imprime claves ni URLs firmadas. Ejecutarlo (quickstart.md D1), escribir `EN1_WEIGHTS_OBJECT` y `EN2_WEIGHTS_OBJECT` en `.env` y `.env.test`, y correr `pytest -m ml -v`: T100 a T102 en verde.
 - [ ] T104 [US5] Completar `default_strategy_builders` en `src/radvol3d/services/service_container.py` con las descripciones de data-model.md §5 para `register_model`. Agregar los comentarios `TODO(TRAINING_DATE_EN1)` y `TODO(TRAINING_DATE_EN2)` junto a `trained_on=None` (Principio V). Arrancar con `uvicorn radvol3d.main:app` y comprobar quickstart.md D3: el registro de arranque muestra los dos modelos disponibles y, sin `EN2_WEIGHTS_OBJECT`, la aplicación arranca igual.
-- [ ] T105 [P] [US5] Reescribir `docs/models/reconstruction_en1.md` y `docs/models/segmentation_lung_en2.md` y crear `docs/models/meshing.md`:
+  - **Hecho en el código** (descripciones y `TODO(TRAINING_DATE_EN1/EN2)`). **Pendiente:** la comprobación con `uvicorn` de quickstart.md D3, que necesita los pesos publicados (T103).
+- [X] T105 [P] [US5] Reescribir `docs/models/reconstruction_en1.md` y `docs/models/segmentation_lung_en2.md` y crear `docs/models/meshing.md`:
   - **Rutas.** Ruta de los pesos en el bucket y módulos migrados.
   - **Procedencia del `.pth` de exportación de EN-2.** Cada clave con su fuente (Q1 = B).
   - **Métricas de `models/metricas_test.json`, copiadas sin cambios y citando el archivo.** Dice de validación 0,7361, de prueba 0,6553 ± 0,2771, precisión 0,6628, sensibilidad 0,804, n = 44/9/10, umbral 0,3 y la referencia de Carles et al.
@@ -675,20 +678,21 @@ prueban también sin torch, con `pytest -m unit`.
 **Purpose**: enmienda de la constitución, documentos de arquitectura, contrato de 001 y
 validación final.
 
-- [ ] T106 Enmendar `.specify/memory/constitution.md` (PATCH 1.0.0 → 1.0.1), en un commit `docs(specify): actualiza la ruta de la tuberia en la constitucion`:
+- [X] T106 Enmendar `.specify/memory/constitution.md` (PATCH 1.0.0 → 1.0.1), en un commit `docs(specify): actualiza la ruta de la tuberia en la constitucion`:
   - en el Principio II, `services/processing_pipeline.py` pasa a `services/pipeline/processing_pipeline.py`;
   - actualizar el Sync Impact Report y `Last Amended: 2026-10-09`.
 
   No cambia ningún principio.
-- [ ] T107 [P] Actualizar `docs/architecture/design_patterns.md` con las rutas nuevas, la estrategia de mallas (Strategy para las tres etapas), la fábrica con registros y la tubería como Pipes and Filters en `services/pipeline/`. Actualizar `docs/architecture/fastapi_structure.md`: se quitan `get_processing_pipeline` y su ejemplo, y se agrega `get_study_service` desde `app.state`.
-- [ ] T108 [P] Reescribir `specs/001-persistence-schema-migration/contracts/persistence_api.md` incorporando [contracts/persistence_api_changes.md](contracts/persistence_api_changes.md), para que quede un solo contrato vigente: `ModelSettings`, `remove_many`, `ModelWeightsStore`, `ProcessingProgressStore`, `delete_study`, `lock_status`, `delete` y el `save_result` nuevo. Agregar una nota con la fecha que remita a la funcionalidad 002.
-- [ ] T109 [P] Revisar los docstrings de `src/radvol3d/services/` y `src/radvol3d/persistence/` que mencionan "[0,1]" para las proyecciones, `services/preprocessing` o "no hay borrado", y corregirlos.
+- [X] T107 [P] Actualizar `docs/architecture/design_patterns.md` con las rutas nuevas, la estrategia de mallas (Strategy para las tres etapas), la fábrica con registros y la tubería como Pipes and Filters en `services/pipeline/`. Actualizar `docs/architecture/fastapi_structure.md`: se quitan `get_processing_pipeline` y su ejemplo, y se agrega `get_study_service` desde `app.state`.
+- [X] T108 [P] Reescribir `specs/001-persistence-schema-migration/contracts/persistence_api.md` incorporando [contracts/persistence_api_changes.md](contracts/persistence_api_changes.md), para que quede un solo contrato vigente: `ModelSettings`, `remove_many`, `ModelWeightsStore`, `ProcessingProgressStore`, `delete_study`, `lock_status`, `delete` y el `save_result` nuevo. Agregar una nota con la fecha que remita a la funcionalidad 002.
+- [X] T109 [P] Revisar los docstrings de `src/radvol3d/services/` y `src/radvol3d/persistence/` que mencionan "[0,1]" para las proyecciones, `services/preprocessing` o "no hay borrado", y corregirlos.
 - [ ] T110 Correr quickstart.md completo, bloques A a E: `ruff check src tests`, `python scripts/check_naming_convention.py`, `pytest -m "unit or architecture"`, la cobertura de services de T078 (80 % o más), `pytest -m integration`, `pytest -m concurrency`, `pytest -m ml --cov=src/radvol3d/services` y `git status --short`, sin `.pth`, `.npy` ni `models/`. Escribir en la descripción del pull request:
   - el peso de las dependencias (R3);
   - la cobertura del CI y la local con `ml`;
   - el cambio en `save_result` (R7) y el borrado nuevo en la persistencia;
   - la enmienda PATCH de la constitución;
   - el uso de `weights_only=True` (R15).
+  - **Hecho (2026-10-09):** ruff, convención de nombres, `unit or architecture`, cobertura del CI (94 %), integración y concurrencia. **Pendiente:** `pytest -m ml` en verde, que necesita T086 y T103. Hoy las pruebas `ml` se omiten.
 
 ---
 
@@ -773,7 +777,7 @@ Task: "T035 src/radvol3d/services/pipeline/filters.py"
 ```bash
 # Mallas y artefactos de referencia a la vez:
 Task: "T081-T082 meshing/marching_cubes_strategy.py"
-Task: "T083-T086 scripts/export_en2_weights.py + scripts/build_regression_reference.py"
+Task: "T083-T086 scripts/export_en2_weights.py + scripts/generate_regression_reference.py"
 
 # Migración de EN-1 y EN-2 a la vez (después de T086):
 Task: "T087-T092 reconstruction/en1_*.py + neural_en1_strategy.py"
