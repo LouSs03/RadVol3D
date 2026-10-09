@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from radvol3d.api.dependencies import get_processing_pipeline
+from radvol3d.api.dependencies import get_study_service
 from radvol3d.api.schemas.reconstruction_schema import ReconstructionResponse
-from radvol3d.services.processing_pipeline import ProcessingPipeline
+from radvol3d.services.study_service import StudyService
 
 router = APIRouter(prefix="/studies", tags=["reconstruccion"])
 
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/studies", tags=["reconstruccion"])
 )
 def reconstruct_study(
     study_code: str,
-    pipeline: Annotated[ProcessingPipeline, Depends(get_processing_pipeline)],
+    service: Annotated[StudyService, Depends(get_study_service)],
 ) -> ReconstructionResponse:
     """La capa 1 pide el resultado; no sabe como se calcula."""
     raise NotImplementedError("TODO")

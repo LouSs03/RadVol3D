@@ -1,7 +1,7 @@
 """Doble del bucket de Supabase Storage.
 
-Imita las tres operaciones de storage3 que usa ObjectStorage: upload, download y
-exists. Guarda los archivos en memoria, asi que ninguna prueba unitaria toca la
+Imita las operaciones de storage3 que usa ObjectStorage: upload, download, exists y
+remove. Guarda los archivos en memoria, asi que ninguna prueba unitaria toca la
 red ni un bucket real.
 """
 
@@ -60,6 +60,17 @@ class InMemoryBucket:
         self.events.append(f"exists:{path}")
         self._raise_if_failing("exists")
         return path in self.files
+
+    def remove(self, paths: list[str]) -> list[dict[str, str]]:
+        """Borra las rutas que existen e ignora las que no, como storage3."""
+        self.events.append(f"remove:{','.join(paths)}")
+        self._raise_if_failing("remove")
+        removed = []
+        for path in paths:
+            if self.files.pop(path, None) is not None:
+                self.content_types.pop(path, None)
+                removed.append({"name": path})
+        return removed
 
     def uploaded_paths(self) -> list[str]:
         """Rutas de los archivos que hay ahora en el bucket, en orden alfabetico."""

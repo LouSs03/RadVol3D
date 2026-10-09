@@ -9,6 +9,7 @@ from radvol3d.domain.entities import (
     Patient,
     PatientDetails,
     ProcessingStage,
+    SegmentationResult,
     StoredResult,
     Study,
 )
@@ -116,3 +117,29 @@ def test_stored_results_do_not_share_the_lesion_list() -> None:
     first.lesions.append(object())
 
     assert second.lesions == []
+
+
+@pytest.mark.unit
+def test_segmentation_result_still_builds_without_a_summary() -> None:
+    result = SegmentationResult(mask="mascara", probability="probabilidad", global_confidence=0.9)
+
+    assert result.summary == {}
+
+
+@pytest.mark.unit
+def test_segmentation_result_keeps_the_summary_it_receives() -> None:
+    summary = {"study_code": "it_a", "regions": []}
+
+    result = SegmentationResult(
+        mask="mascara", probability="probabilidad", global_confidence=0.9, summary=summary
+    )
+
+    assert result.summary == summary
+
+
+@pytest.mark.unit
+def test_segmentation_results_do_not_share_the_summary() -> None:
+    first = SegmentationResult(mask=None, probability=None, global_confidence=0.0)
+    second = SegmentationResult(mask=None, probability=None, global_confidence=0.0)
+
+    assert first.summary is not second.summary

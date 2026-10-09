@@ -8,6 +8,11 @@ version = "0.1.0"
 description = "Reconstruccion 3D de organos y deteccion de tumores desde radiografias"
 requires-python = ">=3.11"
 
+# PyTorch es opcional: solo lo necesitan los modelos reales (EN-1 y EN-2). El CI no lo
+# instala; los modulos que lo usan se importan de forma perezosa.
+[project.optional-dependencies]
+ml = ["torch>=2.6"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -37,6 +42,7 @@ markers = [
     "e2e: de punta a punta por HTTP, necesita el servicio levantado",
     "concurrency: varias peticiones a la vez",
     "architecture: limites entre capas",
+    "ml: necesita PyTorch y los pesos de los modelos; el CI la omite",
 ]
 
 [tool.coverage.run]

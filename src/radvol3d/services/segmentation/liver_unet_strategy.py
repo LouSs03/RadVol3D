@@ -12,7 +12,7 @@ class LiverUnetStrategy(SegmentationStrategy):
     def __init__(self, weights_path: str) -> None:
         self._weights_path = weights_path
 
-    def segment(self, volume: Any) -> SegmentationResult:
+    def segment(self, volume: Any, study_code: str) -> SegmentationResult:
         raise NotImplementedError("TODO: entrenar e integrar el modelo de higado")
 
     @property

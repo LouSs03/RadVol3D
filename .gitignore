@@ -23,6 +23,10 @@ data/
 *.nii
 *.nii.gz
 *.glb
+# Codigo y pesos originales de los modelos: copia local, migrada a services/
+models/
+# Cache local de pesos y referencias bajados del bucket de modelos
+.cache/
 
 # Editor y sistema operativo
 .vscode/

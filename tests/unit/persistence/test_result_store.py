@@ -1,8 +1,11 @@
 """Pruebas del almacen de resultados de segmentacion (FR-047 a FR-050, FR-049).
 
 La base y el bucket comparten una lista de eventos para comprobar el orden entre
-ellos: se valida y se comprueba el estudio ANTES de subir, y las etapas se marcan
-al final, dentro de la misma transaccion que las lesiones.
+ellos: se valida y se comprueba el estudio ANTES de subir, y las lesiones se
+insertan al final, en una sola transaccion.
+
+Desde la funcionalidad 002 (research.md R7), save_result ya no marca las etapas 3 y
+4 ni registra el modelo: eso lo hace la tuberia con ProcessingProgressStore.
 """
 
 import json
@@ -238,11 +241,12 @@ def test_a_region_without_diameter_is_accepted(world: World) -> None:
 
 
 @pytest.mark.unit
-def test_no_regions_means_no_lesion_rows_but_the_stages_still_complete(world: World) -> None:
+def test_no_regions_means_no_lesion_rows_but_the_five_files_are_uploaded(
+    world: World,
+) -> None:
     world.save(make_summary([]))
 
     assert not world.connection.params_of("insert into lesion")
-    assert len(world.connection.params_of("update processing_stage")) == 2
     assert sorted(world.uploaded()) == sorted(FILES)
 
 
@@ -373,25 +377,29 @@ def test_the_order_is_check_then_upload_then_write_and_commit_last(world: World)
     first_upload = index_of(events, "upload:")
     last_upload = max(i for i, e in enumerate(events) if e.startswith("upload:"))
     lesion_insert = index_of(events, "insert into lesion")
-    stage_update = index_of(events, "update processing_stage")
-    assert -1 not in (lookup, first_upload, lesion_insert, stage_update)
+    assert -1 not in (lookup, first_upload, lesion_insert)
     assert lookup < events.index("db:commit") < first_upload
-    assert last_upload < lesion_insert < stage_update
+    assert last_upload < lesion_insert
     assert events[-1] == "db:commit"
     assert "db:rollback" not in events
 
 
 @pytest.mark.unit
-def test_the_segmentation_model_is_registered_and_attached_to_stage_three(world: World) -> None:
+def test_save_result_never_touches_the_stages_or_the_model_table(world: World) -> None:
+    # research.md R7: si save_result marcara la etapa 3, pisaria su hora de fin con la
+    # del fin de la etapa 4. Las etapas las cierra la tuberia.
     world.save()
 
-    assert world.connection.params_of("insert into model") == [
-        ("segmentation_lung", "1.0.0", None, None)
-    ]
-    assert world.connection.params_of("update processing_stage") == [
-        ("completed", CODE, 3, "segmentation_lung", "1.0.0"),
-        ("completed", CODE, 4),
-    ]
+    statements = world.connection.statements()
+    assert not any("processing_stage" in s and s.startswith("update") for s in statements)
+    assert not any(s.startswith("insert into model") for s in statements)
+
+
+@pytest.mark.unit
+def test_lesions_are_written_in_one_transaction_after_the_check(world: World) -> None:
+    world.save()
+
+    assert world.database.committed == 2  # la comprobacion previa y las lesiones
 
 
 @pytest.mark.unit

@@ -80,6 +80,31 @@ class StudyRepository:
         ).fetchall()
         return [self._to_entity(row) for row in rows]
 
+    def lock_status(self, study_code: str) -> StudyStatus:
+        """Bloquea la fila del estudio hasta el fin de la transaccion y devuelve su estado.
+
+        Con el bloqueo, nadie puede pasar el estudio a processing entre la comprobacion
+        y el borrado.
+        """
+        validate_study_code(study_code)
+        row = execute_translated(
+            self._connection,
+            "select status from study where study_code = %s for update",
+            (study_code,),
+        ).fetchone()
+        if row is None:
+            raise StudyNotFoundError(f"No existe el estudio '{study_code}'.")
+        return StudyStatus(row["status"])
+
+    def delete(self, study_code: str) -> None:
+        """Borra el estudio. Sus proyecciones, etapas y lesiones caen en cascada."""
+        validate_study_code(study_code)
+        cursor = execute_translated(
+            self._connection, "delete from study where study_code = %s", (study_code,)
+        )
+        if cursor.rowcount == 0:
+            raise StudyNotFoundError(f"No existe el estudio '{study_code}'.")
+
     def update_status(self, study_code: str, status: StudyStatus | str) -> None:
         """Cambia el estado del estudio.
 

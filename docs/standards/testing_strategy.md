@@ -1,14 +1,15 @@
 # Estrategia de pruebas
 
-Cinco carpetas, cada una responde una pregunta distinta.
+Seis carpetas, cada una responde una pregunta distinta.
 
 | Carpeta | Que pregunta responde | Marca | Necesita |
 |---|---|---|---|
 | `unit/` | esta pieza, sola, hace lo suyo? | `unit` | nada externo |
 | `integration/` | dos capas reales se entienden? | `integration` | Supabase de prueba |
 | `e2e/` | el sistema completo funciona por HTTP? | `e2e` | servicio levantado |
-| `concurrency/` | aguanta varias peticiones a la vez? | `concurrency` | servicio levantado |
+| `concurrency/` | aguanta varias peticiones a la vez? | `concurrency` | Supabase de prueba |
 | `architecture/` | alguien se salto una capa? | `architecture` | nada |
+| `ml/` | los modelos reales dan la misma salida que los originales? | `ml` | torch y pesos |
 
 ## Las pruebas de caja negra
 
@@ -32,4 +33,5 @@ pytest                       # todas
 pytest -m unit               # solo unitarias
 pytest -m architecture       # limites entre capas
 pytest -m "unit or architecture"   # lo que se corre antes de cada commit
+pytest -m "not ml"          # todo menos los modelos reales (sin PyTorch)
 ```

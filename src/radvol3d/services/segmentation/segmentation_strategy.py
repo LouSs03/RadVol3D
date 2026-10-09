@@ -14,10 +14,14 @@ class SegmentationStrategy(ABC):
     """Segmenta el tumor sobre un volumen reconstruido."""
 
     @abstractmethod
-    def segment(self, volume: Any) -> SegmentationResult:
-        """Recibe (N, N, N) float32 en [0,1] y devuelve mascara, confianza y lesiones.
+    def segment(self, volume: Any, study_code: str) -> SegmentationResult:
+        """Recibe (N, N, N) float32 en [0, 1] y devuelve mascara, confianza y resumen.
 
-        La confianza por voxel va en el campo probability, en rango [0, 1].
+        - mask: uint8 en {0, 1}.
+        - probability: float32 en [0, 1], misma forma que mask.
+        - summary: resumen por region con las claves de models/ejemplo_resumen.json;
+          lleva study_code, el organo del dominio y el nombre y la version del modelo.
+        - lesions: una Lesion por cada region del resumen.
         """
 
     @property

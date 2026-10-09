@@ -280,3 +280,144 @@ def test_from_settings_does_not_lower_a_stricter_level(
     ObjectStorage.from_settings(_settings_with_a_service_key())
 
     assert logging.getLogger("hpack").level == logging.ERROR
+
+
+# --- remove_many (funcionalidad 002, borrado de estudios) ---
+
+
+@pytest.mark.unit
+def test_remove_many_deletes_every_path_in_a_single_call(
+    storage: ObjectStorage, bucket: InMemoryBucket
+) -> None:
+    for name in ("a.npy", "b.npy", "c.npy"):
+        storage.upload_bytes(f"it_x/{name}", b"x", "application/octet-stream")
+
+    storage.remove_many(["it_x/a.npy", "it_x/b.npy"])
+
+    assert bucket.uploaded_paths() == ["it_x/c.npy"]
+    assert [e for e in bucket.events if e.startswith("remove:")] == [
+        "remove:it_x/a.npy,it_x/b.npy"
+    ]
+
+
+@pytest.mark.unit
+def test_removing_a_missing_path_is_not_an_error(
+    storage: ObjectStorage, bucket: InMemoryBucket
+) -> None:
+    storage.remove_many(["it_x/no_existe.npy"])
+
+    assert bucket.files == {}
+
+
+@pytest.mark.unit
+def test_removing_nothing_does_not_call_the_bucket(
+    storage: ObjectStorage, bucket: InMemoryBucket
+) -> None:
+    storage.remove_many([])
+
+    assert bucket.events == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "error", [StorageException("permiso denegado sk-123"), httpx.ConnectError("sin red")]
+)
+def test_a_failed_remove_raises_a_storage_error_without_the_original_text(
+    storage: ObjectStorage, bucket: InMemoryBucket, error: Exception
+) -> None:
+    bucket.fail_next("remove", error)
+
+    with pytest.raises(StorageError) as caught:
+        storage.remove_many(["it_x/a.npy"])
+
+    assert "sk-123" not in str(caught.value)
+    assert "sin red" not in str(caught.value)
+    assert caught.value.__cause__ is None
+
+
+# --- from_settings con otro bucket (bucket de modelos) ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("bucket_name", "expected"), [("modelos-x", "modelos-x"), (None, "bucket-de-prueba")])
+def test_from_settings_can_open_another_bucket(
+    monkeypatch: pytest.MonkeyPatch, bucket_name: str | None, expected: str
+) -> None:
+    opened: list[str] = []
+
+    class FakeStorageClient:
+        def from_(self, name: str) -> InMemoryBucket:
+            opened.append(name)
+            return InMemoryBucket()
+
+    monkeypatch.setattr(
+        object_storage_module,
+        "create_client",
+        lambda url, key: SimpleNamespace(storage=FakeStorageClient()),
+    )
+
+    ObjectStorage.from_settings(_settings_with_a_service_key(), bucket=bucket_name)
+
+    assert opened == [expected]
+
+
+# --- Concurrencia (funcionalidad 002, FR-020) ---
+# El cliente HTTP de Supabase no admite dos peticiones a la vez desde hilos distintos:
+# con dos estudios en paralelo, la subida fallaba con httpx.ReadError (WinError 10035).
+
+
+class OverlapDetectingBucket(InMemoryBucket):
+    """Bucket que se demora en cada llamada y anota si dos llamadas se solaparon."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.active = 0
+        self.max_active = 0
+        self._counter = __import__("threading").Lock()
+
+    def _enter(self) -> None:
+        import time
+
+        with self._counter:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        time.sleep(0.01)
+        with self._counter:
+            self.active -= 1
+
+    def upload(self, path, file, file_options=None):
+        self._enter()
+        return super().upload(path, file, file_options)
+
+    def download(self, path):
+        self._enter()
+        return super().download(path)
+
+    def exists(self, path):
+        self._enter()
+        return super().exists(path)
+
+    def remove(self, paths):
+        self._enter()
+        return super().remove(paths)
+
+
+@pytest.mark.unit
+def test_calls_from_several_threads_never_reach_the_bucket_at_the_same_time() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    bucket = OverlapDetectingBucket()
+    storage = ObjectStorage(bucket)
+
+    def work(n: int) -> None:
+        path = f"it_x/{n}.bin"
+        storage.upload_bytes(path, b"x", "application/octet-stream")
+        storage.exists(path)
+        storage.download_bytes(path)
+        storage.remove_many([path])
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(work, range(12)))
+
+    assert bucket.max_active == 1
+    assert bucket.files == {}

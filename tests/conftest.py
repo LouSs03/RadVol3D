@@ -4,12 +4,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from radvol3d.main import create_app
+from tests.fixtures.fake_container import FakeServiceContainer
 
 
 @pytest.fixture
 def app():
-    """Una aplicacion nueva por prueba, sin estado compartido."""
-    return create_app()
+    """Una aplicacion nueva por prueba, sin estado compartido.
+
+    Usa un contenedor de servicios falso: el lifespan no abre la base ni baja pesos,
+    asi que estas pruebas no necesitan .env.
+    """
+    return create_app(container_builder=FakeServiceContainer)
 
 
 @pytest.fixture
