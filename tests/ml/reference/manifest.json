@@ -1,0 +1,124 @@
+{
+  "generated_on": "2026-10-09T18:09:53+00:00",
+  "generator": "scripts/generate_regression_reference.py",
+  "sources": {
+    "en1": "en1_inferencia_nuevo (1).py",
+    "en2": "en2_inferencia.py"
+  },
+  "weights": {
+    "en1": {
+      "file": "en1_pesos_liviano (2).pth",
+      "sha256": "a42fc3ad599b090b77509216720d3ba919262325ea2613fcc7c040ce431a607a"
+    },
+    "en2": {
+      "file": "weights.pth",
+      "sha256": "f7c2ce82eab160bbd5df1713c2f348a4bf90311cf9e62f2d4c093fef68b08954"
+    }
+  },
+  "environment": {
+    "torch": "2.14.1+cpu",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "python": "3.13.13",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "device": "cpu"
+  },
+  "tolerance": {
+    "mask": "exact",
+    "volume_abs": 1e-05,
+    "probability_abs": 1e-05
+  },
+  "cases": [
+    {
+      "name": "en1_phantom",
+      "input": {
+        "recipe": "proyectar(fantoma_elipsoide()) con sus valores por omision",
+        "object": "regression/en1_phantom_projections.npy",
+        "sha256": "830cbdd62d48161a206d84118c94b6601ce744951cbd0dc6c3786a74b54e043f",
+        "shape": [
+          4,
+          128,
+          128
+        ],
+        "dtype": "float32"
+      },
+      "outputs": [
+        {
+          "object": "regression/en1_phantom_volume.npy",
+          "sha256": "61ec2f28b26129f398edd58a581e8ddfdfffc27ff57e846ea31b12407b0c04e2",
+          "shape": [
+            128,
+            128,
+            128
+          ],
+          "dtype": "float32"
+        }
+      ]
+    },
+    {
+      "name": "en2_gaussian",
+      "input": {
+        "recipe": "volumen gaussiano de la autoprueba de en2_inferencia.py"
+      },
+      "outputs": [
+        {
+          "object": "regression/en2_gaussian_mask.npy",
+          "sha256": "4a0e2fbb94c3adb87ce0d6c9905ef16730da5eeb987b5eb7f09903600dd9dd6b",
+          "shape": [
+            128,
+            128,
+            128
+          ],
+          "dtype": "uint8"
+        },
+        {
+          "object": "regression/en2_gaussian_probability.npy",
+          "sha256": "07610e9d30da4cdf6c723d7fe00f4b4255dba287e25f117e852f58f598d009e8",
+          "shape": [
+            128,
+            128,
+            128
+          ],
+          "dtype": "float32"
+        },
+        {
+          "object": "regression/en2_gaussian_summary.json",
+          "sha256": "4b700ac349524a60d71698c01fce4703a22674fc60cc2e59c5746f6d6bc34776"
+        }
+      ]
+    },
+    {
+      "name": "en2_from_en1",
+      "input": {
+        "recipe": "salida del caso en1_phantom",
+        "object": "regression/en1_phantom_volume.npy"
+      },
+      "outputs": [
+        {
+          "object": "regression/en2_from_en1_mask.npy",
+          "sha256": "256a23ac2301847b2740a8e30b7af603429b3c83af3c96f6013508aae6975ea9",
+          "shape": [
+            128,
+            128,
+            128
+          ],
+          "dtype": "uint8"
+        },
+        {
+          "object": "regression/en2_from_en1_probability.npy",
+          "sha256": "e3b035fb301283b5271291c2b5c7b239f2c691cbe03acf9a37f7431336ae24ec",
+          "shape": [
+            128,
+            128,
+            128
+          ],
+          "dtype": "float32"
+        },
+        {
+          "object": "regression/en2_from_en1_summary.json",
+          "sha256": "8a4f1e4923c1492ddc0cec0bbcd8da4b6c649f78ace33c84b6c8443c16b52614"
+        }
+      ]
+    }
+  ]
+}
