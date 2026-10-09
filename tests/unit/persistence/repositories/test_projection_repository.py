@@ -122,11 +122,13 @@ def test_list_by_study_rejects_an_invalid_study_code() -> None:
 
 
 @pytest.mark.unit
-def test_count_by_study_returns_how_many_projections_the_study_has() -> None:
-    connection = FakeConnection([STUDY_LOOKUP, [{"projection_count": 3}]])
+def test_count_by_study_returns_how_many_projections_the_study_has_in_one_query() -> None:
+    connection = FakeConnection([[{"projection_count": 3}]])
 
     assert ProjectionRepository(connection).count_by_study("it_a") == 3
-    assert connection.params_of("count(*)") == [(7,)]
+    # Una sola consulta: cada ida a la base cuesta (research.md R4 de 004, SC-002).
+    assert len(connection.calls) == 1
+    assert connection.params_of("projection_count") == [("it_a",)]
 
 
 @pytest.mark.unit

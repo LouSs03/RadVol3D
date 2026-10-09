@@ -43,9 +43,13 @@ def add_projections(study_code: str, projections: list[ProjectionUpload]) -> Stu
     # (InvalidStudyStateError); valida los cuatro ángulos; sube y registra.
     # Si algo falla, nada queda registrado.
 
-def claim_for_processing(study_code: str) -> None
-    # Una transacción: lock_status; exige pending y cuatro proyecciones; pasa a processing.
-    # InvalidStudyStateError, StudyNotFoundError
+def claim_for_processing(
+    study_code: str, check_organ: Callable[[OrganName], object] | None = None
+) -> None
+    # Una transacción: lock_for_claim (estado y órgano, con la fila bloqueada); exige
+    # pending y cuatro proyecciones; llama a check_organ(órgano); pasa a processing.
+    # Si check_organ lanza, se revierte y el estudio sigue en pending.
+    # InvalidStudyStateError, StudyNotFoundError, lo que lance check_organ
 
 def load_projections(study_code: str) -> dict[int, np.ndarray]
     # Baja los cuatro .npy del bucket. StorageObjectNotFoundError, StorageError

@@ -54,6 +54,8 @@ def test_a_completed_study_is_deleted_with_all_its_files_and_the_patient_stays(
     )
     created_patient_codes.append(study.patient.patient_code)
     assert all(object_storage.exists(p) for p in study_paths(code))
+    # Funcionalidad 004: tambien la malla de cada lesion.
+    assert object_storage.exists(f"{code}/meshes/lesion_001.glb")
     assert code in [s.study_code for s in service.list_studies()]
 
     service.delete_study(code)
@@ -61,6 +63,8 @@ def test_a_completed_study_is_deleted_with_all_its_files_and_the_patient_stays(
     with pytest.raises(StudyNotFoundError):
         service.get_study(code)
     assert not any(object_storage.exists(p) for p in study_paths(code))
+    for folder in (code, f"{code}/projections", f"{code}/segmentation", f"{code}/meshes"):
+        assert object_storage.list_names(folder) == [], folder
     assert code not in [s.study_code for s in service.list_studies()]
     with database.transaction() as connection:
         kept = PatientRepository(connection).get_by_code(study.patient.patient_code)

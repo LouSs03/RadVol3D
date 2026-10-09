@@ -23,11 +23,16 @@ register_study es create_study + add_projections en una sola transaccion.
 
 Orden de delete_study (research.md R8 de la funcionalidad 002): todo dentro de una
 transaccion. Se bloquea la fila del estudio, se comprueba que no se este procesando,
-se borra la fila (lo demas cae en cascada) y despues se borran sus diez archivos del
-bucket. Si el bucket falla, la transaccion se revierte: el estudio sigue en pie y el
-borrado se puede reintentar.
+se borra la fila (lo demas cae en cascada) y despues se borran sus archivos del
+bucket: las diez rutas fijas mas las mallas de lesion (lesion_<NNN>.glb) que haya en
+<study_code>/meshes. Esas se listan en el bucket y no se leen de las filas de lesion,
+para limpiar tambien las de un guardado que fallo antes de insertarlas (research.md
+R12 de 004). Si el bucket falla, la transaccion se revierte: el estudio sigue en pie
+y el borrado se puede reintentar.
 """
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -65,6 +70,9 @@ from radvol3d.persistence.storage_layout import (
     validate_study_code,
     volume_path,
 )
+
+# Nombre de las mallas de lesion (storage_layout.lesion_mesh_path).
+LESION_MESH_NAME = re.compile(r"lesion_[0-9]{3,}\.glb")
 
 
 @dataclass(frozen=True, eq=False)
@@ -145,16 +153,25 @@ class StudyMetadataStore:
             self._store_projections(connection, study_code, uploads)
             return self._load(connection, study_code)
 
-    def claim_for_processing(self, study_code: str) -> None:
+    def claim_for_processing(
+        self,
+        study_code: str,
+        check_organ: Callable[[OrganName], object] | None = None,
+    ) -> None:
         """Pasa a processing un estudio en pending con sus cuatro proyecciones.
 
         Lanza InvalidStudyStateError si no cumple. El bloqueo de la fila hace que, de
         dos pedidos simultaneos, solo uno reclame el estudio.
+
+        check_organ recibe el organo del estudio dentro de la transaccion, antes de
+        cambiar el estado: si lanza (por ejemplo, ModelNotAvailableError), la
+        transaccion se revierte y el estudio sigue en pending. Asi la comprobacion del
+        modelo no cuesta una lectura aparte del estudio.
         """
         validate_study_code(study_code)
         with self._database.transaction() as connection:
             studies = StudyRepository(connection)
-            status = studies.lock_status(study_code)
+            status, organ = studies.lock_for_claim(study_code)
             if status is not StudyStatus.PENDING:
                 raise InvalidStudyStateError(
                     f"El estudio '{study_code}' esta en {status.value}: solo se procesa un "
@@ -167,6 +184,8 @@ class StudyMetadataStore:
                     f"El estudio '{study_code}' tiene {count} de {expected} proyecciones: "
                     "sube las cuatro antes de procesarlo."
                 )
+            if check_organ is not None:
+                check_organ(organ)
             studies.update_status(study_code, StudyStatus.PROCESSING)
 
     def load_projections(self, study_code: str) -> dict[int, np.ndarray]:
@@ -213,7 +232,9 @@ class StudyMetadataStore:
                     f"El estudio '{study_code}' se esta procesando y no se puede borrar."
                 )
             studies.delete(study_code)
-            self._storage.remove_many(self._study_files(study_code))
+            self._storage.remove_many(
+                self._study_files(study_code) + self._lesion_mesh_files(study_code)
+            )
 
     def list_studies(self) -> list[Study]:
         """Devuelve los estudios del mas reciente al mas antiguo, sin datos anidados."""
@@ -259,9 +280,18 @@ class StudyMetadataStore:
             )
         return [(u, projection_path(study_code, u.angle_degrees)) for u in projections]
 
+    def _lesion_mesh_files(self, study_code: str) -> list[str]:
+        """Las mallas de lesion que hay en el bucket para el estudio."""
+        folder = f"{study_code}/meshes"
+        return [
+            f"{folder}/{name}"
+            for name in self._storage.list_names(folder)
+            if LESION_MESH_NAME.fullmatch(name)
+        ]
+
     @staticmethod
     def _study_files(study_code: str) -> list[str]:
-        """Las diez rutas que puede tener un estudio en el bucket."""
+        """Las diez rutas fijas que puede tener un estudio en el bucket."""
         return [projection_path(study_code, a) for a in config.PROJECTION_ANGLES] + [
             volume_path(study_code),
             mask_path(study_code),

@@ -92,7 +92,7 @@ def test_two_simultaneous_claims_only_one_wins(
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = sorted(pool.map(lambda _: claim(), range(2)))
 
-    assert results == ["reclamado", "rechazado"]
+    assert results == ["rechazado", "reclamado"]  # uno de cada uno, en orden alfabetico
 
 
 def test_an_interrupted_study_fails_from_its_running_stage(

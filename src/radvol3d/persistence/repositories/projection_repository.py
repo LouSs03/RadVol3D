@@ -7,7 +7,7 @@ original del archivo. Nunca guarda la imagen.
 from typing import Any
 
 from radvol3d.domain.entities import Projection
-from radvol3d.domain.exceptions import InvalidProjectionError
+from radvol3d.domain.exceptions import InvalidProjectionError, StudyNotFoundError
 from radvol3d.persistence.database_errors import execute_translated
 from radvol3d.persistence.repositories.study_repository import find_study_id
 from radvol3d.persistence.storage_layout import validate_projection_angle, validate_study_code
@@ -46,14 +46,22 @@ class ProjectionRepository:
             )
 
     def count_by_study(self, study_code: str) -> int:
-        """Cuantas proyecciones tiene registradas el estudio (0 a 4)."""
-        study_id = find_study_id(self._connection, study_code)
+        """Cuantas proyecciones tiene registradas el estudio (0 a 4).
+
+        Una sola consulta: esta en el camino de POST /process, y cada ida a la base
+        cuenta para que responda en menos de un segundo (SC-002 de 004).
+        """
+        validate_study_code(study_code)
         row = execute_translated(
             self._connection,
-            "select count(*) as projection_count from projection where study_id = %s",
-            (study_id,),
+            "select count(p.projection_id) as projection_count "
+            "from study s left join projection p on p.study_id = s.study_id "
+            "where s.study_code = %s group by s.study_id",
+            (study_code,),
         ).fetchone()
-        return int(row["projection_count"]) if row else 0
+        if row is None:
+            raise StudyNotFoundError(f"No existe el estudio '{study_code}'.")
+        return int(row["projection_count"])
 
     def list_by_study(self, study_code: str) -> list[Projection]:
         """Devuelve las proyecciones del estudio ordenadas por angulo."""

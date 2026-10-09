@@ -333,22 +333,25 @@ def test_add_projections_with_an_invalid_file_touches_nothing(harness: Harness) 
 
 
 @pytest.mark.unit
-def test_start_processing_checks_the_model_then_claims_the_study(harness: Harness) -> None:
-    harness.metadata.get_study.side_effect = [pending_study(), harness.finished_study]
-
+def test_start_processing_claims_the_study_with_the_model_check(harness: Harness) -> None:
     harness.service.start_processing(CODE)
 
-    harness.metadata.claim_for_processing.assert_called_once_with(CODE)
+    code, check = harness.metadata.claim_for_processing.call_args.args
+    assert code == CODE
+    check(OrganName.LUNG)  # hay modelo: no lanza
+    with pytest.raises(ModelNotAvailableError):
+        check(OrganName.LIVER)
+    # No vuelve a leer el estudio: cada ida a la base cuesta (SC-002).
+    harness.metadata.get_study.assert_not_called()
 
 
 @pytest.mark.unit
-def test_start_processing_without_a_model_does_not_claim_the_study(harness: Harness) -> None:
-    harness.metadata.get_study.return_value = pending_study(OrganName.LIVER)
+def test_start_processing_without_a_model_propagates_the_error(harness: Harness) -> None:
+    # La persistencia lanza el error del chequeo dentro de la transaccion y la revierte.
+    harness.metadata.claim_for_processing.side_effect = ModelNotAvailableError("sin modelo")
 
     with pytest.raises(ModelNotAvailableError):
         harness.service.start_processing(CODE)
-
-    harness.metadata.claim_for_processing.assert_not_called()
 
 
 @pytest.mark.unit

@@ -34,6 +34,10 @@ CONTENT_TYPE_MESH = "model/gltf-binary"
 
 _STORAGE_ERRORS = (StorageException, httpx.HTTPError)
 
+# Cuantas entradas pide list_names de una vez. Supabase devuelve 100 si no se indica;
+# una carpeta de mallas tiene el organo, el tumor y una por lesion.
+_LIST_LIMIT = 1000
+
 # Librerias que, con el registro en DEBUG, escriben las cabeceras de cada peticion. hpack
 # (compresion de cabeceras de HTTP/2) registra "apikey" con la clave de servicio.
 _LOGGERS_THAT_WRITE_HEADERS = ("hpack",)
@@ -103,6 +107,21 @@ class ObjectStorage:
             raise StorageError(
                 f"No se pudo comprobar si existe el archivo '{path}' en el almacenamiento."
             ) from None
+
+    def list_names(self, folder: str) -> list[str]:
+        """Nombres de los archivos que estan directamente en la carpeta, en orden.
+
+        No incluye subcarpetas (storage3 las devuelve sin id). Una carpeta que no
+        existe da una lista vacia.
+        """
+        try:
+            with self._lock:
+                entries = self._bucket.list(folder, {"limit": _LIST_LIMIT})
+        except _STORAGE_ERRORS:
+            raise StorageError(
+                f"No se pudo listar la carpeta '{folder}' del almacenamiento."
+            ) from None
+        return sorted(entry["name"] for entry in entries if entry.get("id") is not None)
 
     def remove_many(self, paths: Sequence[str]) -> None:
         """Borra los archivos en una sola llamada. Una ruta que no existe no es error."""

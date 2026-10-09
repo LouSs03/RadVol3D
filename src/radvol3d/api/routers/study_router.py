@@ -117,6 +117,22 @@ def read_status(
     return status_response(service.get_study(study_code))
 
 
+@router.delete(
+    "/{study_code}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="Borrar un estudio",
+    responses=ERRORS,
+)
+def delete_study(
+    study_code: str,
+    service: Annotated[StudyService, Depends(get_study_service)],
+) -> Response:
+    """Borra el estudio con sus filas y todos sus archivos. El paciente se conserva."""
+    service.delete_study(study_code)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/{study_code}/process",
     response_model=ProcessingAccepted,

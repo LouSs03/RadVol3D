@@ -575,12 +575,16 @@ def test_an_invalid_code_is_rejected_before_opening_the_transaction() -> None:
 # ---------------------------------------------------------------------------
 
 
-def lock_returns(world: World, status: str) -> None:
-    world.connection.when("for update", [{"status": status}])
+def lock_returns(world: World, status: str, organ: str = "lung") -> None:
+    # Primera regla: la consulta del bloqueo tambien contiene "from study s join organ",
+    # que World ya responde con el estudio completo.
+    world.connection.rules.insert(
+        0, ("for update", [{"status": status, "organ_name": organ}], False)
+    )
 
 
 def projection_count_is(world: World, count: int) -> None:
-    world.connection.when("count(*)", [{"projection_count": count}])
+    world.connection.when("projection_count", [{"projection_count": count}])
 
 
 @pytest.mark.unit
@@ -668,6 +672,37 @@ def test_claim_for_processing_moves_a_ready_study_to_processing_under_the_lock(
     assert index_of(world.events, "for update") < index_of(world.events, "update study set status")
     assert world.connection.params_of("update study set status") == [("processing", CODE)]
     assert world.database.committed == 1
+    # Bloqueo con organo, conteo y cambio de estado: tres consultas (SC-002).
+    assert len(world.connection.calls) == 3
+
+
+@pytest.mark.unit
+def test_claim_for_processing_checks_the_organ_inside_the_transaction(world: World) -> None:
+    lock_returns(world, "pending", organ="liver")
+    projection_count_is(world, 4)
+    seen: list[OrganName] = []
+
+    world.store.claim_for_processing(CODE, seen.append)
+
+    assert seen == [OrganName.LIVER]
+    assert world.connection.params_of("update study set status") == [("processing", CODE)]
+
+
+@pytest.mark.unit
+def test_a_failing_organ_check_leaves_the_study_pending(world: World) -> None:
+    from radvol3d.domain.exceptions import ModelNotAvailableError
+
+    lock_returns(world, "pending", organ="liver")
+    projection_count_is(world, 4)
+
+    def no_model(organ: OrganName) -> None:
+        raise ModelNotAvailableError("No hay modelo de segmentacion de higado todavia.")
+
+    with pytest.raises(ModelNotAvailableError):
+        world.store.claim_for_processing(CODE, no_model)
+
+    assert world.connection.params_of("update study set status") == []
+    assert world.database.rolled_back == 1
 
 
 @pytest.mark.unit
@@ -721,3 +756,31 @@ def test_load_projections_returns_the_four_arrays_by_angle(world: World) -> None
     for angle in ANGLES:
         assert loaded[angle].dtype == np.float32
         assert float(loaded[angle][0, 0]) == angle
+
+
+@pytest.mark.unit
+def test_delete_also_removes_the_mesh_of_each_lesion() -> None:
+    world = DeleteWorld()
+    lesion_meshes = [f"{CODE}/meshes/lesion_001.glb", f"{CODE}/meshes/lesion_002.glb"]
+    for path in lesion_meshes:
+        world.bucket.files[path] = b"glTF"
+    world.bucket.files["it_otro/meshes/lesion_001.glb"] = b"glTF"
+
+    world.store.delete_study(CODE)
+
+    removes = [e for e in world.events if e.startswith("remove:")]
+    assert removes == [f"remove:{','.join([*STUDY_FILES, *lesion_meshes])}"]
+    assert world.bucket.uploaded_paths() == ["it_otro/meshes/lesion_001.glb", "it_otro/volume.npy"]
+
+
+@pytest.mark.unit
+def test_a_study_in_processing_keeps_its_lesion_meshes() -> None:
+    from radvol3d.domain.exceptions import StudyInProgressError
+
+    world = DeleteWorld("processing")
+    world.bucket.files[f"{CODE}/meshes/lesion_001.glb"] = b"glTF"
+
+    with pytest.raises(StudyInProgressError):
+        world.store.delete_study(CODE)
+
+    assert f"{CODE}/meshes/lesion_001.glb" in world.bucket.files

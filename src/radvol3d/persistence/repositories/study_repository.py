@@ -106,6 +106,24 @@ class StudyRepository:
             raise StudyNotFoundError(f"No existe el estudio '{study_code}'.")
         return StudyStatus(row["status"])
 
+    def lock_for_claim(self, study_code: str) -> tuple[StudyStatus, OrganName]:
+        """Como lock_status, y ademas el organo, en la misma consulta.
+
+        La usa claim_for_processing: el organo hace falta para comprobar que haya
+        modelo antes de reclamar el estudio, y traerlo aqui ahorra una ida a la base.
+        """
+        validate_study_code(study_code)
+        row = execute_translated(
+            self._connection,
+            "select s.status, o.name as organ_name from study s "
+            "join organ o on o.organ_id = s.organ_id "
+            "where s.study_code = %s for update of s",
+            (study_code,),
+        ).fetchone()
+        if row is None:
+            raise StudyNotFoundError(f"No existe el estudio '{study_code}'.")
+        return StudyStatus(row["status"]), OrganName(row["organ_name"])
+
     def delete(self, study_code: str) -> None:
         """Borra el estudio. Sus proyecciones, etapas y lesiones caen en cascada."""
         validate_study_code(study_code)

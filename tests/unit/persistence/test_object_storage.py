@@ -421,3 +421,41 @@ def test_calls_from_several_threads_never_reach_the_bucket_at_the_same_time() ->
 
     assert bucket.max_active == 1
     assert bucket.files == {}
+
+
+# --- list_names (funcionalidad 004, research.md R12) ---
+
+
+@pytest.mark.unit
+def test_list_names_returns_only_the_files_directly_in_the_folder(
+    bucket: InMemoryBucket, storage: ObjectStorage
+) -> None:
+    for path in (
+        "it_a/meshes/organ.glb",
+        "it_a/meshes/lesion_001.glb",
+        "it_a/meshes/lesion_002.glb",
+        "it_a/volume.npy",
+        "it_a/segmentation/mask.npy",
+        "it_ab/meshes/lesion_001.glb",
+    ):
+        bucket.files[path] = b"x"
+
+    assert storage.list_names("it_a/meshes") == ["lesion_001.glb", "lesion_002.glb", "organ.glb"]
+    assert storage.list_names("it_a") == ["volume.npy"]
+
+
+@pytest.mark.unit
+def test_an_empty_or_missing_folder_has_no_names(storage: ObjectStorage) -> None:
+    assert storage.list_names("it_no_existe/meshes") == []
+
+
+@pytest.mark.unit
+def test_a_failing_list_is_a_storage_error_without_the_key(
+    bucket: InMemoryBucket, storage: ObjectStorage
+) -> None:
+    bucket.fail_next("list", StorageException("fallo con una-clave-secreta"))
+
+    with pytest.raises(StorageError) as raised:
+        storage.list_names("it_a/meshes")
+
+    assert "una-clave-secreta" not in str(raised.value)

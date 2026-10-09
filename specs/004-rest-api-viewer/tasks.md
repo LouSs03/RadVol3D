@@ -183,7 +183,7 @@ consultar el estado funciona por HTTP.
   - arma un `ProjectionFile(angle, content, upload.filename)` por archivo;
   - llama a `service.add_projections`.
 - [X] T026 [US1] Montar `study_router` y `projection_router` en `src/radvol3d/main.py`, antes del montaje de `StaticFiles`.
-- [ ] T027 [US1] Crear `tests/integration/persistence/test_study_lifecycle_integration.py` (marcador `integration`, Supabase de prueba, prefijo `it_`) y probar:
+- [X] T027 [US1] Crear `tests/integration/persistence/test_study_lifecycle_integration.py` (marcador `integration`, Supabase de prueba, prefijo `it_`) y probar:
   - `create_study` → `add_projections` → `claim_for_processing` deja el estudio en `processing`;
   - una segunda `add_projections` lanza `InvalidStudyStateError`;
   - dos `claim_for_processing` en dos hilos a la vez: exactamente uno tiene éxito y el otro lanza `InvalidStudyStateError`;
@@ -380,22 +380,22 @@ el código del estudio.
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T063 [P] [US4] En `tests/unit/persistence/test_object_storage.py`, probar `list_names(folder)` sobre `InMemoryBucket`:
+- [X] T063 [P] [US4] En `tests/unit/persistence/test_object_storage.py`, probar `list_names(folder)` sobre `InMemoryBucket`:
   - devuelve solo los nombres de los archivos que están directamente en la carpeta;
   - una carpeta vacía o inexistente da `[]`;
   - una falla del bucket da `StorageError`, sin la clave en el mensaje.
-- [ ] T064 [P] [US4] En `tests/unit/persistence/test_study_metadata_store.py`, probar que `delete_study`:
+- [X] T064 [P] [US4] En `tests/unit/persistence/test_study_metadata_store.py`, probar que `delete_study`:
   - borra las diez rutas fijas más `lesion_001.glb` y `lesion_002.glb` presentes en `<code>/meshes/`;
   - no borra archivos de otro estudio;
   - deja todo intacto, con `StudyInProgressError`, si el estudio está en `processing`.
-- [ ] T065 [P] [US4] En `tests/unit/api/test_study_router.py`, probar `DELETE /studies/{code}`: responde 204 sin cuerpo; 409 si el servicio lanza `StudyInProgressError`; 404 si lanza `StudyNotFoundError`.
+- [X] T065 [P] [US4] En `tests/unit/api/test_study_router.py`, probar `DELETE /studies/{code}`: responde 204 sin cuerpo; 409 si el servicio lanza `StudyInProgressError`; 404 si lanza `StudyNotFoundError`.
 
 ### Implementation for User Story 4
 
-- [ ] T066 [US4] Agregar `list(path)` a `InMemoryBucket` en `tests/fixtures/fake_object_storage.py`, con la misma forma que el `list` de storage3: entradas `{"name": ...}`. Implementar `ObjectStorage.list_names(folder)` en `src/radvol3d/persistence/object_storage.py` (pasa T063).
-- [ ] T067 [US4] En `src/radvol3d/persistence/study_metadata_store.py`, hacer que `delete_study` borre también los `lesion_*.glb` que liste `list_names(f"{code}/meshes")`, dentro de la misma transacción. Actualizar el docstring del módulo: ya no son "sus diez archivos" (pasa T064). Depende de T066.
-- [ ] T068 [US4] Agregar `DELETE /studies/{study_code}` (204) a `src/radvol3d/api/routers/study_router.py`, llamando a `service.delete_study` (pasa T065).
-- [ ] T069 [US4] Actualizar `tests/integration/services/test_delete_study_integration.py` y la limpieza de `tests/integration/conftest.py`: después de borrar un estudio procesado con los dobles, `list_names` de `<code>/`, `<code>/projections`, `<code>/segmentation` y `<code>/meshes` devuelve `[]`.
+- [X] T066 [US4] Agregar `list(path)` a `InMemoryBucket` en `tests/fixtures/fake_object_storage.py`, con la misma forma que el `list` de storage3: entradas `{"name": ...}`. Implementar `ObjectStorage.list_names(folder)` en `src/radvol3d/persistence/object_storage.py` (pasa T063).
+- [X] T067 [US4] En `src/radvol3d/persistence/study_metadata_store.py`, hacer que `delete_study` borre también los `lesion_*.glb` que liste `list_names(f"{code}/meshes")`, dentro de la misma transacción. Actualizar el docstring del módulo: ya no son "sus diez archivos" (pasa T064). Depende de T066.
+- [X] T068 [US4] Agregar `DELETE /studies/{study_code}` (204) a `src/radvol3d/api/routers/study_router.py`, llamando a `service.delete_study` (pasa T065).
+- [X] T069 [US4] Actualizar `tests/integration/services/test_delete_study_integration.py` y la limpieza de `tests/integration/conftest.py`: después de borrar un estudio procesado con los dobles, `list_names` de `<code>/`, `<code>/projections`, `<code>/segmentation` y `<code>/meshes` devuelve `[]`.
 
 **Checkpoint**: las cuatro historias funcionan.
 
@@ -405,24 +405,24 @@ el código del estudio.
 
 **Purpose**: punta a punta, CI y documentación
 
-- [ ] T070 Crear `tests/e2e/app_with_fakes.py` con `create_app_with_fakes()`. Arma un `ServiceContainer` con `build_service_container`, la configuración de `.env.test` y `StrategyBuilders` con `FakeReconstructionStrategy`, `FakeSegmentationStrategy` y `FakeMeshingStrategy`, y devuelve `create_app(container_builder=...)`. Si falta `.env.test`, lanza `ConfigurationError` con un mensaje claro. Lo usan T071 y quickstart.md §4.
-- [ ] T071 Crear `tests/e2e/test_http_flow.py` (marcador `e2e`, FR-031, SC-001), con `TestClient(create_app_with_fakes())`:
+- [X] T070 Crear `tests/e2e/app_with_fakes.py` con `create_app_with_fakes()`. Arma un `ServiceContainer` con `build_service_container`, la configuración de `.env.test` y `StrategyBuilders` con `FakeReconstructionStrategy`, `FakeSegmentationStrategy` y `FakeMeshingStrategy`, y devuelve `create_app(container_builder=...)`. Si falta `.env.test`, lanza `ConfigurationError` con un mensaje claro. Lo usan T071 y quickstart.md §4.
+- [X] T071 Crear `tests/e2e/test_http_flow.py` (marcador `e2e`, FR-031, SC-001), con `TestClient(create_app_with_fakes())`:
   - `POST /studies` (`it_` + uuid) → `POST /projections` → `POST /process`;
   - `GET /status` en `completed` con las cuatro etapas `completed`;
   - `GET /result`: bajar `organ.glb`, `tumor.glb`, `volume.npy` y `lesions/1.glb` (las `.glb` empiezan con `b"glTF"`);
   - `GET /viewer/{code}` → 200;
   - `DELETE` → 204, y `GET /status` → 404.
-- [ ] T072 [P] En `.github/workflows/ci.yml`, agregar después de "Cobertura de services" el paso `coverage report --include="src/radvol3d/api/*" --fail-under=80` (SC-007).
-- [ ] T073 [P] Actualizar `docs/architecture/fastapi_structure.md`:
+- [X] T072 [P] En `.github/workflows/ci.yml`, agregar después de "Cobertura de services" el paso `coverage report --include="src/radvol3d/api/*" --fail-under=80` (SC-007).
+- [X] T073 [P] Actualizar `docs/architecture/fastapi_structure.md`:
   - los cinco routers por recurso;
   - el procesamiento en segundo plano y el supuesto de un solo proceso de uvicorn (R4 y R5);
   - las descargas por el servicio (R6);
   - el visor y Three.js por CDN (R13);
   - el cuerpo de error `detail` y el 422 sin `input` (R8).
-- [ ] T074 [P] Actualizar `docs/database/data_dictionary.md` y `docs/database/entity_relationship.md`: `lesion.organ` (`varchar(32)`, no nulo, `lesion_organ_allowed`), `mesh_path` por lesión y la migración 002.
-- [ ] T075 [P] Actualizar `docs/models/meshing.md` con la malla por lesión: emparejamiento por `voxels` y `centroid_voxel` (R9), misma escala y origen que el órgano, y `lesion_<NNN>.glb`.
-- [ ] T076 [P] Actualizar `docs/standards/testing_strategy.md` con la fila de `tests/unit/web/` (`node --test`, Node 22, sin npm) y el uso de `tests/e2e/app_with_fakes.py`.
-- [ ] T077 [P] Reescribir `specs/001-persistence-schema-migration/contracts/persistence_api.md` con los cambios de [contracts/persistence_api_changes.md](contracts/persistence_api_changes.md): `create_study`, `add_projections`, `claim_for_processing`, `load_projections`, `fail_interrupted_studies`, la firma nueva de `save_result`, `read_file`, `read_lesion_mesh`, `lesion_mesh_path`, `list_names` y `lesion.organ`.
+- [X] T074 [P] Actualizar `docs/database/data_dictionary.md` y `docs/database/entity_relationship.md`: `lesion.organ` (`varchar(32)`, no nulo, `lesion_organ_allowed`), `mesh_path` por lesión y la migración 002.
+- [X] T075 [P] Actualizar `docs/models/meshing.md` con la malla por lesión: emparejamiento por `voxels` y `centroid_voxel` (R9), misma escala y origen que el órgano, y `lesion_<NNN>.glb`.
+- [X] T076 [P] Actualizar `docs/standards/testing_strategy.md` con la fila de `tests/unit/web/` (`node --test`, Node 22, sin npm) y el uso de `tests/e2e/app_with_fakes.py`.
+- [X] T077 [P] Reescribir `specs/001-persistence-schema-migration/contracts/persistence_api.md` con los cambios de [contracts/persistence_api_changes.md](contracts/persistence_api_changes.md): `create_study`, `add_projections`, `claim_for_processing`, `load_projections`, `fail_interrupted_studies`, la firma nueva de `save_result`, `read_file`, `read_lesion_mesh`, `lesion_mesh_path`, `list_names` y `lesion.organ`.
 - [ ] T078 Correr la validación completa de [quickstart.md](quickstart.md):
   - §1: estilo, nombres, `unit` y `architecture`, `node --test` y cobertura de `api/`;
   - §2: migración;

@@ -105,17 +105,17 @@ class StudyService:
         by_angle = self._loader.parse(files)
         return self._metadata_store.add_projections(study_code, self._uploads(files, by_angle))
 
-    def start_processing(self, study_code: str) -> Study:
+    def start_processing(self, study_code: str) -> None:
         """Reclama el estudio para procesarlo: pasa de pending a processing.
 
-        Comprueba primero que haya modelo para su organo; si no, lanza
-        ModelNotAvailableError y el estudio sigue en pending. La tuberia la corre
+        Dentro de la misma transaccion comprueba que haya modelo para su organo; si no,
+        lanza ModelNotAvailableError y el estudio sigue en pending. La tuberia la corre
         despues run_processing, en segundo plano.
+
+        Corre dentro de POST /process, que debe responder en menos de un segundo
+        (SC-002): por eso no lee el estudio aparte ni lo vuelve a leer al final.
         """
-        study = self._metadata_store.get_study(study_code)
-        self._factory.strategies_for(study.organ)
-        self._metadata_store.claim_for_processing(study_code)
-        return self._metadata_store.get_study(study_code)
+        self._metadata_store.claim_for_processing(study_code, self._factory.strategies_for)
 
     def run_processing(self, study_code: str) -> None:
         """Corre la tuberia de un estudio ya reclamado. Nunca lanza.

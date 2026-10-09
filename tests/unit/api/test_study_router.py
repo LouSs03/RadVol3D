@@ -142,3 +142,39 @@ def test_a_rejected_claim_does_not_launch_the_pipeline(client, service) -> None:
 
     assert response.status_code == 409
     service.run_processing.assert_not_called()
+
+
+# --- Borrar (historia 4) ---
+
+
+@pytest.mark.unit
+def test_deleting_a_study_answers_204_without_body(client, service) -> None:
+    response = client.delete(f"/studies/{CODE}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    service.delete_study.assert_called_once_with(CODE)
+
+
+@pytest.mark.unit
+def test_deleting_a_study_in_processing_is_a_conflict(client, service) -> None:
+    from radvol3d.domain.exceptions import StudyInProgressError
+
+    message = f"El estudio '{CODE}' se esta procesando y no se puede borrar."
+    service.delete_study.side_effect = StudyInProgressError(message)
+
+    response = client.delete(f"/studies/{CODE}")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": message}
+
+
+@pytest.mark.unit
+def test_deleting_an_unknown_study_is_not_found(client, service) -> None:
+    from radvol3d.domain.exceptions import StudyNotFoundError
+
+    service.delete_study.side_effect = StudyNotFoundError(f"No existe el estudio '{CODE}'.")
+
+    response = client.delete(f"/studies/{CODE}")
+
+    assert response.status_code == 404

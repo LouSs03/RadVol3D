@@ -20,9 +20,12 @@ def add_projections(study_code: str, files: Sequence[ProjectionFile]) -> Study
     # ProjectionLoader.parse (sin cambios) y luego persistencia.add_projections.
     # InvalidProjectionError (nombra el ángulo), InvalidStudyStateError, StudyNotFoundError
 
-def start_processing(study_code: str) -> Study
-    # Modelo disponible (si no, ModelNotAvailableError sin tocar nada) y luego
-    # claim_for_processing: pending + 4 proyecciones -> processing, con bloqueo de fila.
+def start_processing(study_code: str) -> None
+    # claim_for_processing(study_code, factory.strategies_for): pending + 4 proyecciones
+    # -> processing, con bloqueo de fila; el modelo del organo se comprueba dentro de la
+    # misma transaccion (si falta, ModelNotAvailableError y el estudio sigue en pending).
+    # No lee el estudio aparte ni lo devuelve: POST /process debe responder en menos de
+    # 1 s (SC-002), y con la base a ~0,13 s por consulta cada lectura cuenta.
     # InvalidStudyStateError, StudyNotFoundError, ModelNotAvailableError
 
 def run_processing(study_code: str) -> None

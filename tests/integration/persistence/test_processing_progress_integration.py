@@ -21,6 +21,7 @@ from radvol3d.persistence.repositories.processing_stage_repository import (
 )
 from radvol3d.persistence.repositories.study_repository import StudyRepository
 from radvol3d.persistence.study_metadata_store import ProjectionUpload, StudyMetadataStore
+from tests.integration.conftest import SESSION_PREFIX
 
 pytestmark = pytest.mark.integration
 
@@ -33,7 +34,7 @@ def make_uploads() -> list[ProjectionUpload]:
 
 def make_model_name() -> str:
     """Nombre de modelo de prueba, unico por ejecucion y con el prefijo de limpieza."""
-    return f"it_model_{uuid.uuid4().hex[:8]}"
+    return f"{SESSION_PREFIX}model_{uuid.uuid4().hex[:8]}"
 
 
 def register(database: Database, storage: ObjectStorage, code: str) -> StudyMetadataStore:

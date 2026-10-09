@@ -3,10 +3,13 @@
 Estas pruebas leen SOLO .env.test, nunca .env, para que ninguna pueda escribir en
 la base real por error. Si .env.test no existe, se omiten.
 
-Los codigos de estudio llevan el prefijo "it_". Al terminar, la limpieza borra los
-estudios con ese prefijo con StudyMetadataStore.delete_study (filas en cascada y
-sus diez archivos del bucket). Solo quedan en SQL directo, aqui y en ningun otro
-lugar, dos cosas que la persistencia no borra a proposito: los pacientes y los
+Los codigos de estudio llevan el prefijo de la sesion, SESSION_PREFIX ("it_<token>_").
+Al terminar cada prueba, la limpieza borra los estudios con ESE prefijo, no todos los
+"it_": si dos sesiones comparten la base de prueba (dos terminales, otro agente), la
+limpieza de una no borra los estudios que la otra esta usando. Los borra con
+StudyMetadataStore.delete_study (filas en cascada, sus diez archivos fijos del bucket
+y las mallas de lesion de <codigo>/meshes). Solo quedan en SQL directo, aqui y en
+ningun otro lugar, dos cosas que la persistencia no borra a proposito: los pacientes y los
 modelos que la prueba haya creado, y un estudio que haya quedado en processing.
 """
 
@@ -26,6 +29,8 @@ from radvol3d.persistence.study_metadata_store import StudyMetadataStore
 
 ENV_TEST_FILE = Path(__file__).resolve().parents[2] / ".env.test"
 STUDY_PREFIX = "it_"
+# Unico por sesion de pytest: la limpieza solo toca lo que creo esta sesion.
+SESSION_PREFIX = f"{STUDY_PREFIX}{uuid.uuid4().hex[:6]}_"
 REQUIRED_VARIABLES = ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "STORAGE_BUCKET")
 
 
@@ -67,7 +72,7 @@ def make_study_code() -> Callable[[], str]:
     """Fabrica de codigos de estudio unicos con el prefijo de pruebas."""
 
     def _make() -> str:
-        return f"{STUDY_PREFIX}{uuid.uuid4().hex[:12]}"
+        return f"{SESSION_PREFIX}{uuid.uuid4().hex[:12]}"
 
     return _make
 
@@ -100,7 +105,7 @@ def cleanup_after_test(
 
     with database.transaction() as connection:
         rows = connection.execute(
-            "select study_code from study where study_code like %s", (f"{STUDY_PREFIX}%",)
+            "select study_code from study where study_code like %s", (f"{SESSION_PREFIX}%",)
         ).fetchall()
     metadata = StudyMetadataStore(database, object_storage)
     for row in rows:
@@ -117,7 +122,7 @@ def cleanup_after_test(
 
     with database.transaction() as connection:
         # Los modelos de prueba se borran despues de los estudios que los usaban.
-        connection.execute("delete from model where model_name like %s", (f"{STUDY_PREFIX}%",))
+        connection.execute("delete from model where model_name like %s", (f"{SESSION_PREFIX}%",))
         for patient_code in created_patient_codes:
             if patient_code != "PAC000000":
                 connection.execute(

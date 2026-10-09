@@ -34,6 +34,7 @@ from radvol3d.persistence.repositories.processing_stage_repository import (
 from radvol3d.persistence.result_store import ResultStore
 from radvol3d.persistence.settings import Settings
 from radvol3d.persistence.study_metadata_store import ProjectionUpload, StudyMetadataStore
+from tests.integration.conftest import SESSION_PREFIX
 
 pytestmark = pytest.mark.integration
 
@@ -74,7 +75,7 @@ def make_region(region_id: int, volume: float, diameter: float, confidence: floa
 
 
 def make_model_name() -> str:
-    return f"it_seg_{uuid.uuid4().hex[:8]}"
+    return f"{SESSION_PREFIX}seg_{uuid.uuid4().hex[:8]}"
 
 
 def register_ready(database: Database, storage: ObjectStorage, code: str) -> StudyMetadataStore:
