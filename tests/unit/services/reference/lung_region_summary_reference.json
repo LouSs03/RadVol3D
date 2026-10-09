@@ -1,0 +1,47 @@
+{
+  "generator": "scripts/generate_regression_reference.py",
+  "source": "en2_inferencia.py",
+  "inputs": "build_region_summary_case()",
+  "min_voxels": 10,
+  "mm_per_voxel": 2.5,
+  "clean_mask_voxels": 989,
+  "clean_mask_sha256": "78ac2d89700f4578a2f2163027e7cb4bab76bbad109f359d402f8054f039b34d",
+  "regions": [
+    {
+      "has_lesion": true,
+      "location": "inicio del eje 0 · inicio del eje 1 · inicio del eje 2",
+      "volume_mm3": 14453.12,
+      "max_diameter_mm": 30.0,
+      "confidence": 0.6511,
+      "voxels": 925,
+      "centroid_voxel": [
+        12,
+        12,
+        12
+      ],
+      "confidence_min": 0.4,
+      "confidence_max": 0.9,
+      "region_id": 1
+    },
+    {
+      "has_lesion": true,
+      "location": "medio del eje 0 · medio del eje 1 · inicio del eje 2",
+      "volume_mm3": 1000.0,
+      "max_diameter_mm": 12.99,
+      "confidence": 0.6187,
+      "voxels": 64,
+      "centroid_voxel": [
+        32,
+        32,
+        12
+      ],
+      "confidence_min": 0.4,
+      "confidence_max": 0.9,
+      "region_id": 2
+    }
+  ],
+  "position_examples": {
+    "center": "medio del eje 0 · medio del eje 1 · medio del eje 2",
+    "corner": "inicio del eje 0 · final del eje 1 · medio del eje 2"
+  }
+}
