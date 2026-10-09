@@ -10,11 +10,11 @@ from radvol3d import config
 
 
 @pytest.mark.unit
-def test_health_devuelve_los_parametros_del_sistema(client) -> None:
-    respuesta = client.get("/health")
+def test_health_returns_the_system_parameters(client) -> None:
+    response = client.get("/health")
 
-    assert respuesta.status_code == 200
-    cuerpo = respuesta.json()
-    assert cuerpo["status"] == "ok"
-    assert cuerpo["grid_size"] == config.GRID_SIZE
-    assert cuerpo["projection_angles"] == list(config.PROJECTION_ANGLES)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["grid_size"] == config.GRID_SIZE
+    assert body["projection_angles"] == list(config.PROJECTION_ANGLES)

@@ -31,3 +31,35 @@ class DatabaseUnavailableError(RadVol3DError):
 
 class ModelNotAvailableError(RadVol3DError):
     """El modelo pedido no esta cargado o sus pesos no se encuentran."""
+
+
+class ConfigurationError(RadVol3DError):
+    """Falta una variable de configuracion o esta vacia."""
+
+
+class DuplicateStudyError(RadVol3DError):
+    """Ya existe un estudio con ese codigo."""
+
+
+class InvalidPatientDataError(RadVol3DError):
+    """Los datos del paciente no cumplen el formato permitido."""
+
+
+class PatientCodeExhaustedError(RadVol3DError):
+    """Ya no quedan codigos de paciente disponibles en el formato permitido."""
+
+
+class UnknownOrganError(RadVol3DError):
+    """El organo pedido esta fuera del alcance del sistema."""
+
+
+class InvalidLesionError(RadVol3DError):
+    """Una lesion o una region del resumen no cumple las reglas de los datos."""
+
+
+class PersistenceError(RadVol3DError):
+    """La base de datos rechazo la operacion por una regla de integridad."""
+
+
+class StorageObjectNotFoundError(StorageError):
+    """El archivo pedido no existe en el almacenamiento de objetos."""

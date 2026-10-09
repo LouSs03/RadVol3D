@@ -6,9 +6,42 @@ la demostracion.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 
 from radvol3d.domain.enums import OrganName, StageNumber, StageStatus, StudyStatus
+
+
+@dataclass(frozen=True)
+class Patient:
+    """Persona a la que pertenece un estudio.
+
+    Los datos personales se excluyen de la representacion en texto para que un
+    registro o una traza no los muestre.
+    """
+
+    patient_code: str
+    first_name: str | None = field(default=None, repr=False)
+    last_name: str | None = field(default=None, repr=False)
+    national_id: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True)
+class PatientDetails:
+    """Datos personales que llegan de la interfaz. Los tres son opcionales."""
+
+    first_name: str | None = field(default=None, repr=False)
+    last_name: str | None = field(default=None, repr=False)
+    national_id: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True)
+class Model:
+    """Una version de un modelo. Con su nombre, identifica una fila del catalogo."""
+
+    model_name: str
+    version: str
+    trained_on: date | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +84,7 @@ class ProcessingStage:
     status: StageStatus
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    model: Model | None = None
 
 
 @dataclass
@@ -65,6 +99,26 @@ class Study:
     projections: list[Projection] = field(default_factory=list)
     stages: list[ProcessingStage] = field(default_factory=list)
     lesions: list[Lesion] = field(default_factory=list)
+    patient: Patient | None = None
+    model: Model | None = None
+    grid_size: int | None = None
+
+
+@dataclass(frozen=True)
+class StoredResult:
+    """Resultado guardado de un estudio: sus lesiones y las rutas de sus archivos.
+
+    Un estudio que todavia no tiene resultado se representa con las cinco rutas en
+    None y la lista de lesiones vacia.
+    """
+
+    study_code: str
+    lesions: list[Lesion] = field(default_factory=list)
+    mask_path: str | None = None
+    probability_path: str | None = None
+    summary_path: str | None = None
+    organ_mesh_path: str | None = None
+    tumor_mesh_path: str | None = None
 
 
 @dataclass

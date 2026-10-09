@@ -1,0 +1,66 @@
+"""Doble del bucket de Supabase Storage.
+
+Imita las tres operaciones de storage3 que usa ObjectStorage: upload, download y
+exists. Guarda los archivos en memoria, asi que ninguna prueba unitaria toca la
+red ni un bucket real.
+"""
+
+from typing import Any
+
+from storage3.utils import StorageException
+
+
+class InMemoryBucket:
+    """Bucket en memoria con la misma forma que el cliente de storage3."""
+
+    def __init__(self, events: list[str] | None = None) -> None:
+        self.events = events if events is not None else []
+        self.files: dict[str, bytes] = {}
+        self.content_types: dict[str, str] = {}
+        # operacion -> (excepcion, llamadas que todavia salen bien antes de fallar)
+        self.failures: dict[str, tuple[Exception, int]] = {}
+
+    def fail_next(self, operation: str, error: Exception, after: int = 0) -> None:
+        """Hace que la operacion lance el error, despues de `after` llamadas correctas."""
+        self.failures[operation] = (error, after)
+
+    def _raise_if_failing(self, operation: str) -> None:
+        pending = self.failures.get(operation)
+        if pending is None:
+            return
+        error, remaining = pending
+        if remaining > 0:
+            self.failures[operation] = (error, remaining - 1)
+            return
+        del self.failures[operation]
+        raise error
+
+    def upload(
+        self,
+        path: str,
+        file: bytes,
+        file_options: dict[str, Any] | None = None,
+    ) -> None:
+        self.events.append(f"upload:{path}")
+        self._raise_if_failing("upload")
+        options = file_options or {}
+        if path in self.files and str(options.get("upsert", "false")).lower() != "true":
+            raise StorageException("El recurso ya existe")
+        self.files[path] = bytes(file)
+        self.content_types[path] = str(options.get("content-type", ""))
+
+    def download(self, path: str) -> bytes:
+        self.events.append(f"download:{path}")
+        self._raise_if_failing("download")
+        if path not in self.files:
+            raise StorageException("Objeto no encontrado")
+        return self.files[path]
+
+    def exists(self, path: str) -> bool:
+        self.events.append(f"exists:{path}")
+        self._raise_if_failing("exists")
+        return path in self.files
+
+    def uploaded_paths(self) -> list[str]:
+        """Rutas de los archivos que hay ahora en el bucket, en orden alfabetico."""
+        return sorted(self.files)

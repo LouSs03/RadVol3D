@@ -21,10 +21,25 @@ RAIZ = Path(__file__).resolve().parent.parent
 CARPETAS_REVISADAS = ("src", "tests", "scripts", "docs")
 EXTENSIONES_REVISADAS = {".py", ".js", ".css", ".sql", ".md", ".html"}
 
+# Carpetas que no son del proyecto: entornos virtuales, dependencias y cache.
+# Se descarta cualquier ruta que tenga uno de estos nombres entre sus carpetas.
+EXCLUDED_PARTS = frozenset(
+    {".venv", "venv", "node_modules", "site-packages", ".git", "__pycache__"}
+)
+
 # Declaraciones de JavaScript: function, let, const, var y metodos de clase.
 DECLARACION_JS = re.compile(r"\b(?:function|let|const|var)\s+([A-Za-z_$][\w$]*)")
 
 TIENE_MAYUSCULA_INTERNA = re.compile(r"^[a-z_$][\w$]*[A-Z]")
+
+
+def is_excluded(ruta: Path) -> bool:
+    """True si la ruta pasa por una carpeta que no es del proyecto (EXCLUDED_PARTS).
+
+    Se mira la ruta relativa a la raiz, para que el repositorio no quede excluido
+    entero si vive dentro de una carpeta que se llame, por ejemplo, "venv".
+    """
+    return not EXCLUDED_PARTS.isdisjoint(ruta.relative_to(RAIZ).parts)
 
 
 def revisar_nombres_de_archivo() -> list[str]:
@@ -35,7 +50,7 @@ def revisar_nombres_de_archivo() -> list[str]:
         if not base.is_dir():
             continue
         for ruta in base.rglob("*"):
-            if "__pycache__" in ruta.parts or ruta.name.startswith("."):
+            if is_excluded(ruta) or ruta.name.startswith("."):
                 continue
             if ruta.is_file() and ruta.suffix not in EXTENSIONES_REVISADAS:
                 continue
@@ -51,7 +66,7 @@ def revisar_javascript() -> list[str]:
     """Variables y funciones de JavaScript en camelCase."""
     problemas: list[str] = []
     for ruta in RAIZ.rglob("*.js"):
-        if "node_modules" in ruta.parts:
+        if is_excluded(ruta):
             continue
         for numero, linea in enumerate(ruta.read_text(encoding="utf-8").splitlines(), 1):
             for nombre in DECLARACION_JS.findall(linea):

@@ -1,5 +1,7 @@
 """Subida de proyecciones y reconstruccion del volumen."""
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 
 from radvol3d.api.dependencies import get_processing_pipeline
@@ -16,7 +18,7 @@ router = APIRouter(prefix="/studies", tags=["reconstruccion"])
 )
 def reconstruct_study(
     study_code: str,
-    pipeline: ProcessingPipeline = Depends(get_processing_pipeline),
+    pipeline: Annotated[ProcessingPipeline, Depends(get_processing_pipeline)],
 ) -> ReconstructionResponse:
     """La capa 1 pide el resultado; no sabe como se calcula."""
     raise NotImplementedError("TODO")

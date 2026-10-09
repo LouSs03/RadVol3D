@@ -12,6 +12,7 @@ htmlcov/
 # Secretos: 
 .env
 .env.local
+.env.test
 
 # Datos y modelos: viven en Supabase Storage, no en git
 datos/
