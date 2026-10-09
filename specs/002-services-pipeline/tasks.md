@@ -52,15 +52,15 @@ Reglas de todas las tareas:
 
 **Purpose**: dependencias, marcador `ml`, archivos ignorados y variables nuevas.
 
-- [ ] T001 Agregar `scikit-image>=0.24` y `trimesh>=4.0` a `requirements.txt` y ejecutar `pip install -r requirements-dev.txt`. Comprobar que `from skimage.measure import marching_cubes`, `from skimage.filters import threshold_otsu` e `import trimesh` funcionan. El peso de research.md R3 debe quedar en la descripción del pull request.
-- [ ] T002 En `pyproject.toml`:
+- [X] T001 Agregar `scikit-image>=0.24` y `trimesh>=4.0` a `requirements.txt` y ejecutar `pip install -r requirements-dev.txt`. Comprobar que `from skimage.measure import marching_cubes`, `from skimage.filters import threshold_otsu` e `import trimesh` funcionan. El peso de research.md R3 debe quedar en la descripción del pull request.
+- [X] T002 En `pyproject.toml`:
   - agregar `[project.optional-dependencies]` con `ml = ["torch>=2.6"]`;
   - agregar a `[tool.pytest.ini_options].markers` la entrada `"ml: necesita PyTorch y los pesos de los modelos; el CI la omite"`.
 
   No agregar `torch` a `requirements.txt` (research.md R2).
-- [ ] T003 [P] Agregar `models/` y `.cache/` a `.gitignore`. Comprobar con `git status --short` que ya no aparecen `models/` ni ningún `.pth`.
-- [ ] T004 [P] Agregar a `.env.example` y a `.env.test.example` las variables de data-model.md §6, sin valores: `MODEL_BUCKET`, `EN1_WEIGHTS_OBJECT`, `EN2_WEIGHTS_OBJECT`, `MODEL_CACHE_DIR` y `RECONSTRUCTION_STRATEGY`. Agregar un comentario en español que diga que son opcionales y que, si faltan, el modelo queda no disponible pero la aplicación arranca.
-- [ ] T005 [P] Crear los paquetes y carpetas vacíos:
+- [X] T003 [P] Agregar `models/` y `.cache/` a `.gitignore`. Comprobar con `git status --short` que ya no aparecen `models/` ni ningún `.pth`.
+- [X] T004 [P] Agregar a `.env.example` y a `.env.test.example` las variables de data-model.md §6, sin valores: `MODEL_BUCKET`, `EN1_WEIGHTS_OBJECT`, `EN2_WEIGHTS_OBJECT`, `MODEL_CACHE_DIR` y `RECONSTRUCTION_STRATEGY`. Agregar un comentario en español que diga que son opcionales y que, si faltan, el modelo queda no disponible pero la aplicación arranca.
+- [X] T005 [P] Crear los paquetes y carpetas vacíos:
   - `tests/integration/services/__init__.py`
   - `tests/ml/__init__.py`
   - `tests/ml/reference/.gitkeep`
@@ -78,31 +78,31 @@ y puerto de avance. Todas las historias los usan.
 
 ### Dominio
 
-- [ ] T006 [P] Ampliar `tests/unit/domain/test_exceptions.py`:
+- [X] T006 [P] Ampliar `tests/unit/domain/test_exceptions.py`:
   - `StageFailedError` y `StudyInProgressError` heredan de `RadVol3DError`;
   - `StageFailedError(study_code="it_a", stage_number=StageNumber.SEGMENTATION)` expone ambos atributos;
   - su mensaje es "La etapa 3 (segmentation) del estudio it_a falló.";
   - el mensaje no incluye el texto de la causa encadenada.
-- [ ] T007 [P] Ampliar `tests/unit/domain/test_entities.py`:
+- [X] T007 [P] Ampliar `tests/unit/domain/test_entities.py`:
   - `SegmentationResult(mask, probability, global_confidence)` sigue funcionando sin `summary`, que vale `{}` por omisión;
   - `summary` guarda el mapeo recibido.
-- [ ] T008 [P] Agregar a `src/radvol3d/domain/exceptions.py`:
+- [X] T008 [P] Agregar a `src/radvol3d/domain/exceptions.py`:
   - `StageFailedError(RadVol3DError)`, con `__init__(self, study_code: str, stage_number: StageNumber)`, que arma el mensaje con `stage_number.value` y `stage_number.name.lower()`;
   - `StudyInProgressError(RadVol3DError)`.
 
   Docstrings en español. `domain/` sigue sin importar nada del proyecto, salvo `domain.enums`.
-- [ ] T009 [P] Agregar a `SegmentationResult` en `src/radvol3d/domain/entities.py` el campo `summary: Mapping[str, object] = field(default_factory=dict)`, después de `lesions`. Sin lógica ni entrada/salida.
+- [X] T009 [P] Agregar a `SegmentationResult` en `src/radvol3d/domain/entities.py` el campo `summary: Mapping[str, object] = field(default_factory=dict)`, después de `lesions`. Sin lógica ni entrada/salida.
 
 ### Interfaces Strategy (firma final, research.md R20)
 
-- [ ] T010 [P] En `src/radvol3d/services/reconstruction/reconstruction_strategy.py`, corregir el docstring de `reconstruct`. La entrada es "(4, 128, 128) float32 con las integrales de línea del convenio de TA-2, sin normalizar" y la salida "(128, 128, 128) float32 en [0, 1]". La firma no cambia.
-- [ ] T011 [P] En `src/radvol3d/services/segmentation/segmentation_strategy.py`, cambiar la firma a `segment(self, volume, study_code: str) -> SegmentationResult`. El docstring debe decir:
+- [X] T010 [P] En `src/radvol3d/services/reconstruction/reconstruction_strategy.py`, corregir el docstring de `reconstruct`. La entrada es "(4, 128, 128) float32 con las integrales de línea del convenio de TA-2, sin normalizar" y la salida "(128, 128, 128) float32 en [0, 1]". La firma no cambia.
+- [X] T011 [P] En `src/radvol3d/services/segmentation/segmentation_strategy.py`, cambiar la firma a `segment(self, volume, study_code: str) -> SegmentationResult`. El docstring debe decir:
   - mask uint8 {0, 1};
   - probability float32 en [0, 1], de la misma forma;
   - summary con las claves de data-model.md §4.
 
   Actualizar la firma de `src/radvol3d/services/segmentation/liver_unet_strategy.py`, que sigue como esqueleto.
-- [ ] T012 [P] En `src/radvol3d/services/meshing/meshing_strategy.py`:
+- [X] T012 [P] En `src/radvol3d/services/meshing/meshing_strategy.py`:
   - definir `@dataclass(frozen=True) class MeshSet` con `organ: bytes` y `tumor: bytes`;
   - reemplazar `build_mesh(mask)` por `build_meshes(self, volume, mask) -> MeshSet`, abstracto, con un docstring que diga que, si no hay superficie, devuelve un `.glb` válido sin geometría y no lanza.
 
@@ -110,12 +110,12 @@ y puerto de avance. Todas las historias los usan.
 
 ### Carpeta `services/pipeline/` (research.md R1)
 
-- [ ] T013 Mover `src/radvol3d/services/processing_pipeline.py` a `src/radvol3d/services/pipeline/processing_pipeline.py` y `src/radvol3d/services/preprocessing/projection_loader.py` a `src/radvol3d/services/pipeline/projection_loader.py`, con `git mv`.
+- [X] T013 Mover `src/radvol3d/services/processing_pipeline.py` a `src/radvol3d/services/pipeline/processing_pipeline.py` y `src/radvol3d/services/preprocessing/projection_loader.py` a `src/radvol3d/services/pipeline/projection_loader.py`, con `git mv`.
   - Crear `src/radvol3d/services/pipeline/__init__.py`, con un docstring en español.
   - Borrar `src/radvol3d/services/preprocessing/`.
   - Actualizar los imports en `src/radvol3d/api/dependencies.py`, `src/radvol3d/api/routers/reconstruction_router.py` y `src/radvol3d/api/routers/segmentation_router.py`.
   - Correr `pytest -m architecture`: debe seguir en verde sin tocar `tests/architecture/`.
-- [ ] T014 [P] Crear `src/radvol3d/services/pipeline/pipeline_data.py` con `@dataclass(frozen=True) class PipelineData` y estos campos:
+- [X] T014 [P] Crear `src/radvol3d/services/pipeline/pipeline_data.py` con `@dataclass(frozen=True) class PipelineData` y estos campos:
   - `study_code: str`
   - `projections_by_angle: Mapping[int, ndarray]`
   - `projections: ndarray | None = None`
@@ -124,12 +124,12 @@ y puerto de avance. Todas las historias los usan.
   - `meshes: MeshSet | None = None`
 
   Cada filtro devuelve una copia con `dataclasses.replace`.
-- [ ] T015 [P] Crear `src/radvol3d/services/pipeline/progress.py` con `class PipelineProgress(Protocol)` y los cinco métodos de [contracts/services_api.md](contracts/services_api.md#tubería): `stage_started`, `stage_completed`, `stage_failed`, `save_volume` y `save_result`.
-- [ ] T016 [P] En `src/radvol3d/config.py`, cambiar `ACCEPTED_FORMATS` a `(".npy",)` y su comentario: "solo .npy en el convenio de TA-2; PNG no tiene la escala que espera EN-1".
+- [X] T015 [P] Crear `src/radvol3d/services/pipeline/progress.py` con `class PipelineProgress(Protocol)` y los cinco métodos de [contracts/services_api.md](contracts/services_api.md#tubería): `stage_started`, `stage_completed`, `stage_failed`, `save_volume` y `save_result`.
+- [X] T016 [P] En `src/radvol3d/config.py`, cambiar `ACCEPTED_FORMATS` a `(".npy",)` y su comentario: "solo .npy en el convenio de TA-2; PNG no tiene la escala que espera EN-1".
 
 ### Dobles
 
-- [ ] T017 [P] Actualizar `tests/fixtures/fake_strategies.py` a las firmas nuevas:
+- [X] T017 [P] Actualizar `tests/fixtures/fake_strategies.py` a las firmas nuevas:
   - **`FakeSegmentationStrategy.segment(volume, study_code)`** devuelve, además de lo que ya devuelve, un `summary` con la forma de data-model.md §4:
     - `study_code`
     - `organ: "lung"`
@@ -138,11 +138,11 @@ y puerto de avance. Todas las historias los usan.
     - `regions`, con una región cuyos datos coinciden con la lesión del doble
   - **`FakeMeshingStrategy.build_meshes(volume, mask)`** devuelve `MeshSet(organ=b"glTF"+..., tumor=b"glTF"+...)`.
   - **`FakeReconstructionStrategy`** devuelve un volumen que depende de las proyecciones, por ejemplo `np.full(..., float(projections.mean()) % 1.0)`. Así la prueba de concurrencia distingue dos estudios.
-- [ ] T018 [P] Crear `tests/fixtures/fake_progress.py` con `RecordingProgress`:
+- [X] T018 [P] Crear `tests/fixtures/fake_progress.py` con `RecordingProgress`:
   - implementa `PipelineProgress` y guarda cada llamada como tupla en `events`, por ejemplo `("started", "it_a", 2)` o `("completed", "it_a", 2, "fake_reconstruction", "0.0.0")`;
   - es seguro entre hilos: usa un `threading.Lock` para agregar eventos;
   - acepta `fail_on` para lanzar una excepción en un evento dado.
-- [ ] T019 [P] Crear `tests/fixtures/projection_files.py`, con funciones que arman en memoria:
+- [X] T019 [P] Crear `tests/fixtures/projection_files.py`, con funciones que arman en memoria:
   - `valid_npy(angle, seed)`: `.npy` `(128, 128)` float32, finito, sin pickle;
   - `png_bytes()`: firma PNG;
   - `pickled_npy()`: arreglo de objetos guardado con `allow_pickle=True`;
@@ -150,7 +150,7 @@ y puerto de avance. Todas las historias los usan.
   - `npy_wrong_shape()`
   - `npy_text_dtype()`
   - `four_valid_files(seed)`: lista de `ProjectionFile` para 0, 45, 90 y 135.
-- [ ] T020 Actualizar `tests/unit/services/test_fake_strategies.py`. Depende de T017. Debe comprobar:
+- [X] T020 Actualizar `tests/unit/services/test_fake_strategies.py`. Depende de T017. Debe comprobar:
   - el resumen del doble trae `model_name`, `model_version` y `regions`, como exige `ResultStore`;
   - `build_meshes` devuelve dos bytes que empiezan por `glTF`.
 

@@ -1,12 +1,12 @@
-"""Extrae la superficie con marching cubes y la exporta en GLB."""
+"""Extrae las superficies con marching cubes y las exporta en GLB."""
 
 from typing import Any
 
-from radvol3d.services.meshing.meshing_strategy import MeshingStrategy
+from radvol3d.services.meshing.meshing_strategy import MeshingStrategy, MeshSet
 
 
 class MarchingCubesStrategy(MeshingStrategy):
-    """Genera la malla con marching cubes y la simplifica antes de exportar."""
+    """Genera la malla del organo y la del tumor con marching cubes."""
 
-    def build_mesh(self, mask: Any) -> bytes:
-        raise NotImplementedError("TODO: marching cubes y exportacion a GLB")
+    def build_meshes(self, volume: Any, mask: Any) -> MeshSet:
+        raise NotImplementedError("TODO: marching cubes y exportacion a GLB (T082)")

@@ -5,7 +5,7 @@ servicio de la capa 2: lo recibe con Depends(). Asi no tiene forma de saltarse
 la capa, y en las pruebas se sustituye con app.dependency_overrides.
 """
 
-from radvol3d.services.processing_pipeline import ProcessingPipeline
+from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
 from radvol3d.services.study_service import StudyService
 
 

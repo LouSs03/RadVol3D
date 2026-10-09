@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 
 from radvol3d.api.dependencies import get_processing_pipeline
 from radvol3d.api.schemas.segmentation_schema import SegmentationResponse
-from radvol3d.services.processing_pipeline import ProcessingPipeline
+from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
 
 router = APIRouter(prefix="/studies", tags=["segmentacion"])
 

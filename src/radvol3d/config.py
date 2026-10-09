@@ -18,5 +18,6 @@ PROJECTION_ANGLES: Final[tuple[int, ...]] = (0, 45, 90, 135)
 # Ventana de unidades Hounsfield con la que se normaliza a [0, 1].
 HU_WINDOW: Final[tuple[float, float]] = (-1000.0, 1000.0)
 
-# Formatos aceptados al subir una proyeccion.
-ACCEPTED_FORMATS: Final[tuple[str, ...]] = (".png", ".npy")
+# Formatos aceptados al subir una proyeccion: solo .npy en el convenio de TA-2.
+# PNG no tiene la escala que espera EN-1 (integrales de linea sin normalizar).
+ACCEPTED_FORMATS: Final[tuple[str, ...]] = (".npy",)

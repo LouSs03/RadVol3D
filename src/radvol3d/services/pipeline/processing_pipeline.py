@@ -6,7 +6,7 @@ permite probar la tuberia completa con dobles, sin GPU ni modelo.
 
 from radvol3d.domain.entities import Study
 from radvol3d.services.meshing.meshing_strategy import MeshingStrategy
-from radvol3d.services.preprocessing.projection_loader import ProjectionLoader
+from radvol3d.services.pipeline.projection_loader import ProjectionLoader
 from radvol3d.services.reconstruction.reconstruction_strategy import ReconstructionStrategy
 from radvol3d.services.segmentation.segmentation_strategy import SegmentationStrategy
 

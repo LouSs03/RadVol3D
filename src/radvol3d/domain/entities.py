@@ -5,6 +5,7 @@ sueltos hace que un campo mal escrito falle al escribir el codigo y no durante
 la demostracion.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -126,10 +127,12 @@ class SegmentationResult:
     """Lo que devuelve una estrategia de segmentacion.
 
     mask y probability son arreglos de numpy de la misma forma. No se declaran con
-    su tipo para que esta capa no dependa de numpy.
+    su tipo para que esta capa no dependa de numpy. summary es el resumen por region
+    que se guarda como summary.json; cada region con lesion tambien esta en lesions.
     """
 
     mask: object
     probability: object
     global_confidence: float
     lesions: list[Lesion] = field(default_factory=list)
+    summary: Mapping[str, object] = field(default_factory=dict)

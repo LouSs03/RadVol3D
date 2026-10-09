@@ -15,9 +15,12 @@ class ReconstructionStrategy(ABC):
 
     @abstractmethod
     def reconstruct(self, projections: Any) -> Any:
-        """Recibe (4, N, N) float32 en [0,1] y devuelve (N, N, N) float32 en [0,1].
+        """Recibe (4, 128, 128) float32 y devuelve (128, 128, 128) float32 en [0, 1].
 
-        Las proyecciones vienen normalizadas con la ventana HU de config.HU_WINDOW.
+        Las proyecciones son las integrales de linea del convenio de TA-2, SIN
+        normalizar: asi se entreno y se midio EN-1. Normalizarlas a [0, 1] cambiaria
+        la salida sin avisar. El volumen de salida si esta normalizado con la ventana
+        HU de config.HU_WINDOW.
         """
 
     @property

@@ -4,6 +4,8 @@ Cada capa lanza estos y la capa 1 los traduce a codigos HTTP en un solo lugar
 (api/error_handlers.py). Asi ninguna capa inferior necesita saber que existe HTTP.
 """
 
+from radvol3d.domain.enums import StageNumber
+
 
 class RadVol3DError(Exception):
     """Raiz de todos los errores del sistema."""
@@ -63,3 +65,24 @@ class PersistenceError(RadVol3DError):
 
 class StorageObjectNotFoundError(StorageError):
     """El archivo pedido no existe en el almacenamiento de objetos."""
+
+
+class StageFailedError(RadVol3DError):
+    """Una etapa de la tuberia lanzo una excepcion y el estudio quedo en failed.
+
+    El mensaje nombra solo la etapa y el codigo del estudio. La causa original queda
+    encadenada (raise ... from causa) para el registro, pero su texto no se copia al
+    mensaje: podria traer detalles internos que no deben llegar al usuario.
+    """
+
+    def __init__(self, study_code: str, stage_number: StageNumber) -> None:
+        self.study_code = study_code
+        self.stage_number = StageNumber(stage_number)
+        super().__init__(
+            f"La etapa {self.stage_number.value} ({self.stage_number.name.lower()}) "
+            f"del estudio {study_code} falló."
+        )
+
+
+class StudyInProgressError(RadVol3DError):
+    """Se pidio borrar un estudio que todavia se esta procesando."""

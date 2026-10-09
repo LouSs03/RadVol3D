@@ -17,7 +17,7 @@ class LungUnetStrategy(SegmentationStrategy):
         self._weights_path = weights_path
         # TODO: cargar los pesos una sola vez
 
-    def segment(self, volume: Any) -> SegmentationResult:
+    def segment(self, volume: Any, study_code: str) -> SegmentationResult:
         # El volumen debe llegar normalizado a [0,1] con la ventana de config.HU_WINDOW,
         # la misma que uso la reconstruccion. Si llega en HU crudos el modelo devuelve
         # ruido sin avisar, asi que se valida antes de inferir.
