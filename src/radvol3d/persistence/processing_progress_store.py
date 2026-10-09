@@ -10,8 +10,9 @@ modelo ya exista.
 """
 
 from datetime import date
+from typing import Any
 
-from radvol3d.domain.entities import Model
+from radvol3d.domain.entities import Model, ProcessingStage
 from radvol3d.domain.enums import StageNumber, StageStatus, StudyStatus
 from radvol3d.domain.exceptions import PersistenceError
 from radvol3d.persistence.connection import Database
@@ -71,12 +72,58 @@ class ProcessingProgressStore:
         validate_study_code(study_code)
         failed = StageNumber(stage)
         with self._database.transaction() as connection:
-            stages = ProcessingStageRepository(connection)
-            stages.set_status(study_code, failed, StageStatus.FAILED)
-            for later in StageNumber:
-                if later.value > failed.value:
-                    stages.set_status(study_code, later, StageStatus.SKIPPED)
-            StudyRepository(connection).update_status(study_code, StudyStatus.FAILED)
+            self._fail_from(connection, study_code, failed)
+
+    def fail_interrupted_studies(self) -> list[str]:
+        """Pasa a failed los estudios que quedaron en processing y devuelve sus codigos.
+
+        Se llama una vez al arrancar. La tarea en segundo plano que procesaba esos
+        estudios murio con el proceso anterior, y sin esto quedarian colgados: no se
+        podrian borrar, porque delete_study rechaza los estudios en processing.
+
+        Por cada estudio, en su propia transaccion: la etapa en running (o, si no hay,
+        la primera en waiting) pasa a failed, las siguientes a skipped y el estudio a
+        failed. Supone un solo proceso de uvicorn (research.md R4 y R5 de la
+        funcionalidad 004): con varios, marcaria como fallidos estudios que otro
+        proceso sigue procesando.
+        """
+        with self._database.transaction() as connection:
+            codes = StudyRepository(connection).list_codes_by_status(StudyStatus.PROCESSING)
+
+        recovered: list[str] = []
+        for study_code in codes:
+            with self._database.transaction() as connection:
+                if StudyRepository(connection).lock_status(study_code) is not (
+                    StudyStatus.PROCESSING
+                ):
+                    continue
+                stages = ProcessingStageRepository(connection).list_by_study(study_code)
+                interrupted = self._interrupted_stage(stages)
+                if interrupted is None:
+                    StudyRepository(connection).update_status(study_code, StudyStatus.FAILED)
+                else:
+                    self._fail_from(connection, study_code, interrupted)
+            recovered.append(study_code)
+        return recovered
+
+    @staticmethod
+    def _interrupted_stage(stages: list[ProcessingStage]) -> StageNumber | None:
+        """La etapa en running o, si no hay, la primera en waiting."""
+        for wanted in (StageStatus.RUNNING, StageStatus.WAITING):
+            for stage in stages:
+                if stage.status is wanted:
+                    return stage.stage_number
+        return None
+
+    @staticmethod
+    def _fail_from(connection: Any, study_code: str, failed: StageNumber) -> None:
+        """La etapa queda en failed, las siguientes en skipped y el estudio en failed."""
+        stages = ProcessingStageRepository(connection)
+        stages.set_status(study_code, failed, StageStatus.FAILED)
+        for later in StageNumber:
+            if later.value > failed.value:
+                stages.set_status(study_code, later, StageStatus.SKIPPED)
+        StudyRepository(connection).update_status(study_code, StudyStatus.FAILED)
 
     def complete_study(
         self,

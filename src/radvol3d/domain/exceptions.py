@@ -86,3 +86,12 @@ class StageFailedError(RadVol3DError):
 
 class StudyInProgressError(RadVol3DError):
     """Se pidio borrar un estudio que todavia se esta procesando."""
+
+
+class InvalidStudyStateError(RadVol3DError):
+    """La operacion no corresponde al estado del estudio.
+
+    Por ejemplo: subir proyecciones a un estudio que ya las tiene, procesar uno que no
+    esta en pending o pedir el resultado de uno que no termino. El mensaje dice el
+    estado actual, nunca datos del paciente.
+    """

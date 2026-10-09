@@ -80,6 +80,16 @@ class StudyRepository:
         ).fetchall()
         return [self._to_entity(row) for row in rows]
 
+    def list_codes_by_status(self, status: StudyStatus | str) -> list[str]:
+        """Codigos de los estudios en ese estado, del mas antiguo al mas reciente."""
+        study_status = self._parse_status(status)
+        rows = execute_translated(
+            self._connection,
+            "select study_code from study where status = %s order by created_at, study_id",
+            (study_status.value,),
+        ).fetchall()
+        return [row["study_code"] for row in rows]
+
     def lock_status(self, study_code: str) -> StudyStatus:
         """Bloquea la fila del estudio hasta el fin de la transaccion y devuelve su estado.
 
@@ -112,12 +122,7 @@ class StudyRepository:
         solo acepta los cuatro valores de StudyStatus.
         """
         validate_study_code(study_code)
-        try:
-            study_status = StudyStatus(status)
-        except ValueError:
-            raise PersistenceError(
-                "El estado del estudio debe ser pending, processing, completed o failed."
-            ) from None
+        study_status = self._parse_status(status)
         cursor = execute_translated(
             self._connection,
             "update study set status = %s where study_code = %s",
@@ -159,6 +164,16 @@ class StudyRepository:
             # Si el estudio no existe, find_study_id lanza StudyNotFoundError.
             find_study_id(self._connection, study_code)
             raise PersistenceError("El modelo no esta registrado en el catalogo de modelos.")
+
+    @staticmethod
+    def _parse_status(status: StudyStatus | str) -> StudyStatus:
+        """Acepta solo los cuatro valores de StudyStatus."""
+        try:
+            return StudyStatus(status)
+        except ValueError:
+            raise PersistenceError(
+                "El estado del estudio debe ser pending, processing, completed o failed."
+            ) from None
 
     @staticmethod
     def _to_entity(row: Any) -> Study:

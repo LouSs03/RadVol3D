@@ -45,6 +45,16 @@ class ProjectionRepository:
                 ),
             )
 
+    def count_by_study(self, study_code: str) -> int:
+        """Cuantas proyecciones tiene registradas el estudio (0 a 4)."""
+        study_id = find_study_id(self._connection, study_code)
+        row = execute_translated(
+            self._connection,
+            "select count(*) as projection_count from projection where study_id = %s",
+            (study_id,),
+        ).fetchone()
+        return int(row["projection_count"]) if row else 0
+
     def list_by_study(self, study_code: str) -> list[Projection]:
         """Devuelve las proyecciones del estudio ordenadas por angulo."""
         validate_study_code(study_code)

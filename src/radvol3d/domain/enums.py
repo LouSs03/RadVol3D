@@ -40,3 +40,14 @@ class StageStatus(StrEnum):
     COMPLETED = "completed"
     SKIPPED = "skipped"
     FAILED = "failed"
+
+
+class ResultFile(StrEnum):
+    """Archivos unicos de un resultado que se pueden descargar.
+
+    Las mallas por lesion no estan aqui: se piden por su numero en la lista.
+    """
+
+    ORGAN_MESH = "organ_mesh"
+    TUMOR_MESH = "tumor_mesh"
+    VOLUME = "volume"

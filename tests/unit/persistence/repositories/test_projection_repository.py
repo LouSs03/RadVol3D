@@ -119,3 +119,29 @@ def test_list_by_study_returns_an_empty_list_when_there_are_no_projections() -> 
 def test_list_by_study_rejects_an_invalid_study_code() -> None:
     with pytest.raises(InvalidStudyIdError):
         ProjectionRepository(FakeConnection()).list_by_study("..")
+
+
+@pytest.mark.unit
+def test_count_by_study_returns_how_many_projections_the_study_has() -> None:
+    connection = FakeConnection([STUDY_LOOKUP, [{"projection_count": 3}]])
+
+    assert ProjectionRepository(connection).count_by_study("it_a") == 3
+    assert connection.params_of("count(*)") == [(7,)]
+
+
+@pytest.mark.unit
+def test_count_by_study_of_an_unknown_study_is_not_found() -> None:
+    connection = FakeConnection([[]])
+
+    with pytest.raises(StudyNotFoundError):
+        ProjectionRepository(connection).count_by_study("it_x")
+
+
+@pytest.mark.unit
+def test_count_by_study_rejects_an_invalid_code_before_touching_the_database() -> None:
+    connection = FakeConnection()
+
+    with pytest.raises(InvalidStudyIdError):
+        ProjectionRepository(connection).count_by_study("../otro")
+
+    assert connection.calls == []

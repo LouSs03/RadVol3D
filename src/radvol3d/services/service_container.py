@@ -149,4 +149,8 @@ def build_service_container(
         pipeline=ProcessingPipeline(loader),
         loader=loader,
     )
+    # La tarea que procesaba un estudio en processing murio con el proceso anterior:
+    # sin esto quedaria colgado y no se podria borrar (research.md R5 de 004).
+    recovered = study_service.recover_interrupted_studies()
+    logger.info("Estudios interrumpidos marcados como failed al arrancar: %d", len(recovered))
     return ServiceContainer(study_service, factory, database)

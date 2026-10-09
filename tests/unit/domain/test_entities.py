@@ -143,3 +143,21 @@ def test_segmentation_results_do_not_share_the_summary() -> None:
     second = SegmentationResult(mask=None, probability=None, global_confidence=0.0)
 
     assert first.summary is not second.summary
+
+
+@pytest.mark.unit
+def test_a_lesion_has_no_organ_until_the_persistence_fills_it() -> None:
+    from radvol3d.domain.entities import Lesion
+
+    lesion = Lesion(location="centro", volume_mm3=10.0, confidence=0.5)
+    with_organ = Lesion(
+        location="centro", volume_mm3=10.0, confidence=0.5, organ=OrganName.LUNG
+    )
+
+    assert lesion.organ is None
+    assert with_organ.organ is OrganName.LUNG
+
+
+@pytest.mark.unit
+def test_an_empty_result_has_no_volume_path() -> None:
+    assert StoredResult("it_a").volume_path is None

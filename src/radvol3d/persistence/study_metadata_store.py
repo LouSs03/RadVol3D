@@ -10,6 +10,17 @@ de subir, la transaccion se revierte y los archivos quedan sueltos en el bucket,
 pero sin fila que los registre; como las rutas son deterministas, reintentar con el
 mismo codigo los reemplaza.
 
+Flujo en tres pasos de la funcionalidad 004 (research.md R2 y R3):
+
+- create_study: paciente, estudio en pending y sus cuatro etapas, sin subir nada.
+- add_projections: bloquea la fila del estudio, exige pending y cero proyecciones, y
+  solo entonces sube y registra las cuatro. Si algo falla, nada queda registrado.
+- claim_for_processing: bloquea la fila, exige pending y cuatro proyecciones, y pasa el
+  estudio a processing en la misma transaccion. Con el bloqueo, de dos pedidos
+  simultaneos solo uno lo reclama: el otro espera, ve processing y se rechaza.
+
+register_study es create_study + add_projections en una sola transaccion.
+
 Orden de delete_study (research.md R8 de la funcionalidad 002): todo dentro de una
 transaccion. Se bloquea la fila del estudio, se comprueba que no se este procesando,
 se borra la fila (lo demas cae en cascada) y despues se borran sus diez archivos del
@@ -25,7 +36,11 @@ import numpy as np
 from radvol3d import config
 from radvol3d.domain.entities import PatientDetails, Projection, Study
 from radvol3d.domain.enums import OrganName, StudyStatus
-from radvol3d.domain.exceptions import InvalidProjectionError, StudyInProgressError
+from radvol3d.domain.exceptions import (
+    InvalidProjectionError,
+    InvalidStudyStateError,
+    StudyInProgressError,
+)
 from radvol3d.persistence.connection import Database
 from radvol3d.persistence.object_storage import ObjectStorage
 from radvol3d.persistence.repositories.lesion_repository import LesionRepository
@@ -85,16 +100,82 @@ class StudyMetadataStore:
         uploads = self._validated_uploads(study_code, projections)
 
         with self._database.transaction() as connection:
-            patient_entity = PatientRepository(connection).find_or_create(patient)
-            StudyRepository(connection).create(study_code, organ_name, patient_entity.patient_code)
-            for upload, path in uploads:
-                self._storage.upload_array(path, upload.array)
-            ProjectionRepository(connection).add_many(
-                study_code,
-                [Projection(u.angle_degrees, path, u.original_name) for u, path in uploads],
-            )
+            self._insert_study(connection, study_code, organ_name, patient)
+            self._store_projections(connection, study_code, uploads)
             ProcessingStageRepository(connection).prepare_stages(study_code)
             return self._load(connection, study_code)
+
+    def create_study(
+        self,
+        study_code: str,
+        organ: OrganName | str,
+        patient: PatientDetails | None = None,
+    ) -> Study:
+        """Registra un estudio en pending con sus cuatro etapas, todavia sin proyecciones.
+
+        No sube nada al bucket. Valida el codigo y el organo antes de tocar la base.
+        """
+        validate_study_code(study_code)
+        organ_name = parse_organ_name(organ)
+        with self._database.transaction() as connection:
+            self._insert_study(connection, study_code, organ_name, patient)
+            ProcessingStageRepository(connection).prepare_stages(study_code)
+            return self._load(connection, study_code)
+
+    def add_projections(self, study_code: str, projections: list[ProjectionUpload]) -> Study:
+        """Sube y registra las cuatro proyecciones de un estudio en pending que no tiene.
+
+        Lanza InvalidStudyStateError, sin subir nada, si el estudio no esta en pending
+        o ya tiene proyecciones. Para cambiarlas, se borra el estudio y se crea de nuevo.
+        """
+        validate_study_code(study_code)
+        uploads = self._validated_uploads(study_code, projections)
+        with self._database.transaction() as connection:
+            status = StudyRepository(connection).lock_status(study_code)
+            if status is not StudyStatus.PENDING:
+                raise InvalidStudyStateError(
+                    f"El estudio '{study_code}' esta en {status.value}: solo se suben "
+                    "proyecciones a un estudio en pending."
+                )
+            if ProjectionRepository(connection).count_by_study(study_code) > 0:
+                raise InvalidStudyStateError(
+                    f"El estudio '{study_code}' ya tiene sus proyecciones. Para cambiarlas, "
+                    "borra el estudio y crealo de nuevo."
+                )
+            self._store_projections(connection, study_code, uploads)
+            return self._load(connection, study_code)
+
+    def claim_for_processing(self, study_code: str) -> None:
+        """Pasa a processing un estudio en pending con sus cuatro proyecciones.
+
+        Lanza InvalidStudyStateError si no cumple. El bloqueo de la fila hace que, de
+        dos pedidos simultaneos, solo uno reclame el estudio.
+        """
+        validate_study_code(study_code)
+        with self._database.transaction() as connection:
+            studies = StudyRepository(connection)
+            status = studies.lock_status(study_code)
+            if status is not StudyStatus.PENDING:
+                raise InvalidStudyStateError(
+                    f"El estudio '{study_code}' esta en {status.value}: solo se procesa un "
+                    "estudio en pending."
+                )
+            count = ProjectionRepository(connection).count_by_study(study_code)
+            expected = len(config.PROJECTION_ANGLES)
+            if count != expected:
+                raise InvalidStudyStateError(
+                    f"El estudio '{study_code}' tiene {count} de {expected} proyecciones: "
+                    "sube las cuatro antes de procesarlo."
+                )
+            studies.update_status(study_code, StudyStatus.PROCESSING)
+
+    def load_projections(self, study_code: str) -> dict[int, np.ndarray]:
+        """Baja del bucket las cuatro proyecciones del estudio, por angulo."""
+        validate_study_code(study_code)
+        return {
+            angle: self._storage.download_array(projection_path(study_code, angle))
+            for angle in config.PROJECTION_ANGLES
+        }
 
     def get_study(self, study_code: str) -> Study:
         """Devuelve el estudio con su paciente, proyecciones y etapas."""
@@ -138,6 +219,31 @@ class StudyMetadataStore:
         """Devuelve los estudios del mas reciente al mas antiguo, sin datos anidados."""
         with self._database.transaction() as connection:
             return StudyRepository(connection).list_recent()
+
+    @staticmethod
+    def _insert_study(
+        connection: Any,
+        study_code: str,
+        organ_name: OrganName,
+        patient: PatientDetails | None,
+    ) -> None:
+        """Inserta el paciente (o reutiliza el de referencia) y el estudio en pending."""
+        patient_entity = PatientRepository(connection).find_or_create(patient)
+        StudyRepository(connection).create(study_code, organ_name, patient_entity.patient_code)
+
+    def _store_projections(
+        self,
+        connection: Any,
+        study_code: str,
+        uploads: list[tuple[ProjectionUpload, str]],
+    ) -> None:
+        """Sube cada proyeccion y despues registra sus filas."""
+        for upload, path in uploads:
+            self._storage.upload_array(path, upload.array)
+        ProjectionRepository(connection).add_many(
+            study_code,
+            [Projection(u.angle_degrees, path, u.original_name) for u, path in uploads],
+        )
 
     @staticmethod
     def _validated_uploads(

@@ -16,6 +16,7 @@ from radvol3d.domain.exceptions import (
     DuplicateStudyError,
     InvalidProjectionError,
     InvalidStudyIdError,
+    InvalidStudyStateError,
     StorageError,
     StudyNotFoundError,
     UnknownOrganError,
@@ -564,3 +565,156 @@ def test_an_invalid_code_is_rejected_before_opening_the_transaction() -> None:
         world.store.delete_study("../otro")
 
     assert world.events == []
+
+
+# ---------------------------------------------------------------------------
+# Flujo en tres pasos de la funcionalidad 004 (research.md R2 y R3).
+# ---------------------------------------------------------------------------
+
+
+def lock_returns(world: World, status: str) -> None:
+    world.connection.when("for update", [{"status": status}])
+
+
+def projection_count_is(world: World, count: int) -> None:
+    world.connection.when("count(*)", [{"projection_count": count}])
+
+
+@pytest.mark.unit
+def test_create_study_registers_study_and_stages_without_touching_the_bucket(
+    world: World,
+) -> None:
+    study = world.store.create_study(CODE, OrganName.LUNG)
+
+    assert study.study_code == CODE
+    assert index_of(world.events, "insert into study") != -1
+    assert index_of(world.events, "insert into processing_stage") != -1
+    assert index_of(world.events, "insert into projection") == -1
+    assert world.uploaded() == []
+    assert world.database.committed == 1
+
+
+@pytest.mark.unit
+def test_create_study_rejects_an_organ_outside_the_scope_before_touching_anything(
+    world: World,
+) -> None:
+    with pytest.raises(UnknownOrganError):
+        world.store.create_study(CODE, "kidney")
+
+    assert world.events == []
+
+
+@pytest.mark.unit
+def test_add_projections_locks_the_study_and_uploads_the_four_files(world: World) -> None:
+    lock_returns(world, "pending")
+    projection_count_is(world, 0)
+
+    world.store.add_projections(CODE, four_uploads())
+
+    assert index_of(world.events, "for update") < index_of(world.events, "upload:")
+    assert world.uploaded() == [f"{CODE}/projections/angle_{a:03d}.npy" for a in ANGLES]
+    assert len(world.connection.params_of("insert into projection")) == 4
+    assert world.database.committed == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("status", ["processing", "completed", "failed"])
+def test_add_projections_to_a_study_that_is_not_pending_uploads_nothing(
+    world: World, status: str
+) -> None:
+    lock_returns(world, status)
+    projection_count_is(world, 0)
+
+    with pytest.raises(InvalidStudyStateError, match=status):
+        world.store.add_projections(CODE, four_uploads())
+
+    assert world.uploaded() == []
+    assert world.database.rolled_back == 1
+
+
+@pytest.mark.unit
+def test_add_projections_to_a_study_that_already_has_them_uploads_nothing(
+    world: World,
+) -> None:
+    lock_returns(world, "pending")
+    projection_count_is(world, 4)
+
+    with pytest.raises(InvalidStudyStateError, match="ya tiene"):
+        world.store.add_projections(CODE, four_uploads())
+
+    assert world.uploaded() == []
+
+
+@pytest.mark.unit
+def test_add_projections_with_a_missing_angle_touches_nothing(world: World) -> None:
+    with pytest.raises(InvalidProjectionError):
+        world.store.add_projections(CODE, four_uploads()[:3])
+
+    assert world.events == []
+
+
+@pytest.mark.unit
+def test_claim_for_processing_moves_a_ready_study_to_processing_under_the_lock(
+    world: World,
+) -> None:
+    lock_returns(world, "pending")
+    projection_count_is(world, 4)
+
+    world.store.claim_for_processing(CODE)
+
+    assert index_of(world.events, "for update") < index_of(world.events, "update study set status")
+    assert world.connection.params_of("update study set status") == [("processing", CODE)]
+    assert world.database.committed == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("status", ["processing", "completed", "failed"])
+def test_claim_for_processing_rejects_a_study_that_is_not_pending(
+    world: World, status: str
+) -> None:
+    lock_returns(world, status)
+    projection_count_is(world, 4)
+
+    with pytest.raises(InvalidStudyStateError, match=status):
+        world.store.claim_for_processing(CODE)
+
+    assert world.connection.params_of("update study set status") == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("count", [0, 3])
+def test_claim_for_processing_rejects_a_study_without_its_four_projections(
+    world: World, count: int
+) -> None:
+    lock_returns(world, "pending")
+    projection_count_is(world, count)
+
+    with pytest.raises(InvalidStudyStateError, match=f"{count} de 4"):
+        world.store.claim_for_processing(CODE)
+
+    assert world.connection.params_of("update study set status") == []
+
+
+@pytest.mark.unit
+def test_claim_for_processing_of_an_unknown_study_is_not_found(world: World) -> None:
+    world.connection.when("for update", [])
+
+    with pytest.raises(StudyNotFoundError):
+        world.store.claim_for_processing(CODE)
+
+
+@pytest.mark.unit
+def test_load_projections_returns_the_four_arrays_by_angle(world: World) -> None:
+    storage = ObjectStorage(world.bucket)
+    for angle in ANGLES:
+        storage.upload_array(
+            f"{CODE}/projections/angle_{angle:03d}.npy",
+            np.full((4, 4), angle, dtype=np.float32),
+        )
+
+    loaded = world.store.load_projections(CODE)
+
+    assert sorted(loaded) == list(ANGLES)
+    for angle in ANGLES:
+        assert loaded[angle].dtype == np.float32
+        assert float(loaded[angle][0, 0]) == angle

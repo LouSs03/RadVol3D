@@ -67,7 +67,8 @@ class Projection:
 class Lesion:
     """Region con lesion detectada por el segmentador.
 
-    Los nombres coinciden con las columnas de la tabla lesion.
+    Los nombres coinciden con las columnas de la tabla lesion. organ lo llena la
+    persistencia al leer, con el organo del estudio; las estrategias no lo llenan.
     """
 
     location: str
@@ -75,6 +76,7 @@ class Lesion:
     confidence: float
     max_diameter_mm: float | None = None
     mesh_path: str | None = None
+    organ: OrganName | None = None
 
 
 @dataclass(frozen=True)
@@ -109,12 +111,13 @@ class Study:
 class StoredResult:
     """Resultado guardado de un estudio: sus lesiones y las rutas de sus archivos.
 
-    Un estudio que todavia no tiene resultado se representa con las cinco rutas en
+    Un estudio que todavia no tiene resultado se representa con todas las rutas en
     None y la lista de lesiones vacia.
     """
 
     study_code: str
     lesions: list[Lesion] = field(default_factory=list)
+    volume_path: str | None = None
     mask_path: str | None = None
     probability_path: str | None = None
     summary_path: str | None = None
