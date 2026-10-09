@@ -3,15 +3,18 @@
 Cada caso corre el segmentador migrado una sola vez (tarda minutos en CPU): un motor
 que guarda la salida cruda permite comparar el resumen sin alinear con la referencia y,
 con la misma corrida, el resumen alineado que entrega la estrategia.
+
+LungSegmenter usa torch: se importa dentro de la fixture, no al nivel del modulo, para
+que la coleccion de pytest no falle donde torch no esta instalado (el CI).
 """
 
 import importlib.util
 import json
+from typing import Any
 
 import numpy as np
 import pytest
 
-from radvol3d.services.segmentation.lung_segmenter import LungSegmenter
 from radvol3d.services.segmentation.lung_unet_strategy import LungUnetStrategy
 from tests.ml.conftest import EN2_WEIGHTS, ROOT
 
@@ -32,7 +35,7 @@ def gaussian_volume(grid: int) -> np.ndarray:
 class RecordingEngine:
     """Envuelve al segmentador real y guarda su salida cruda, con el id de la referencia."""
 
-    def __init__(self, segmenter: LungSegmenter, study_id: str) -> None:
+    def __init__(self, segmenter: Any, study_id: str) -> None:
         self.segmenter = segmenter
         self.study_id = study_id
         self.raw: dict | None = None
@@ -43,13 +46,15 @@ class RecordingEngine:
 
 
 @pytest.fixture(scope="module")
-def segmenter(model_artifacts) -> LungSegmenter:
+def segmenter(model_artifacts) -> Any:
+    from radvol3d.services.segmentation.lung_segmenter import LungSegmenter
+
     return LungSegmenter(str(model_artifacts.path(EN2_WEIGHTS)))
 
 
 @pytest.mark.parametrize("case", ["en2_gaussian", "en2_from_en1"])
 def test_en2_matches_the_reference_and_the_strategy_aligns_the_summary(
-    model_artifacts, segmenter: LungSegmenter, case: str
+    model_artifacts, segmenter: Any, case: str
 ) -> None:
     if case == "en2_gaussian":
         volume = gaussian_volume(segmenter.grid)

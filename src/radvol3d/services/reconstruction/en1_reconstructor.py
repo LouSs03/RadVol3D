@@ -1,4 +1,7 @@
-"""Reconstructor EN-1: cuatro radiografias -> volumen de 128 x 128 x 128. Usa PyTorch.
+"""Reconstructor EN-1: cuatro radiografias -> volumen de 128 x 128 x 128.
+
+Usa PyTorch, pero lo importa dentro de cada metodo y no al importar el modulo: asi la
+coleccion de pytest no falla donde torch no esta instalado, como en el CI.
 
 Migrado desde models/en1_inferencia_nuevo (1).py (research.md R14). La logica de
 reconstruccion no cambia. Solo cambian dos cosas, y ninguna altera la salida numerica:
@@ -18,7 +21,6 @@ reconstruir un caso.
 import os
 
 import numpy as np
-import torch
 
 from radvol3d.services.reconstruction.en1_geometry import (
     ANGLES,
@@ -30,13 +32,16 @@ from radvol3d.services.reconstruction.en1_geometry import (
     back_project,
     ramp_filter,
 )
-from radvol3d.services.reconstruction.en1_network import ResidualUnet3d
 
 
 class En1Reconstructor:
     """Carga los pesos una sola vez y reconstruye tantos casos como se le pidan."""
 
     def __init__(self, weights_path, device="cpu"):
+        import torch
+
+        from radvol3d.services.reconstruction.en1_network import ResidualUnet3d
+
         if not os.path.exists(weights_path):
             raise FileNotFoundError("No existe el archivo de pesos de EN-1.")
 
@@ -105,6 +110,8 @@ class En1Reconstructor:
         El orden importa: invertirlo hace que el residual se sume sobre la
         reconstruccion peor y el resultado cae varios decibelios.
         """
+        import torch
+
         p = np.asarray(projections, dtype=np.float32)
         if p.shape != (len(ANGLES), self.grid, self.grid):
             raise ValueError(
@@ -120,12 +127,14 @@ class En1Reconstructor:
         x = np.stack([fbp, bp])[None].astype(np.float32)
         return torch.from_numpy(x).to(self.device)
 
-    @torch.no_grad()
     def reconstruct(self, projections):
         """(4, G, G) -> volumen (G, G, G) float32 en [0, 1]."""
-        x = self.prepare_input(projections)
-        y = self.model(x).clamp(0.0, 1.0)
-        return y[0, 0].float().cpu().numpy()
+        import torch
+
+        with torch.no_grad():
+            x = self.prepare_input(projections)
+            y = self.model(x).clamp(0.0, 1.0)
+            return y[0, 0].float().cpu().numpy()
 
     def baseline(self, projections):
         """La FBP calibrada sola, sin modelo. Sirve para comprobar que el modelo aporta."""

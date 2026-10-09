@@ -1,4 +1,7 @@
-"""Segmentador de tumor de pulmon EN-2. Usa PyTorch.
+"""Segmentador de tumor de pulmon EN-2.
+
+Usa PyTorch, pero lo importa dentro de cada metodo y no al importar el modulo: asi la
+coleccion de pytest no falla donde torch no esta instalado, como en el CI.
 
 Migrado desde models/en2_inferencia.py (research.md R14). La logica de carga y de
 inferencia no cambia: mismas claves del archivo de pesos, mismos valores por omision,
@@ -19,7 +22,6 @@ reconstructor.
 """
 
 import numpy as np
-import torch
 
 from radvol3d.services.segmentation.lung_region_summary import (
     InvalidVolumeError,
@@ -28,13 +30,16 @@ from radvol3d.services.segmentation.lung_region_summary import (
     patch_positions,
     summarize_regions,
 )
-from radvol3d.services.segmentation.lung_unet_network import SegmentationUnet3d
 
 
 class LungSegmenter:
     """Segmenta el tumor sobre un volumen reconstruido: mascara, confianza y resumen."""
 
     def __init__(self, weights_path, device="cpu"):
+        import torch
+
+        from radvol3d.services.segmentation.lung_unet_network import SegmentationUnet3d
+
         data = torch.load(weights_path, map_location="cpu", weights_only=True)
         if "pesos" not in data:
             raise ValueError(
@@ -90,9 +95,17 @@ class LungSegmenter:
             )
         return np.clip(v, 0.0, 1.0)
 
-    @torch.no_grad()
     def probability(self, volume):
         """Probabilidad de tumor por voxel: float32 en [0, 1], misma forma que la entrada."""
+        import torch
+
+        with torch.no_grad():
+            return self._probability(volume)
+
+    def _probability(self, volume):
+        """Cuerpo de probability; se llama dentro de torch.no_grad()."""
+        import torch
+
         v = self._validate(volume)
         p = self.patch
         original_shape = v.shape

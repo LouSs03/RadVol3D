@@ -27,15 +27,24 @@ dimensionar las pruebas.
 
 - **Decisión**: `torch` va como extra `ml` en `pyproject.toml`
   (`[project.optional-dependencies] ml = ["torch>=2.6"]`) y no entra en `requirements.txt`.
-  Ningún módulo que se importe al arrancar sin modelos importa `torch` en su nivel superior.
-  Solo cuatro módulos lo importan:
+  Ningún módulo de `src/`, `tests/` ni `scripts/` importa `torch` en su nivel superior. Solo
+  cuatro módulos lo usan:
   - `reconstruction/en1_network.py`
   - `reconstruction/en1_reconstructor.py`
   - `segmentation/lung_unet_network.py`
   - `segmentation/lung_segmenter.py`
 
-  Las estrategias (`neural_en1_strategy.py`, `lung_unet_strategy.py`) los importan dentro de
-  su método de construcción `from_weights(...)`, nunca en el nivel superior.
+  Los cuatro lo importan dentro de sus funciones y métodos. Las redes definen sus clases
+  (que heredan de `nn.Module`) dentro de una función con caché y las entregan con el
+  `__getattr__` del módulo (PEP 562), así que `from ... import ResidualUnet3d` sigue
+  funcionando. Las estrategias (`neural_en1_strategy.py`, `lung_unet_strategy.py`) importan
+  el motor dentro de `from_weights(...)`, y las pruebas `ml`, dentro de sus fixtures.
+- **Corrección (2026-10-09).** En la primera versión, los cuatro módulos importaban torch en
+  su nivel superior, y `tests/ml/test_en2_regression.py` importaba `LungSegmenter` también en
+  su nivel superior. El CI, que no tiene torch, fallaba al coleccionar las pruebas, antes de
+  que el marcador `ml` pudiera omitirlas. Se verificó que, con torch bloqueado, la colección
+  pasa completa y las pruebas `ml` se omiten. Con torch, la salida sigue idéntica a la de
+  los originales (EN-1 y EN-2, bit a bit).
 - **Motivo**: así el CI no instala torch, y `api/` puede importar `services` sin arrastrar torch
   (Principio I). La fábrica y el contenedor se pueden importar y probar sin torch.
 - **Alternativas**:
