@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "radvol3d"
+version = "0.1.0"
+description = "Reconstruccion 3D de organos y deteccion de tumores desde radiografias"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------------------
+# Estilo. La regla "N" es pep8-naming: marca cualquier camelCase en funciones
+# y variables, que es la convencion que el equipo descarto.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+# ---------------------------------------------------------------------------
+# Pruebas. Cada marca corresponde a una carpeta de tests/.
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "unit: prueba una pieza aislada, sin servicios externos",
+    "integration: dos capas reales juntas, necesita Supabase de prueba",
+    "e2e: de punta a punta por HTTP, necesita el servicio levantado",
+    "concurrency: varias peticiones a la vez",
+    "architecture: limites entre capas",
+]
+
+[tool.coverage.run]
+source = ["src/radvol3d"]

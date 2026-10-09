@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          pip install -e .
+          pip install -r requirements-dev.txt
+
+      - name: Estilo y convencion de nombres
+        run: |
+          ruff check src tests
+          python scripts/check_naming_convention.py
+
+      - name: Limites entre capas
+        run: pytest -m architecture -v
+
+      - name: Pruebas unitarias con cobertura
+        run: pytest -m unit --cov --cov-report=xml

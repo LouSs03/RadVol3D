@@ -1,0 +1,2 @@
+-- Esquema de RadVol3D
+-- TODO: migrar desde el repositorio anterior y aplicarlo en Supabase.

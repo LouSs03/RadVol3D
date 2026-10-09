@@ -1,0 +1,33 @@
+# Entorno
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secretos: 
+.env
+.env.local
+
+# Datos y modelos: viven en Supabase Storage, no en git
+datos/
+data/
+*.pth
+*.pt
+*.npy
+*.nii
+*.nii.gz
+*.glb
+
+# Editor y sistema operativo
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Salidas de cuadernos
+notebooks/outputs/
