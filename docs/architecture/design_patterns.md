@@ -34,20 +34,29 @@ Cuatro razones concretas:
 
 ### Donde esta
 
+Hay una interfaz por etapa variable: reconstrucción, segmentación y mallas.
+
 | Archivo | Papel |
 |---|---|
 | `services/reconstruction/reconstruction_strategy.py` | la interfaz |
-| `services/reconstruction/backprojection_strategy.py` | estrategia concreta |
-| `services/reconstruction/neural_en1_strategy.py` | estrategia concreta |
+| `services/reconstruction/neural_en1_strategy.py` | estrategia concreta: EN-1 |
+| `services/reconstruction/backprojection_strategy.py` | esqueleto, fuera de la fábrica |
 | `services/segmentation/segmentation_strategy.py` | la interfaz |
-| `services/segmentation/lung_unet_strategy.py` | estrategia concreta |
-| `services/segmentation/liver_unet_strategy.py` | estrategia concreta |
-| `services/processing_pipeline.py` | el contexto que las usa |
+| `services/segmentation/lung_unet_strategy.py` | estrategia concreta: EN-2 de pulmón |
+| `services/segmentation/liver_unet_strategy.py` | esqueleto; no hay modelo de hígado todavía |
+| `services/meshing/meshing_strategy.py` | la interfaz |
+| `services/meshing/marching_cubes_strategy.py` | estrategia concreta: marching cubes y `.glb` |
+| `services/pipeline/processing_pipeline.py` | el contexto que las usa |
+
+Las estrategias reales envuelven el código migrado de `models/`: las piezas sin torch
+están en `en1_geometry.py` y `lung_region_summary.py`, y las que usan torch se importan
+solo al construir la estrategia. Los dobles de `tests/fixtures/fake_strategies.py`
+cumplen las mismas interfaces.
 
 ## Patrones secundarios
 
 | Patron | Donde | Para que |
 |---|---|---|
-| Factory Method | `services/strategy_factory.py` | un solo lugar sabe que estrategia corresponde a cada organo |
+| Factory Method | `services/strategy_factory.py` | un solo lugar sabe que estrategia corresponde a cada organo. Recibe constructores y los llama una vez al arrancar (`preload`); un modelo que no carga queda no disponible sin detener el arranque |
 | Repository | `persistence/repositories/` | aisla el acceso a datos del resto del sistema |
-| Pipes and Filters | `services/processing_pipeline.py` | las cuatro etapas encadenadas, las mismas de `processing_stage` |
+| Pipes and Filters | `services/pipeline/` | las cuatro etapas encadenadas (`filters.py`), las mismas de `processing_stage`. La tuberia registra cada etapa por el puerto `PipelineProgress` sin saber si del otro lado hay una base real o un doble |

@@ -171,7 +171,7 @@ src/radvol3d/
 
 scripts/
 ├── export_en2_weights.py               # Q1 = B
-├── build_regression_reference.py       # FR-034
+├── generate_regression_reference.py       # FR-034
 └── publish_model_artifacts.py          # sube pesos y referencias a MODEL_BUCKET
 
 tests/

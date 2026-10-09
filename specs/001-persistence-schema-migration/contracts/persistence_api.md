@@ -1,5 +1,10 @@
 # Contrato: lo que `persistence/` ofrece a `services/`
 
+> **Actualizado el 2026-10-09 por la funcionalidad 002** (`specs/002-services-pipeline/`):
+> configuracion de modelos, `remove_many`, `ModelWeightsStore`, `ProcessingProgressStore`,
+> `delete_study`, `lock_status` y `delete`; ademas, `save_result` ya no marca etapas. Este es
+> el unico contrato vigente de la persistencia.
+
 Este contrato es interno: lo usan los servicios, no un sistema externo. Las firmas indican qué
 entra, qué sale y qué error se lanza. No son la implementación. Todas las entidades son de
 `domain/entities.py` y todos los errores, de `domain/exceptions.py`.
@@ -19,6 +24,16 @@ class Settings:
     supabase_url: str
     supabase_service_key: SecretStr
     storage_bucket: str
+```
+
+```python
+def get_model_settings() -> ModelSettings   # nunca lanza por una variable faltante
+class ModelSettings:                         # todas opcionales; una variable vacia cuenta
+    model_bucket: str | None                 # como no definida (env_ignore_empty)
+    en1_weights_object: str | None
+    en2_weights_object: str | None
+    model_cache_dir: Path                    # por omision .cache/models
+    reconstruction_strategy: str             # por omision "en1"
 ```
 
 `get_settings()` carga la configuración la primera vez y la guarda. `str()` y `repr()` de
@@ -60,15 +75,32 @@ def validate_study_code(study_code: str) -> str
 class ObjectStorage:
     def __init__(self, bucket: BucketClient) -> None
     @classmethod
-    def from_settings(cls, settings: Settings) -> "ObjectStorage"
+    def from_settings(cls, settings: Settings, bucket: str | None = None) -> "ObjectStorage"
+        # bucket=None abre el bucket de datos; con un nombre, abre ese (el de modelos)
     def upload_bytes(self, path: str, data: bytes, content_type: str) -> None   # StorageError
     def download_bytes(self, path: str) -> bytes            # StorageObjectNotFoundError, StorageError
     def exists(self, path: str) -> bool                     # StorageError
     def upload_array(self, path: str, array: ndarray) -> None   # StorageError
     def download_array(self, path: str) -> ndarray          # StorageObjectNotFoundError, StorageError
+    def remove_many(self, paths: Sequence[str]) -> None     # StorageError
 ```
 
 - Subir a una ruta ocupada reemplaza el archivo.
+- `remove_many` borra en una sola llamada; una ruta que no existe no es error.
+- Una instancia serializa sus llamadas al bucket con un candado propio: el cliente HTTP de
+  Supabase no admite dos peticiones a la vez desde hilos distintos (002, research.md R13).
+
+## model_weights_store
+
+```python
+class ModelWeightsStore:
+    def __init__(self, storage: ObjectStorage, cache_dir: Path) -> None
+    def fetch(self, object_path: str) -> Path
+        # StorageObjectNotFoundError, StorageError (tambien por una ruta con '..' o '\')
+```
+
+Si el archivo ya esta en la cache, no lo baja. Si no, lo escribe en un temporal y lo renombra:
+una descarga cortada nunca deja un archivo a medias.
 - Los arreglos se escriben y se leen siempre sin `pickle`. Un `.npy` con objetos se rechaza con
   `StorageError`.
 
@@ -97,6 +129,8 @@ class StudyRepository:
     def update_status(self, study_code: str, status: StudyStatus) -> None   # StudyNotFoundError
     def mark_completed(self, study_code: str, model: Model, grid_size: int,
                        total_time_sec: float) -> None               # StudyNotFoundError
+    def lock_status(self, study_code: str) -> StudyStatus   # select ... for update; StudyNotFoundError
+    def delete(self, study_code: str) -> None                # en cascada; StudyNotFoundError
 
 class ProjectionRepository:
     def add_many(self, study_code: str, projections: list[Projection]) -> None
@@ -135,10 +169,38 @@ class StudyMetadataStore:
     def list_studies(self) -> list[Study]
     def save_volume(self, study_code: str, volume: ndarray) -> str   # devuelve la ruta
         # InvalidStudyIdError, StudyNotFoundError (antes de subir nada), StorageError
+    def delete_study(self, study_code: str) -> None
+        # InvalidStudyIdError, StudyNotFoundError, StudyInProgressError, StorageError,
+        # DatabaseUnavailableError
 ```
 
 `register_study` sigue el orden de research.md (R8): el estudio se inserta antes de subir
 cualquier archivo.
+
+`delete_study` hace todo en una transaccion: bloquea la fila (`lock_status`), rechaza un
+estudio en `processing`, borra la fila (lo demas cae en cascada) y borra las diez rutas de
+`storage_layout` con `remove_many`. Si el bucket falla, se revierte y el estudio sigue en pie.
+Los pacientes y los modelos no se borran.
+
+## processing_progress_store
+
+Cada metodo es una unidad de trabajo completa. Cuando recibe un modelo, hace `get_or_create`
+antes de enlazarlo.
+
+```python
+class ProcessingProgressStore:
+    def __init__(self, database: Database) -> None
+    def start_processing(self, study_code: str) -> None                 # StudyNotFoundError
+    def start_stage(self, study_code: str, stage: StageNumber) -> None  # StudyNotFoundError
+    def complete_stage(self, study_code: str, stage: StageNumber,
+                       model_name: str | None = None, model_version: str | None = None) -> None
+    def fail_from_stage(self, study_code: str, stage: StageNumber) -> None
+        # etapa -> failed, siguientes -> skipped, estudio -> failed
+    def complete_study(self, study_code: str, model_name: str, model_version: str,
+                       grid_size: int, total_time_sec: float) -> None   # StudyNotFoundError
+    def register_model(self, model_name: str, version: str,
+                       trained_on: date | None = None, description: str | None = None) -> Model
+```
 
 ## result_store
 
@@ -153,8 +215,10 @@ class ResultStore:
 ```
 
 `save_result` sube los cinco archivos. Después, en una sola unidad de trabajo, crea una fila de
-`lesion` por cada elemento de `summary["regions"]` (FR-047a), registra el modelo de segmentación
-en la etapa 3 y marca las etapas 3 y 4 como `completed`.
+`lesion` por cada elemento de `summary["regions"]` (FR-047a). Desde la funcionalidad 002
+(research.md R7) **ya no** registra el modelo ni marca las etapas 3 y 4: lo hace la tubería con
+`ProcessingProgressStore.complete_stage`, y la etapa 4 se cierra después de guardar. Así el
+resultado aparece entero o no aparece.
 
 `get_result` nunca falla por falta de resultado (FR-049):
 

@@ -131,6 +131,8 @@ def build_service_container(
     for strategy in factory.model_strategies():
         # trained_on queda vacio: la fecha real de entrenamiento no esta en los pesos
         # ni en el repositorio, y no se estima (Principio V).
+        # TODO(TRAINING_DATE_EN1): registrar la fecha real de entrenamiento de EN-1.
+        # TODO(TRAINING_DATE_EN2): registrar la fecha real de entrenamiento de EN-2.
         progress_store.register_model(
             strategy.model_name,
             strategy.model_version,

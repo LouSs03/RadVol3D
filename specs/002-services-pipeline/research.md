@@ -317,7 +317,7 @@ repite en la descripción del pull request.
 ## R16. Regresión numérica (FR-034)
 
 - **Decisión**:
-  - **Generación.** `scripts/build_regression_reference.py` carga los scripts originales de
+  - **Generación.** `scripts/generate_regression_reference.py` carga los scripts originales de
     `models/` por ruta, sin modificarlos, y corre en CPU sobre tres casos deterministas sin
     datos de pacientes:
     1. EN-1 sobre las proyecciones del fantoma elipsoide de su autoprueba
@@ -351,6 +351,17 @@ repite en la descripción del pull request.
   - Comparar en vivo contra los originales en cada corrida. Se descarta porque exige tener
     `models/` local y no sirve en otra máquina.
   - Guardar solo estadísticas (media, máximo). Se descarta porque no detecta un vóxel cambiado.
+
+- **Verificación previa a la referencia (2026-10-09, T081 a T098).** Antes de entregar la
+  migración se comparó, en la carpeta temporal y sin escribir nada en el repositorio, el
+  código migrado con los originales de `models/` sobre las mismas entradas:
+  - caso 4: `clean_mask` y `summarize_regions` idénticos;
+  - EN-1 sobre el fantoma: diferencia máxima 0,0;
+  - EN-2, con el `.pth` de exportación de prueba de R18, sobre la salida de EN-1: máscara
+    idéntica, diferencia máxima de probabilidad 0,0 y resumen idéntico (31 lesiones, 344 s).
+
+  No reemplaza la referencia de `scripts/generate_regression_reference.py`, que corre el
+  usuario.
 
 ## R17. Cobertura del 80 % sin torch en el CI
 

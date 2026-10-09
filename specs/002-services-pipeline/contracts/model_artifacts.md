@@ -48,7 +48,7 @@ exportación original, se sube a la misma ruta y se regenera la referencia de EN
 ```json
 {
   "generated_on": "<fecha ISO en que se corrió el script>",
-  "generator": "scripts/build_regression_reference.py",
+  "generator": "scripts/generate_regression_reference.py",
   "sources": {"en1": "en1_inferencia_nuevo (1).py", "en2": "en2_inferencia.py"},
   "environment": {"torch": "…", "numpy": "…", "scipy": "…", "platform": "…", "device": "cpu"},
   "tolerance": {"mask": "exact", "volume_abs": 1e-5, "probability_abs": 1e-5},

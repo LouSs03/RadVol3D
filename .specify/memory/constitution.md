@@ -1,6 +1,17 @@
 <!--
 Sync Impact Report
 ==================
+Cambio de versión: 1.0.0 → 1.0.1 (PATCH, 2026-10-09)
+
+- Principio II: la ruta citada de la tubería pasa de `services/processing_pipeline.py` a
+  `services/pipeline/processing_pipeline.py` (funcionalidad 002, research.md R1). El
+  principio no cambia: solo se corrige la ruta.
+- Documentos actualizados en el mismo cambio: docs/architecture/design_patterns.md y
+  docs/architecture/fastapi_structure.md.
+- Pruebas de arquitectura: sin cambios.
+
+Historial
+---------
 Cambio de versión: plantilla sin versión → 1.0.0 (primera ratificación)
 
 Principios definidos:
@@ -61,7 +72,7 @@ al escribir el código y no durante la demostración.
   firma.
 - La estrategia que corresponde a cada órgano se elige en un solo lugar, la fábrica
   (`services/strategy_factory.py`).
-- La tubería (`services/processing_pipeline.py`) y los servicios MUST NOT contener
+- La tubería (`services/pipeline/processing_pipeline.py`) y los servicios MUST NOT contener
   condicionales por órgano (`if organ == ...`). Para agregar un órgano o un algoritmo se
   agrega una clase que implementa la interfaz. La tubería no se toca.
 - El acceso a datos pasa por repositorios en `persistence/repositories/`. Ninguna otra
@@ -157,4 +168,4 @@ publicada en un commit queda expuesta aunque después se borre.
 - Para la guía de desarrollo del día a día se consultan `docs/standards/` y
   `docs/architecture/`.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-08 | **Last Amended**: 2026-10-08
+**Version**: 1.0.1 | **Ratified**: 2026-10-08 | **Last Amended**: 2026-10-09
