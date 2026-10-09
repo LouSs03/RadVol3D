@@ -253,3 +253,101 @@ def test_a_failed_startup_is_not_cached_and_a_later_one_can_succeed(
     monkeypatch.setenv("STORAGE_BUCKET", "bucket-de-prueba")
 
     assert get_settings().storage_bucket == "bucket-de-prueba"
+
+
+# ---------------------------------------------------------------------------
+# ModelSettings (funcionalidad 002; data-model.md §6). Ninguna variable es obligatoria.
+# ---------------------------------------------------------------------------
+
+MODEL_VARIABLES = {
+    "MODEL_BUCKET": "modelos-de-prueba",
+    "EN1_WEIGHTS_OBJECT": "reconstruction_en1/1.0.0/weights.pth",
+    "EN2_WEIGHTS_OBJECT": "segmentation_lung/1.0.0/weights.pth",
+    "MODEL_CACHE_DIR": "cache-local",
+    "RECONSTRUCTION_STRATEGY": "en1",
+}
+
+
+@pytest.fixture
+def no_model_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in MODEL_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def fresh_model_cache() -> Iterator[None]:
+    settings_module.get_model_settings.cache_clear()
+    yield
+    settings_module.get_model_settings.cache_clear()
+
+
+@pytest.mark.unit
+def test_model_settings_without_variables_use_their_defaults(no_model_environment: None) -> None:
+    settings = settings_module.ModelSettings(_env_file=None)
+
+    assert settings.model_bucket is None
+    assert settings.en1_weights_object is None
+    assert settings.en2_weights_object is None
+    assert settings.model_cache_dir == Path(".cache/models")
+    assert settings.reconstruction_strategy == "en1"
+
+
+@pytest.mark.unit
+def test_model_settings_expose_the_five_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in MODEL_VARIABLES.items():
+        monkeypatch.setenv(name, value)
+
+    settings = settings_module.ModelSettings(_env_file=None)
+
+    assert settings.model_bucket == "modelos-de-prueba"
+    assert settings.en1_weights_object == MODEL_VARIABLES["EN1_WEIGHTS_OBJECT"]
+    assert settings.en2_weights_object == MODEL_VARIABLES["EN2_WEIGHTS_OBJECT"]
+    assert settings.model_cache_dir == Path("cache-local")
+    assert settings.reconstruction_strategy == "en1"
+
+
+@pytest.mark.unit
+def test_an_empty_variable_in_the_environment_counts_as_undefined(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in MODEL_VARIABLES:
+        monkeypatch.setenv(name, "")
+
+    settings = settings_module.ModelSettings(_env_file=None)
+
+    assert settings.model_bucket is None
+    assert settings.en1_weights_object is None
+    assert settings.model_cache_dir == Path(".cache/models")
+    assert settings.reconstruction_strategy == "en1"
+
+
+@pytest.mark.unit
+def test_an_empty_variable_in_the_env_file_counts_as_undefined(
+    tmp_path: Path, no_model_environment: None
+) -> None:
+    # Asi las deja .env.example: presentes y vacias.
+    env_file = tmp_path / ".env"
+    env_file.write_text("".join(f"{name}=\n" for name in MODEL_VARIABLES), encoding="utf-8")
+
+    settings = settings_module.ModelSettings(_env_file=env_file)
+
+    assert settings.model_bucket is None
+    assert settings.en2_weights_object is None
+    assert settings.model_cache_dir == Path(".cache/models")
+    assert settings.reconstruction_strategy == "en1"
+
+
+@pytest.mark.unit
+def test_get_model_settings_never_fails_and_keeps_the_result(no_model_environment: None) -> None:
+    first = settings_module.get_model_settings()
+
+    assert first is settings_module.get_model_settings()
+
+
+@pytest.mark.unit
+def test_get_settings_still_needs_only_its_four_variables(
+    full_environment: dict[str, str], no_model_environment: None
+) -> None:
+    settings = get_settings()
+
+    assert settings.storage_bucket == VARIABLES["STORAGE_BUCKET"]

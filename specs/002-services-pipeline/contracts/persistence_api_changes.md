@@ -29,6 +29,10 @@ class ObjectStorage:
         # Una ruta que no existe no es un error. Lista vacía: no hace nada.
 ```
 
+- **Concurrencia.** Una instancia serializa sus llamadas al bucket con un candado propio. El
+  cliente HTTP de Supabase no admite dos peticiones a la vez desde hilos distintos
+  (research.md R13).
+
 ## model_weights_store (nuevo)
 
 ```python

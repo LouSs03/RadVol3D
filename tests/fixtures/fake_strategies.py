@@ -91,3 +91,26 @@ class FakeMeshingStrategy(MeshingStrategy):
 
     def build_meshes(self, volume, mask) -> MeshSet:
         return MeshSet(organ=b"glTF" + b"\x01" * 16, tumor=b"glTF" + b"\x02" * 16)
+
+
+# ---------------------------------------------------------------------------
+# Dobles que fallan: lanzan un error con un texto interno que NUNCA debe llegar al
+# mensaje que ve el usuario. Exponen el mismo modelo que los dobles normales.
+# ---------------------------------------------------------------------------
+
+INTERNAL_DETAIL = "detalle interno"
+
+
+class FailingReconstructionStrategy(FakeReconstructionStrategy):
+    def reconstruct(self, projections):
+        raise RuntimeError(INTERNAL_DETAIL)
+
+
+class FailingSegmentationStrategy(FakeSegmentationStrategy):
+    def segment(self, volume, study_code: str) -> SegmentationResult:
+        raise RuntimeError(INTERNAL_DETAIL)
+
+
+class FailingMeshingStrategy(FakeMeshingStrategy):
+    def build_meshes(self, volume, mask) -> MeshSet:
+        raise RuntimeError(INTERNAL_DETAIL)

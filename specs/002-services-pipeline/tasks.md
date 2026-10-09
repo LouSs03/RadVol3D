@@ -169,7 +169,7 @@ horas, modelo en las etapas 2 y 3, `grid_size` 128, tiempo total y las cinco rut
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T021 [P] [US1] Escribir `tests/unit/persistence/test_processing_progress_store.py` con `FakeDatabase` (research.md R9):
+- [X] T021 [P] [US1] Escribir `tests/unit/persistence/test_processing_progress_store.py` con `FakeDatabase` (research.md R9):
   - `start_processing` hace `update study set status = 'processing'`;
   - `start_stage(code, 2)` deja la etapa en `running`;
   - `complete_stage(code, 2, "m", "1.0.0")` hace `get_or_create` del modelo antes de `set_status` con ese modelo, en la misma transacción;
@@ -178,41 +178,41 @@ horas, modelo en las etapas 2 y 3, `grid_size` 128, tiempo total y las cinco rut
   - `register_model("m", "1.0.0")` devuelve un `Model` con `trained_on is None`;
   - un estudio inexistente lanza `StudyNotFoundError`;
   - cada método abre una sola transacción.
-- [ ] T022 [P] [US1] Actualizar `tests/unit/persistence/test_result_store.py` según research.md R7. `save_result`:
+- [X] T022 [P] [US1] Actualizar `tests/unit/persistence/test_result_store.py` según research.md R7. `save_result`:
   - sube los cinco archivos e inserta las lesiones en una unidad de trabajo;
   - **no** ejecuta ningún `update processing_stage` ni registra modelo;
   - sigue rechazando un resumen sin `model_name` o `model_version`.
 
   `get_result` sigue devolviendo un resultado vacío si las etapas 3 y 4 no están en `completed`.
-- [ ] T023 [P] [US1] Escribir `tests/unit/services/test_projection_loader.py` (camino correcto). `ProjectionLoader.parse(four_valid_files())`:
+- [X] T023 [P] [US1] Escribir `tests/unit/services/test_projection_loader.py` (camino correcto). `ProjectionLoader.parse(four_valid_files())`:
   - devuelve un `dict` `{0, 45, 90, 135}` de arreglos `(128, 128)` float32, iguales en valor a los originales, sin reescalar;
   - acepta las proyecciones en cualquier orden de llegada.
-- [ ] T024 [P] [US1] Escribir `tests/unit/services/test_pipeline_filters.py` con los dobles:
+- [X] T024 [P] [US1] Escribir `tests/unit/services/test_pipeline_filters.py` con los dobles:
   - `PreprocessingFilter` apila en orden de ángulo, `(4, 128, 128)` float32;
   - `ReconstructionFilter` pone `volume` y expone el `model_name` y `model_version` de su estrategia;
   - `SegmentationFilter` llama a `segment(volume, study_code)` y pone `segmentation`;
   - `MeshingFilter` llama a `build_meshes(volume, segmentation.mask)` y pone `meshes`;
   - ningún filtro modifica el `PipelineData` recibido;
   - `stage_number` es 1, 2, 3 y 4.
-- [ ] T025 [P] [US1] Escribir `tests/unit/services/test_processing_pipeline.py` (camino correcto) con `RecordingProgress`. La secuencia exacta de eventos es:
+- [X] T025 [P] [US1] Escribir `tests/unit/services/test_processing_pipeline.py` (camino correcto) con `RecordingProgress`. La secuencia exacta de eventos es:
   1. `started 1`, `completed 1` (sin modelo)
   2. `started 2`, `save_volume`, `completed 2` (con el modelo de reconstrucción)
   3. `started 3`, `completed 3` (con el modelo de segmentación)
   4. `started 4`, `save_result`, `completed 4` (sin modelo)
 
   `run` devuelve un `PipelineData` con los cuatro campos llenos. La tubería no contiene `organ` en ninguna condición: grep sobre el módulo.
-- [ ] T026 [P] [US1] Escribir `tests/unit/services/test_strategy_factory.py` (camino correcto), con constructores que cuentan sus llamadas y devuelven los dobles:
+- [X] T026 [P] [US1] Escribir `tests/unit/services/test_strategy_factory.py` (camino correcto), con constructores que cuentan sus llamadas y devuelven los dobles:
   - `preload()` llama a cada constructor exactamente una vez;
   - `strategies_for(OrganName.LUNG)` devuelve un `StrategySet` con las mismas instancias en cada llamada;
   - `availability()` devuelve `{"reconstruction:en1": True, "segmentation:lung": True, "meshing": True}`.
-- [ ] T027 [P] [US1] Escribir `tests/unit/services/test_persistence_progress.py`. `PersistenceProgress` delega con los argumentos correctos:
+- [X] T027 [P] [US1] Escribir `tests/unit/services/test_persistence_progress.py`. `PersistenceProgress` delega con los argumentos correctos:
   - `stage_started` → `ProcessingProgressStore.start_stage`
   - `stage_completed` → `complete_stage`
   - `save_volume` → `StudyMetadataStore.save_volume`
   - `save_result` → `ResultStore.save_result(code, mask, probability, summary, meshes.organ, meshes.tumor)`
 
   Los almacenes son falsos (`unittest.mock.create_autospec`).
-- [ ] T028 [P] [US1] Escribir `tests/unit/services/test_study_service.py` (camino correcto), con almacenes falsos y la fábrica con dobles. `process_study(StudyRequest(...))` llama en este orden:
+- [X] T028 [P] [US1] Escribir `tests/unit/services/test_study_service.py` (camino correcto), con almacenes falsos y la fábrica con dobles. `process_study(StudyRequest(...))` llama en este orden:
   1. `parse`
   2. `strategies_for`
   3. `register_study`, con `ProjectionUpload` por ángulo y el paciente
@@ -222,8 +222,8 @@ horas, modelo en las etapas 2 y 3, `grid_size` 128, tiempo total y las cinco rut
   7. `get_study`
 
   Devuelve ese `Study`. `get_study` y `get_result` delegan en los almacenes.
-- [ ] T029 [US1] Mover las fixtures compartidas de `tests/integration/persistence/conftest.py` a `tests/integration/conftest.py`: `test_settings`, `database`, `object_storage`, la fábrica de códigos `it_` y la limpieza. Dejar en el archivo original solo lo propio de la persistencia, si queda algo. Las pruebas de `tests/integration/persistence/` deben seguir pasando igual.
-- [ ] T030 [US1] Escribir `tests/integration/services/test_pipeline_integration.py` (marca `integration`). Arma `StudyService` con los almacenes reales sobre `.env.test`, `PersistenceProgress` y la fábrica con dobles. Procesa un estudio `it_` de pulmón con paciente y comprueba la prueba independiente de la historia 1 y sus escenarios 1 y 3:
+- [X] T029 [US1] Mover las fixtures compartidas de `tests/integration/persistence/conftest.py` a `tests/integration/conftest.py`: `test_settings`, `database`, `object_storage`, la fábrica de códigos `it_` y la limpieza. Dejar en el archivo original solo lo propio de la persistencia, si queda algo. Las pruebas de `tests/integration/persistence/` deben seguir pasando igual.
+- [X] T030 [US1] Escribir `tests/integration/services/test_pipeline_integration.py` (marca `integration`). Arma `StudyService` con los almacenes reales sobre `.env.test`, `PersistenceProgress` y la fábrica con dobles. Procesa un estudio `it_` de pulmón con paciente y comprueba la prueba independiente de la historia 1 y sus escenarios 1 y 3:
   - estudio `completed`, `grid_size` 128 y `total_time_sec` presente;
   - cuatro etapas en `completed`, cada una con `started_at <= finished_at`;
   - `fake_reconstruction` en la etapa 2 y `fake_segmentation` en la 3 y en el estudio;
@@ -231,38 +231,38 @@ horas, modelo en las etapas 2 y 3, `grid_size` 128, tiempo total y las cinco rut
   - las diez rutas existen en el bucket.
 
   Agregar un segundo caso para el escenario 2: un `RecordingProgress` envuelve al real y, mientras corre la etapa 3, lee las etapas de la base y encuentra 1 y 2 en `completed`, 3 en `running` y 4 en `waiting`.
-- [ ] T031 [US1] Actualizar `tests/integration/persistence/test_result_storage_integration.py` a R7. Después de `save_result`, `get_result` sigue vacío hasta que la prueba marca las etapas 3 y 4 con `ProcessingProgressStore.complete_stage`. Después vuelve con las cinco rutas.
+- [X] T031 [US1] Actualizar `tests/integration/persistence/test_result_storage_integration.py` a R7. Después de `save_result`, `get_result` sigue vacío hasta que la prueba marca las etapas 3 y 4 con `ProcessingProgressStore.complete_stage`. Después vuelve con las cinco rutas.
 
 ### Implementation for User Story 1
 
-- [ ] T032 [US1] Crear `src/radvol3d/persistence/processing_progress_store.py` con `ProcessingProgressStore(database)` y los métodos `start_processing`, `start_stage`, `complete_stage`, `complete_study` y `register_model` de [contracts/persistence_api_changes.md](contracts/persistence_api_changes.md#processing_progress_store-nuevo). `fail_from_stage` se hace en US2. Cada método es una unidad de trabajo con `database.transaction()` sobre `StudyRepository`, `ProcessingStageRepository` y `ModelRepository`. Hace pasar T021.
-- [ ] T033 [US1] Modificar `src/radvol3d/persistence/result_store.py` según R7: quitar de `save_result` el `ModelRepository.get_or_create` y los dos `set_status`, y dejar la subida y `LesionRepository.add_many` en una unidad de trabajo. Actualizar el docstring del módulo con el orden nuevo y quitar la frase "la capa no tiene borrado todavía". `_model_of` sigue validando el resumen. Hace pasar T022 y T031.
-- [ ] T034 [US1] Implementar en `src/radvol3d/services/pipeline/projection_loader.py`:
+- [X] T032 [US1] Crear `src/radvol3d/persistence/processing_progress_store.py` con `ProcessingProgressStore(database)` y los métodos `start_processing`, `start_stage`, `complete_stage`, `complete_study` y `register_model` de [contracts/persistence_api_changes.md](contracts/persistence_api_changes.md#processing_progress_store-nuevo). `fail_from_stage` se hace en US2. Cada método es una unidad de trabajo con `database.transaction()` sobre `StudyRepository`, `ProcessingStageRepository` y `ModelRepository`. Hace pasar T021.
+- [X] T033 [US1] Modificar `src/radvol3d/persistence/result_store.py` según R7: quitar de `save_result` el `ModelRepository.get_or_create` y los dos `set_status`, y dejar la subida y `LesionRepository.add_many` en una unidad de trabajo. Actualizar el docstring del módulo con el orden nuevo y quitar la frase "la capa no tiene borrado todavía". `_model_of` sigue validando el resumen. Hace pasar T022 y T031.
+- [X] T034 [US1] Implementar en `src/radvol3d/services/pipeline/projection_loader.py`:
   - `@dataclass(frozen=True) class ProjectionFile(angle_degrees: int, content: bytes, original_name: str | None = None)`;
   - `ProjectionLoader.parse(files) -> dict[int, ndarray]`: lee con `np.load(io.BytesIO(content), allow_pickle=False)` y convierte a `float32` sin reescalar;
   - `ProjectionLoader.stack(by_angle) -> ndarray (4,128,128)`, en el orden de `config.PROJECTION_ANGLES`.
 
   Las validaciones de error se hacen en US2 (T046). Hace pasar T023.
-- [ ] T035 [US1] Crear `src/radvol3d/services/pipeline/filters.py` con `PreprocessingFilter(loader)`, `ReconstructionFilter(strategy)`, `SegmentationFilter(strategy)` y `MeshingFilter(strategy)`. Cada uno tiene:
+- [X] T035 [US1] Crear `src/radvol3d/services/pipeline/filters.py` con `PreprocessingFilter(loader)`, `ReconstructionFilter(strategy)`, `SegmentationFilter(strategy)` y `MeshingFilter(strategy)`. Cada uno tiene:
   - `stage_number: StageNumber`;
   - `model: tuple[str, str] | None`: el nombre y la versión de la estrategia en las etapas 2 y 3, `None` en la 1 y la 4;
   - `apply(data: PipelineData) -> PipelineData`.
 
   Hace pasar T024.
-- [ ] T036 [US1] Implementar `ProcessingPipeline.run(study_code, projections_by_angle, strategies, progress)` en `src/radvol3d/services/pipeline/processing_pipeline.py`:
+- [X] T036 [US1] Implementar `ProcessingPipeline.run(study_code, projections_by_angle, strategies, progress)` en `src/radvol3d/services/pipeline/processing_pipeline.py`:
   - arma los cuatro filtros con `strategies` en cada corrida, sin estado en la instancia;
   - recorre los filtros con la secuencia de T025;
   - guarda el volumen después de la etapa 2 y el resultado después de la 4.
 
   Sin condicionales por órgano. El manejo de fallos se hace en US2 (T048). Hace pasar T025.
-- [ ] T037 [US1] Reescribir `src/radvol3d/services/strategy_factory.py` según [contracts/services_api.md](contracts/services_api.md#fábrica):
+- [X] T037 [US1] Reescribir `src/radvol3d/services/strategy_factory.py` según [contracts/services_api.md](contracts/services_api.md#fábrica):
   - `@dataclass(frozen=True) class StrategySet(reconstruction, segmentation, meshing)`;
   - `StrategyFactory(reconstruction_builders, segmentation_builders, meshing_builder, reconstruction_key)`, con `preload()`, `strategies_for(organ)` y `availability()`;
   - las instancias se construyen solo en `preload()` y se guardan.
 
   Quitar `SEGMENTATION_BY_ORGAN` con `LiverUnetStrategy` y `build_segmentation_strategy`. Los caminos de error se hacen en US2 (T049). Hace pasar T026.
-- [ ] T038 [US1] Crear `src/radvol3d/services/pipeline/persistence_progress.py` con `PersistenceProgress(progress_store, metadata_store, result_store)`, que implementa `PipelineProgress` delegando como en T027. Hace pasar T027.
-- [ ] T039 [US1] Implementar en `src/radvol3d/services/study_service.py`:
+- [X] T038 [US1] Crear `src/radvol3d/services/pipeline/persistence_progress.py` con `PersistenceProgress(progress_store, metadata_store, result_store)`, que implementa `PipelineProgress` delegando como en T027. Hace pasar T027.
+- [X] T039 [US1] Implementar en `src/radvol3d/services/study_service.py`:
   - `@dataclass(frozen=True) class StudyRequest(study_code, organ, projections, patient=None)`;
   - `StudyService(metadata_store, result_store, progress_store, factory, pipeline, loader)`, con `process_study`, `get_study` y `get_result`.
 
@@ -284,8 +284,8 @@ entradas inválidas no crean el estudio. Ningún mensaje contiene "Ana", "Pérez
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T040 [P] [US2] Agregar a `tests/fixtures/fake_strategies.py` las clases `FailingReconstructionStrategy`, `FailingSegmentationStrategy` y `FailingMeshingStrategy`. Cada una lanza `RuntimeError("detalle interno")` al usarse y expone `model_name` y `model_version` como los dobles normales.
-- [ ] T041 [P] [US2] Ampliar `tests/unit/services/test_projection_loader.py` con los errores de FR-010, FR-011 y los casos borde. Cada uno lanza `InvalidProjectionError`:
+- [X] T040 [P] [US2] Agregar a `tests/fixtures/fake_strategies.py` las clases `FailingReconstructionStrategy`, `FailingSegmentationStrategy` y `FailingMeshingStrategy`. Cada una lanza `RuntimeError("detalle interno")` al usarse y expone `model_name` y `model_version` como los dobles normales.
+- [X] T041 [P] [US2] Ampliar `tests/unit/services/test_projection_loader.py` con los errores de FR-010, FR-011 y los casos borde. Cada uno lanza `InvalidProjectionError`:
   - tres archivos;
   - cinco archivos;
   - ángulo repetido: el mensaje nombra el ángulo;
@@ -298,31 +298,31 @@ entradas inválidas no crean el estudio. Ningún mensaje contiene "Ana", "Pérez
   - NaN o infinito.
 
   Ningún mensaje contiene bytes del archivo.
-- [ ] T042 [P] [US2] Ampliar `tests/unit/services/test_processing_pipeline.py`:
+- [X] T042 [P] [US2] Ampliar `tests/unit/services/test_processing_pipeline.py`:
   - **Fallo en la etapa n.** Para cada `n` de 1 a 4, con un filtro o estrategia que falla en esa etapa, el último evento de progreso es `("failed", code, n)` y no hay `completed n`. Se lanza `StageFailedError` con `stage_number == n` y `__cause__` es la excepción original. El mensaje no contiene "detalle interno".
   - **Fallo al guardar.** Si `save_volume` o `save_result` fallan (`RecordingProgress.fail_on`), falla la etapa 2 o la 4.
-- [ ] T043 [P] [US2] Ampliar `tests/unit/services/test_strategy_factory.py`. En cada caso se lanza `ModelNotAvailableError` con el mensaje de [contracts/services_api.md](contracts/services_api.md#fábrica):
+- [X] T043 [P] [US2] Ampliar `tests/unit/services/test_strategy_factory.py`. En cada caso se lanza `ModelNotAvailableError` con el mensaje de [contracts/services_api.md](contracts/services_api.md#fábrica):
   - `strategies_for(OrganName.LIVER)` dice "No hay modelo de segmentación de hígado todavía.";
   - una `reconstruction_key` desconocida dice "No hay estrategia de reconstrucción '<clave>'.";
   - un constructor que lanza `ImportError`, `FileNotFoundError` o `StorageError` en `preload()`: `preload` no lanza, `availability()` marca `False` y `strategies_for` dice "El modelo <nombre> no está disponible en este servidor.";
   - el registro de log del fallo no contiene la ruta firmada ni la clave.
-- [ ] T044 [P] [US2] Ampliar `tests/unit/persistence/test_processing_progress_store.py`:
+- [X] T044 [P] [US2] Ampliar `tests/unit/persistence/test_processing_progress_store.py`:
   - `fail_from_stage(code, 3)` deja en una sola transacción la etapa 3 en `failed`, la 4 en `skipped` y el estudio en `failed`;
   - `fail_from_stage(code, 1)` deja la 1 en `failed` y la 2, 3 y 4 en `skipped`;
   - un estudio inexistente lanza `StudyNotFoundError`.
-- [ ] T045 [P] [US2] Ampliar `tests/unit/services/test_study_service.py`:
+- [X] T045 [P] [US2] Ampliar `tests/unit/services/test_study_service.py`:
   - una entrada inválida o un órgano `liver` lanzan el error **sin** llamar a `register_study` (historia 2, escenarios 1 a 3);
   - si falla una etapa, `StageFailedError` se propaga y no se llama a `complete_study`;
   - `DuplicateStudyError` del almacén se propaga sin tocar la tubería.
   - **Privacidad (SC-007).** Con `PatientDetails(first_name="Ana", last_name="Pérez", national_id="12345678")`, provocar cada uno de los errores anteriores y comprobar que ni `str(error)`, ni `repr(error)`, ni los registros capturados con `caplog` contienen esos tres valores.
-- [ ] T046 [US2] Escribir `tests/integration/services/test_pipeline_failures_integration.py` (marca `integration`):
+- [X] T046 [US2] Escribir `tests/integration/services/test_pipeline_failures_integration.py` (marca `integration`):
   - con `FailingSegmentationStrategy`, la etapa 3 queda en `failed`, la 4 en `skipped`, el estudio en `failed` y se lanza `StageFailedError` (historia 2, escenario 4);
   - con `organ=OrganName.LIVER`, se lanza `ModelNotAvailableError` y `get_study` del código lanza `StudyNotFoundError`;
   - con un PNG en el ángulo 90, se lanza `InvalidProjectionError` y no se crea el estudio.
 
 ### Implementation for User Story 2
 
-- [ ] T047 [US2] Agregar a `ProjectionLoader.parse` en `src/radvol3d/services/pipeline/projection_loader.py` las validaciones de T041, en este orden:
+- [X] T047 [US2] Agregar a `ProjectionLoader.parse` en `src/radvol3d/services/pipeline/projection_loader.py` las validaciones de T041, en este orden:
   1. cantidad y ángulos, con `config.PROJECTION_ANGLES`;
   2. firma mágica `\x93NUMPY`;
   3. `np.load(..., allow_pickle=False)`: un `ValueError` se convierte en `InvalidProjectionError` con `from None`;
@@ -331,16 +331,16 @@ entradas inválidas no crean el estudio. Ningún mensaje contiene "Ana", "Pérez
   6. `np.isfinite(...).all()`.
 
   Los mensajes, en español, nombran solo el ángulo. Hace pasar T041.
-- [ ] T048 [US2] Agregar el manejo de fallos a `ProcessingPipeline.run` en `src/radvol3d/services/pipeline/processing_pipeline.py`. Cualquier excepción en el filtro o en su guardado:
+- [X] T048 [US2] Agregar el manejo de fallos a `ProcessingPipeline.run` en `src/radvol3d/services/pipeline/processing_pipeline.py`. Cualquier excepción en el filtro o en su guardado:
   1. llama a `progress.stage_failed(code, n)`;
   2. registra en el log `logger.error("Falló la etapa %d del estudio %s (%s)", n, code, type(error).__name__)`, sin el texto de la causa;
   3. lanza `StageFailedError(code, n) from error`.
 
   Si `stage_failed` también falla, se registra y se lanza igual el `StageFailedError`. Hace pasar T042.
-- [ ] T049 [US2] Agregar a `StrategyFactory` en `src/radvol3d/services/strategy_factory.py` los caminos de error de T043. `preload()` captura `Exception` por constructor, guarda un motivo genérico y registra el tipo de la excepción. Los mensajes van como en el contrato. Hace pasar T043.
-- [ ] T050 [US2] Agregar `fail_from_stage` a `src/radvol3d/persistence/processing_progress_store.py`: en una transacción, `set_status(n, FAILED)`, `set_status(m, SKIPPED)` para cada `m > n` y `update_status(FAILED)`. Hacer que `PersistenceProgress.stage_failed` en `src/radvol3d/services/pipeline/persistence_progress.py` delegue en él. Hace pasar T044.
-- [ ] T051 [US2] Ajustar `StudyService.process_study` en `src/radvol3d/services/study_service.py` para que `parse` y `strategies_for` corran antes de `register_study`, y para que `StageFailedError` se propague sin envolverlo. Hace pasar T045 y T046.
-- [ ] T052 [P] [US2] Agregar a `STATUS_BY_ERROR` en `src/radvol3d/api/error_handlers.py` los errores `StageFailedError: 500` y `StudyInProgressError: 409`. Agregar a `tests/unit/api/test_error_handlers.py` una prueba que registra los manejadores en una app mínima y comprueba los dos códigos.
+- [X] T049 [US2] Agregar a `StrategyFactory` en `src/radvol3d/services/strategy_factory.py` los caminos de error de T043. `preload()` captura `Exception` por constructor, guarda un motivo genérico y registra el tipo de la excepción. Los mensajes van como en el contrato. Hace pasar T043.
+- [X] T050 [US2] Agregar `fail_from_stage` a `src/radvol3d/persistence/processing_progress_store.py`: en una transacción, `set_status(n, FAILED)`, `set_status(m, SKIPPED)` para cada `m > n` y `update_status(FAILED)`. Hacer que `PersistenceProgress.stage_failed` en `src/radvol3d/services/pipeline/persistence_progress.py` delegue en él. Hace pasar T044.
+- [X] T051 [US2] Ajustar `StudyService.process_study` en `src/radvol3d/services/study_service.py` para que `parse` y `strategies_for` corran antes de `register_study`, y para que `StageFailedError` se propague sin envolverlo. Hace pasar T045 y T046.
+- [X] T052 [P] [US2] Agregar a `STATUS_BY_ERROR` en `src/radvol3d/api/error_handlers.py` los errores `StageFailedError: 500` y `StudyInProgressError: 409`. Agregar a `tests/unit/api/test_error_handlers.py` una prueba que registra los manejadores en una app mínima y comprueba los dos códigos.
 
 **Checkpoint**: las historias 1 y 2 funcionan juntas y por separado.
 
@@ -357,32 +357,32 @@ diez rutas, el paciente sigue y un estudio en `processing` no se puede borrar.
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T053 [P] [US3] Agregar a `tests/fixtures/fake_object_storage.py` el método `InMemoryBucket.remove(paths: list[str])`, que imita storage3: borra las rutas que existen, ignora las que no y anota `("remove", paths)` en `events`. También debe aceptar `fail_next("remove", error)`.
-- [ ] T054 [P] [US3] Ampliar `tests/unit/persistence/test_object_storage.py` con `remove_many`:
+- [X] T053 [P] [US3] Agregar a `tests/fixtures/fake_object_storage.py` el método `InMemoryBucket.remove(paths: list[str])`, que imita storage3: borra las rutas que existen, ignora las que no y anota `("remove", paths)` en `events`. También debe aceptar `fail_next("remove", error)`.
+- [X] T054 [P] [US3] Ampliar `tests/unit/persistence/test_object_storage.py` con `remove_many`:
   - con varias rutas, hace una sola llamada a `remove`;
   - una ruta inexistente no es error;
   - una lista vacía no llama al bucket;
   - un fallo de storage3 se convierte en `StorageError`, sin el texto original.
-- [ ] T055 [P] [US3] Ampliar `tests/unit/persistence/repositories/test_study_repository.py`:
+- [X] T055 [P] [US3] Ampliar `tests/unit/persistence/repositories/test_study_repository.py`:
   - `lock_status(code)` ejecuta un `select ... for update` y devuelve `StudyStatus`;
   - `delete(code)` ejecuta `delete from study where study_code = %s`;
   - con un código inexistente, ambos lanzan `StudyNotFoundError`.
-- [ ] T056 [P] [US3] Ampliar `tests/unit/persistence/test_study_metadata_store.py` con `delete_study`, usando `FakeDatabase` e `InMemoryBucket` con la lista `events` compartida:
+- [X] T056 [P] [US3] Ampliar `tests/unit/persistence/test_study_metadata_store.py` con `delete_study`, usando `FakeDatabase` e `InMemoryBucket` con la lista `events` compartida:
   - el orden es `lock_status` → `delete from study` → `remove` (con exactamente las diez rutas de data-model.md §7) → commit;
   - con `processing` lanza `StudyInProgressError`, no borra nada y no llama al bucket;
   - si el bucket falla, la transacción se revierte (rollback) y se lanza `StorageError`;
   - un código inválido lanza `InvalidStudyIdError` antes de abrir la transacción;
   - `pending`, `completed` y `failed` se borran.
-- [ ] T057 [P] [US3] Ampliar `tests/unit/services/test_study_service.py`: `list_studies` y `delete_study` delegan en `StudyMetadataStore`, y `StudyNotFoundError` y `StudyInProgressError` se propagan.
-- [ ] T058 [US3] Escribir `tests/integration/services/test_delete_study_integration.py` (marca `integration`), con los escenarios 1 a 3 de la historia 3. Para el escenario 3, `start_processing` deja el estudio en `processing` antes de intentar borrarlo. Comprobar también el borde de `failed`: después de un fallo en la etapa 3, el borrado limpia los archivos que hayan quedado.
+- [X] T057 [P] [US3] Ampliar `tests/unit/services/test_study_service.py`: `list_studies` y `delete_study` delegan en `StudyMetadataStore`, y `StudyNotFoundError` y `StudyInProgressError` se propagan.
+- [X] T058 [US3] Escribir `tests/integration/services/test_delete_study_integration.py` (marca `integration`), con los escenarios 1 a 3 de la historia 3. Para el escenario 3, `start_processing` deja el estudio en `processing` antes de intentar borrarlo. Comprobar también el borde de `failed`: después de un fallo en la etapa 3, el borrado limpia los archivos que hayan quedado.
 
 ### Implementation for User Story 3
 
-- [ ] T059 [P] [US3] Agregar `ObjectStorage.remove_many(paths: Sequence[str]) -> None` en `src/radvol3d/persistence/object_storage.py`, que llama a `self._bucket.remove(list(paths))`. Hace pasar T054.
-- [ ] T060 [P] [US3] Agregar `StudyRepository.lock_status` y `StudyRepository.delete` en `src/radvol3d/persistence/repositories/study_repository.py`, con `execute_translated` como el resto del repositorio. Hace pasar T055.
-- [ ] T061 [US3] Agregar `StudyMetadataStore.delete_study(study_code)` en `src/radvol3d/persistence/study_metadata_store.py`, según research.md R8 y [contracts/persistence_api_changes.md](contracts/persistence_api_changes.md#study_metadata_store-agrega). Las diez rutas salen de `storage_layout`: `projection_path` para cada ángulo de `config.PROJECTION_ANGLES` y las seis funciones restantes. Hace pasar T056.
-- [ ] T062 [US3] Agregar `list_studies` y `delete_study` a `StudyService` en `src/radvol3d/services/study_service.py`. Hace pasar T057 y T058.
-- [ ] T063 [US3] Quitar de `tests/integration/conftest.py` el comentario "la capa de persistencia no tiene borrado". Usar `StudyMetadataStore.delete_study` en la limpieza de los estudios `it_` y conservar el SQL directo solo para los pacientes creados por la prueba.
+- [X] T059 [P] [US3] Agregar `ObjectStorage.remove_many(paths: Sequence[str]) -> None` en `src/radvol3d/persistence/object_storage.py`, que llama a `self._bucket.remove(list(paths))`. Hace pasar T054.
+- [X] T060 [P] [US3] Agregar `StudyRepository.lock_status` y `StudyRepository.delete` en `src/radvol3d/persistence/repositories/study_repository.py`, con `execute_translated` como el resto del repositorio. Hace pasar T055.
+- [X] T061 [US3] Agregar `StudyMetadataStore.delete_study(study_code)` en `src/radvol3d/persistence/study_metadata_store.py`, según research.md R8 y [contracts/persistence_api_changes.md](contracts/persistence_api_changes.md#study_metadata_store-agrega). Las diez rutas salen de `storage_layout`: `projection_path` para cada ángulo de `config.PROJECTION_ANGLES` y las seis funciones restantes. Hace pasar T056.
+- [X] T062 [US3] Agregar `list_studies` y `delete_study` a `StudyService` en `src/radvol3d/services/study_service.py`. Hace pasar T057 y T058.
+- [X] T063 [US3] Quitar de `tests/integration/conftest.py` el comentario "la capa de persistencia no tiene borrado". Usar `StudyMetadataStore.delete_study` en la limpieza de los estudios `it_` y conservar el SQL directo solo para los pacientes creados por la prueba.
 
 **Checkpoint**: las historias 1, 2 y 3 funcionan juntas y por separado.
 
@@ -400,31 +400,32 @@ desde `app.state` y `pytest -m architecture` sigue en verde.
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T064 [P] [US4] Ampliar `tests/unit/persistence/test_settings.py` con `ModelSettings` y `get_model_settings()`:
+- [X] T064 [P] [US4] Ampliar `tests/unit/persistence/test_settings.py` con `ModelSettings` y `get_model_settings()`:
   - sin ninguna variable, no lanza;
   - `model_cache_dir == Path(".cache/models")` y `reconstruction_strategy == "en1"`;
   - con las cinco variables, las expone;
+  - una variable presente pero vacía (por ejemplo `MODEL_CACHE_DIR=` o `MODEL_BUCKET=`) cuenta como no definida: toma el valor por omisión o `None`, nunca la cadena vacía;
   - `get_settings()` sigue exigiendo solo sus cuatro variables.
-- [ ] T065 [P] [US4] Ampliar `tests/unit/persistence/test_object_storage.py`: `ObjectStorage.from_settings(settings, bucket="modelos-x")` usa ese bucket, y sin `bucket` usa `settings.storage_bucket`. Usar el cliente falso que ya usa la prueba de `from_settings`.
-- [ ] T066 [P] [US4] Escribir `tests/unit/persistence/test_model_weights_store.py` con `InMemoryBucket` y `tmp_path`:
+- [X] T065 [P] [US4] Ampliar `tests/unit/persistence/test_object_storage.py`: `ObjectStorage.from_settings(settings, bucket="modelos-x")` usa ese bucket, y sin `bucket` usa `settings.storage_bucket`. Usar el cliente falso que ya usa la prueba de `from_settings`.
+- [X] T066 [P] [US4] Escribir `tests/unit/persistence/test_model_weights_store.py` con `InMemoryBucket` y `tmp_path`:
   - **Primera llamada.** `fetch("reconstruction_en1/1.0.0/weights.pth")` baja el archivo y lo guarda bajo `cache_dir`, con los mismos bytes.
   - **Segunda llamada.** No vuelve a bajar: no hay un segundo evento `download`.
   - **Objeto inexistente.** Lanza `StorageObjectNotFoundError` y no deja ningún archivo, tampoco el temporal.
   - **Ruta peligrosa.** Una ruta con `..` se rechaza con `StorageError`.
-- [ ] T067 [P] [US4] Escribir `tests/unit/services/test_service_container.py`. `build_service_container` recibe fábricas inyectables de base, almacenamiento y constructores de estrategias, todas falsas. Comprobar:
+- [X] T067 [P] [US4] Escribir `tests/unit/services/test_service_container.py`. `build_service_container` recibe fábricas inyectables de base, almacenamiento y constructores de estrategias, todas falsas. Comprobar:
   - abre la base una vez;
   - cada constructor de estrategia se llama una vez, aunque se procesen tres estudios;
   - registra con `register_model` cada modelo cargado, con `trained_on=None` (historia 4, escenario 3);
   - con el constructor de segmentación fallando, el contenedor se construye igual, `model_status()` marca `segmentation:lung` en `False` y `process_study` de pulmón lanza `ModelNotAvailableError` (FR-019);
   - `close()` cierra la base y es idempotente.
-- [ ] T068 [P] [US4] Escribir `tests/unit/test_main_lifespan.py`. Con `create_app(container_builder=fake_builder)`, al entrar en `TestClient`:
+- [X] T068 [P] [US4] Escribir `tests/unit/test_main_lifespan.py`. Con `create_app(container_builder=fake_builder)`, al entrar en `TestClient`:
   - el `lifespan` llama al constructor una vez;
   - guarda el contenedor en `app.state.services`;
   - al salir llama a `close()`.
 
   `api.dependencies.get_study_service(request)` devuelve `app.state.services.study_service`.
-- [ ] T069 [P] [US4] Actualizar `tests/conftest.py` para que la fixture `app` use `create_app(container_builder=...)` con un contenedor falso que no abre la base. Así `tests/unit/api/test_health_router.py` sigue pasando sin `.env`.
-- [ ] T070 [US4] Escribir `tests/concurrency/test_concurrent_studies.py` (marca `concurrency`, con `.env.test`). Dos estudios `it_` con proyecciones de semillas distintas se procesan a la vez con `ThreadPoolExecutor(max_workers=2)`, usando `StudyService` con los dobles y la persistencia de prueba. Se repite 20 veces (SC-005). En cada repetición:
+- [X] T069 [P] [US4] Actualizar `tests/conftest.py` para que la fixture `app` use `create_app(container_builder=...)` con un contenedor falso que no abre la base. Así `tests/unit/api/test_health_router.py` sigue pasando sin `.env`.
+- [X] T070 [US4] Escribir `tests/concurrency/test_concurrent_studies.py` (marca `concurrency`, con `.env.test`). Dos estudios `it_` con proyecciones de semillas distintas se procesan a la vez con `ThreadPoolExecutor(max_workers=2)`, usando `StudyService` con los dobles y la persistencia de prueba. Se repite 20 veces (SC-005). En cada repetición:
   - los volúmenes guardados (`download_array(volume_path)`) y los resúmenes coinciden con los de los mismos estudios procesados por separado;
   - ningún dato de un estudio aparece en el otro.
 
@@ -432,15 +433,15 @@ desde `app.state` y `pytest -m architecture` sigue en verde.
 
 ### Implementation for User Story 4
 
-- [ ] T071 [P] [US4] Agregar a `src/radvol3d/persistence/settings.py` la clase `ModelSettings(BaseSettings)`, con los cinco campos opcionales de data-model.md §6 y el mismo `env_file`, y `get_model_settings()` con `functools.cache`. No cambia `Settings`. Hace pasar T064.
-- [ ] T072 [P] [US4] Agregar el parámetro opcional `bucket: str | None = None` a `ObjectStorage.from_settings` en `src/radvol3d/persistence/object_storage.py`. Hace pasar T065.
-- [ ] T073 [P] [US4] Crear `src/radvol3d/persistence/model_weights_store.py` con `ModelWeightsStore(storage, cache_dir).fetch(object_path) -> Path`:
+- [X] T071 [P] [US4] Agregar a `src/radvol3d/persistence/settings.py` la clase `ModelSettings(BaseSettings)`, con los cinco campos opcionales de data-model.md §6 y el mismo `env_file`, y `get_model_settings()` con `functools.cache`. Una variable presente pero vacía en `.env` o en el entorno cuenta como no definida (por ejemplo, un validador `mode="before"` que convierte `""` en el valor por omisión), porque `.env.example` las deja vacías. No cambia `Settings`. Hace pasar T064.
+- [X] T072 [P] [US4] Agregar el parámetro opcional `bucket: str | None = None` a `ObjectStorage.from_settings` en `src/radvol3d/persistence/object_storage.py`. Hace pasar T065.
+- [X] T073 [P] [US4] Crear `src/radvol3d/persistence/model_weights_store.py` con `ModelWeightsStore(storage, cache_dir).fetch(object_path) -> Path`:
   - valida la ruta: sin `..`, sin barra invertida, no vacía;
   - si el archivo ya está en `cache_dir / object_path`, lo devuelve;
   - si no, lo baja con `download_bytes`, lo escribe en un temporal en la misma carpeta y hace `os.replace`.
 
   Hace pasar T066.
-- [ ] T074 [US4] Crear `src/radvol3d/services/service_container.py` con `ServiceContainer` (`study_service`, `model_status()`, `close()`) y `build_service_container(settings, model_settings, *, database_factory=Database.from_settings, storage_factory=ObjectStorage.from_settings, strategy_builders=None)`. El orden de armado es:
+- [X] T074 [US4] Crear `src/radvol3d/services/service_container.py` con `ServiceContainer` (`study_service`, `model_status()`, `close()`) y `build_service_container(settings, model_settings, *, database_factory=Database.from_settings, storage_factory=ObjectStorage.from_settings, strategy_builders=None)`. El orden de armado es:
   1. abre la base;
   2. crea el almacenamiento de datos y, si `model_bucket` existe, el de modelos con `ModelWeightsStore`;
   3. arma `StrategyFactory` con los constructores por omisión de `default_strategy_builders(weights_store, model_settings)`:
@@ -454,14 +455,14 @@ desde `app.state` y `pytest -m architecture` sigue en verde.
   6. arma `StudyService`.
 
   Hace pasar T067.
-- [ ] T075 [US4] Modificar `src/radvol3d/main.py`. `create_app(container_builder=None)` usa por omisión `lambda: build_service_container(get_settings(), get_model_settings())`. El `lifespan`:
+- [X] T075 [US4] Modificar `src/radvol3d/main.py`. `create_app(container_builder=None)` usa por omisión `lambda: build_service_container(get_settings(), get_model_settings())`. El `lifespan`:
   - guarda el contenedor en `app.state.services`;
   - registra en el log `model_status()`;
   - lo cierra al terminar.
 
   `app = create_app()` sigue al final del módulo. Hace pasar T068.
-- [ ] T076 [US4] Reescribir `src/radvol3d/api/dependencies.py`: `get_study_service(request: Request) -> StudyService` lee `request.app.state.services.study_service`. Eliminar `get_processing_pipeline` y cambiar `src/radvol3d/api/routers/reconstruction_router.py` y `src/radvol3d/api/routers/segmentation_router.py` para que reciban `StudyService` con `Depends(get_study_service)`. Sus cuerpos siguen con `NotImplementedError`, porque los endpoints están fuera de alcance. `api/` no gana ningún import de `persistence`, `supabase` ni `torch`. Hace pasar T068 y T069.
-- [ ] T077 [US4] Hacer pasar T070. Si la prueba detecta mezcla de datos, corregir el estado compartido en la tubería, el servicio o los dobles. No agregar candados a la tubería.
+- [X] T076 [US4] Reescribir `src/radvol3d/api/dependencies.py`: `get_study_service(request: Request) -> StudyService` lee `request.app.state.services.study_service`. Eliminar `get_processing_pipeline` y cambiar `src/radvol3d/api/routers/reconstruction_router.py` y `src/radvol3d/api/routers/segmentation_router.py` para que reciban `StudyService` con `Depends(get_study_service)`. Sus cuerpos siguen con `NotImplementedError`, porque los endpoints están fuera de alcance. `api/` no gana ningún import de `persistence`, `supabase` ni `torch`. Hace pasar T068 y T069.
+- [X] T077 [US4] Hacer pasar T070. Si la prueba detecta mezcla de datos, corregir el estado compartido en la tubería, el servicio o los dobles. No agregar candados a la tubería.
 
 **Checkpoint**: las historias 1 a 4 funcionan con los dobles. La aplicación arranca sin modelos y lo informa.
 
@@ -472,16 +473,16 @@ desde `app.state` y `pytest -m architecture` sigue en verde.
 **Purpose**: dejar el CI y las reglas en verde antes de conectar los modelos reales (orden de
 construcción de la especificación).
 
-- [ ] T078 Agregar a `.github/workflows/ci.yml`, después de `pytest -m unit --cov --cov-report=xml`, el paso "Cobertura de services":
+- [X] T078 Agregar a `.github/workflows/ci.yml`, después de `pytest -m unit --cov --cov-report=xml`, el paso "Cobertura de services":
   ```
   coverage report --include="src/radvol3d/services/*" --omit="*/en1_network.py,*/en1_reconstructor.py,*/lung_unet_network.py,*/lung_segmenter.py" --fail-under=80
   ```
   Agregar un comentario en español con el motivo (research.md R17). El CI sigue sin instalar el extra `ml`.
-- [ ] T079 [P] Agregar a `docs/standards/testing_strategy.md`:
+- [X] T079 [P] Agregar a `docs/standards/testing_strategy.md`:
   - la fila `ml/ | ¿los modelos reales dan la misma salida que los originales? | ml | torch y pesos`;
   - el cambio en la fila `concurrency/`: necesita "Supabase de prueba";
   - el comando `pytest -m "not ml"`.
-- [ ] T080 Correr las tres comprobaciones y la cobertura de quickstart.md, bloques A y B: `ruff check src tests`, `python scripts/check_naming_convention.py` y `pytest -m "unit or architecture"`. Con `.env.test`, correr además el bloque C. Todo en verde y `services/` con 80 % o más.
+- [X] T080 Correr las tres comprobaciones y la cobertura de quickstart.md, bloques A y B: `ruff check src tests`, `python scripts/check_naming_convention.py` y `pytest -m "unit or architecture"`. Con `.env.test`, correr además el bloque C. Todo en verde y `services/` con 80 % o más.
 
 **Checkpoint**: criterio de aceptación 1 cumplido. La tubería corre con dobles de punta a punta y guarda en la persistencia.
 

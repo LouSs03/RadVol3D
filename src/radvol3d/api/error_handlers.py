@@ -12,7 +12,9 @@ from radvol3d.domain.exceptions import (
     InvalidProjectionError,
     InvalidStudyIdError,
     ModelNotAvailableError,
+    StageFailedError,
     StorageError,
+    StudyInProgressError,
     StudyNotFoundError,
 )
 
@@ -23,6 +25,8 @@ STATUS_BY_ERROR: dict[type[Exception], int] = {
     ModelNotAvailableError: 503,
     DatabaseUnavailableError: 503,
     StorageError: 500,
+    StageFailedError: 500,
+    StudyInProgressError: 409,
 }
 
 

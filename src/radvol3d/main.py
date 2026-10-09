@@ -1,8 +1,15 @@
-"""Punto de entrada. Arma la aplicacion y monta los routers de la capa 1."""
+"""Punto de entrada. Arma la aplicacion y monta los routers de la capa 1.
 
-from collections.abc import AsyncIterator
+main.py no es una capa: es el unico lugar que une la presentacion con los servicios
+ya armados. Por eso puede llamar a service_container, que a su vez usa la
+persistencia, sin que api/ la importe nunca.
+"""
+
+import logging
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -15,24 +22,46 @@ from radvol3d.api.routers import (
     segmentation_router,
     study_router,
 )
+from radvol3d.persistence.settings import get_model_settings, get_settings
+from radvol3d.services.service_container import build_service_container
 
 WEB_DIRECTORY = Path(__file__).parent / "web"
 
+logger = logging.getLogger(__name__)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Abre los recursos caros al arrancar y los cierra al terminar.
 
-    Los modelos y la conexion a la base de datos se preparan una sola vez.
-    Cargar un modelo en cada peticion dejaria el servicio inutilizable.
+def build_default_container() -> Any:
+    """Arma los servicios reales con la configuracion de .env."""
+    return build_service_container(get_settings(), get_model_settings())
+
+
+def make_lifespan(container_builder: Callable[[], Any]) -> Callable[..., Any]:
+    """Devuelve el lifespan que arma los servicios con el constructor recibido."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        """Abre los recursos caros al arrancar y los cierra al terminar.
+
+        La base y los modelos se preparan una sola vez. Cargar un modelo en cada
+        peticion dejaria el servicio inutilizable.
+        """
+        container = container_builder()
+        app.state.services = container
+        logger.info("Modelos disponibles: %s", container.model_status())
+        try:
+            yield
+        finally:
+            container.close()
+
+    return lifespan
+
+
+def create_app(container_builder: Callable[[], Any] | None = None) -> FastAPI:
+    """Construye la aplicacion. Separarlo de la instancia permite probarla.
+
+    container_builder arma los servicios al arrancar; las pruebas pasan uno falso
+    que no abre la base. Nada se construye hasta que la aplicacion arranca.
     """
-    # TODO: cargar modelos y abrir el grupo de conexiones
-    yield
-    # TODO: cerrar el grupo de conexiones
-
-
-def create_app() -> FastAPI:
-    """Construye la aplicacion. Separarlo de la instancia permite probarla."""
     app = FastAPI(
         title="RadVol3D",
         description=(
@@ -40,7 +69,7 @@ def create_app() -> FastAPI:
             "proyecciones radiograficas, con deteccion automatica de tumores."
         ),
         version=__version__,
-        lifespan=lifespan,
+        lifespan=make_lifespan(container_builder or build_default_container),
     )
 
     register_error_handlers(app)

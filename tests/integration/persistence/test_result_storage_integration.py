@@ -2,6 +2,10 @@
 
 Se omite si no existe .env.test. Los modelos de prueba llevan el prefijo "it_" y la
 limpieza de conftest.py los borra al terminar, igual que los estudios y sus archivos.
+
+Desde la funcionalidad 002 (research.md R7), save_result sube los archivos e inserta
+las lesiones, pero NO cierra las etapas 3 y 4: eso lo hace la tuberia con
+ProcessingProgressStore. Hasta entonces get_result sigue vacio.
 """
 
 import json
@@ -17,6 +21,7 @@ from radvol3d.domain.enums import OrganName, StageNumber, StageStatus
 from radvol3d.domain.exceptions import InvalidLesionError, StudyNotFoundError
 from radvol3d.persistence.connection import Database
 from radvol3d.persistence.object_storage import ObjectStorage
+from radvol3d.persistence.processing_progress_store import ProcessingProgressStore
 from radvol3d.persistence.repositories.processing_stage_repository import (
     ProcessingStageRepository,
 )
@@ -76,6 +81,13 @@ def register_ready(database: Database, storage: ObjectStorage, code: str) -> Stu
     return store
 
 
+def close_stages(database: Database, code: str, model_name: str) -> None:
+    """Cierra las etapas 3 y 4 como lo hace la tuberia despues de save_result."""
+    progress = ProcessingProgressStore(database)
+    progress.complete_stage(code, StageNumber.SEGMENTATION, model_name, "1.0.0")
+    progress.complete_stage(code, StageNumber.MESHING)
+
+
 def save(store: ResultStore, code: str, summary: dict[str, Any]) -> StoredResult:
     return store.save_result(
         code,
@@ -101,6 +113,8 @@ def test_a_saved_result_comes_back_with_the_same_lesions_and_files(
     tumor_mesh = f"{code}/meshes/tumor.glb"
 
     saved = save(results, code, summary)
+    assert results.get_result(code) == StoredResult(code)  # etapas aun abiertas
+    close_stages(database, code, model_name)
     result = results.get_result(code)
 
     expected = [
@@ -126,7 +140,7 @@ def test_a_saved_result_comes_back_with_the_same_lesions_and_files(
     assert stages[StageNumber.MESHING].status is StageStatus.COMPLETED
 
 
-def test_a_result_without_lesions_still_completes_the_stages(
+def test_a_result_without_lesions_still_has_its_five_paths(
     database: Database,
     object_storage: ObjectStorage,
     make_study_code: Callable[[], str],
@@ -135,7 +149,9 @@ def test_a_result_without_lesions_still_completes_the_stages(
     metadata = register_ready(database, object_storage, code)
     results = ResultStore(database, object_storage)
 
-    save(results, code, make_summary([], make_model_name()))
+    model_name = make_model_name()
+    save(results, code, make_summary([], model_name))
+    close_stages(database, code, model_name)
     result = results.get_result(code)
 
     assert result.lesions == []

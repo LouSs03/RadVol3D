@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from radvol3d.api.dependencies import get_processing_pipeline
+from radvol3d.api.dependencies import get_study_service
 from radvol3d.api.schemas.segmentation_schema import SegmentationResponse
-from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
+from radvol3d.services.study_service import StudyService
 
 router = APIRouter(prefix="/studies", tags=["segmentacion"])
 
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/studies", tags=["segmentacion"])
 )
 def read_segmentation(
     study_code: str,
-    pipeline: Annotated[ProcessingPipeline, Depends(get_processing_pipeline)],
+    service: Annotated[StudyService, Depends(get_study_service)],
 ) -> SegmentationResponse:
     """Devuelve las lesiones detectadas con su confianza."""
     raise NotImplementedError("TODO")

@@ -445,3 +445,122 @@ def test_get_study_returns_the_lesions_too(world: World) -> None:
 @pytest.mark.unit
 def test_a_study_without_lesions_has_an_empty_list(world: World) -> None:
     assert world.store.get_study(CODE).lesions == []
+
+
+# ---------------------------------------------------------------------------
+# delete_study (funcionalidad 002, historia 3; research.md R8)
+# ---------------------------------------------------------------------------
+
+STUDY_FILES = [
+    f"{CODE}/projections/angle_000.npy",
+    f"{CODE}/projections/angle_045.npy",
+    f"{CODE}/projections/angle_090.npy",
+    f"{CODE}/projections/angle_135.npy",
+    f"{CODE}/volume.npy",
+    f"{CODE}/segmentation/mask.npy",
+    f"{CODE}/segmentation/probability.npy",
+    f"{CODE}/segmentation/summary.json",
+    f"{CODE}/meshes/organ.glb",
+    f"{CODE}/meshes/tumor.glb",
+]
+
+
+class DeleteWorld:
+    """Un estudio con sus diez archivos en el bucket, listo para borrar."""
+
+    def __init__(self, status: str = "completed") -> None:
+        self.events: list[str] = []
+        self.database = FakeDatabase(events=self.events)
+        self.bucket = InMemoryBucket(events=self.events)
+        self.store = StudyMetadataStore(self.database, ObjectStorage(self.bucket))
+        for path in STUDY_FILES:
+            self.bucket.files[path] = b"x"
+        self.bucket.files["it_otro/volume.npy"] = b"y"
+        self.connection = self.database.connection
+        self.connection.when("for update", [{"status": status}])
+
+
+@pytest.mark.unit
+def test_delete_locks_checks_deletes_removes_the_files_and_then_commits() -> None:
+    world = DeleteWorld()
+
+    world.store.delete_study(CODE)
+
+    events = world.events
+    lock = index_of(events, "for update")
+    delete = index_of(events, "delete from study")
+    remove = index_of(events, "remove:")
+    assert -1 not in (lock, delete, remove)
+    assert lock < delete < remove < events.index("db:commit")
+    assert world.database.committed == 1
+
+
+@pytest.mark.unit
+def test_delete_removes_exactly_the_ten_files_of_the_study() -> None:
+    world = DeleteWorld()
+
+    world.store.delete_study(CODE)
+
+    removes = [e for e in world.events if e.startswith("remove:")]
+    assert removes == [f"remove:{','.join(STUDY_FILES)}"]
+    assert world.bucket.uploaded_paths() == ["it_otro/volume.npy"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("status", ["pending", "completed", "failed"])
+def test_studies_that_are_not_processing_can_be_deleted(status: str) -> None:
+    world = DeleteWorld(status)
+
+    world.store.delete_study(CODE)
+
+    assert world.connection.params_of("delete from study") == [(CODE,)]
+
+
+@pytest.mark.unit
+def test_a_study_in_processing_is_not_deleted_and_the_bucket_is_not_touched() -> None:
+    from radvol3d.domain.exceptions import StudyInProgressError
+
+    world = DeleteWorld("processing")
+
+    with pytest.raises(StudyInProgressError) as caught:
+        world.store.delete_study(CODE)
+
+    assert CODE in str(caught.value)
+    assert world.connection.params_of("delete from study") == []
+    assert not any(e.startswith("remove:") for e in world.events)
+    assert len(world.bucket.files) == len(STUDY_FILES) + 1
+
+
+@pytest.mark.unit
+def test_if_the_bucket_fails_the_deletion_is_rolled_back() -> None:
+    world = DeleteWorld()
+    world.bucket.fail_next("remove", StorageException("sin permiso"))
+
+    with pytest.raises(StorageError):
+        world.store.delete_study(CODE)
+
+    assert world.database.rolled_back == 1
+    assert world.database.committed == 0
+    assert "db:rollback" in world.events
+
+
+@pytest.mark.unit
+def test_an_unknown_study_raises_not_found_and_removes_nothing() -> None:
+    world = DeleteWorld()
+    world.connection.rules.clear()
+    world.connection.when("for update", [])
+
+    with pytest.raises(StudyNotFoundError):
+        world.store.delete_study("it_no_existe")
+
+    assert not any(e.startswith("remove:") for e in world.events)
+
+
+@pytest.mark.unit
+def test_an_invalid_code_is_rejected_before_opening_the_transaction() -> None:
+    world = DeleteWorld()
+
+    with pytest.raises(InvalidStudyIdError):
+        world.store.delete_study("../otro")
+
+    assert world.events == []

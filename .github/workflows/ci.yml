@@ -31,3 +31,12 @@ jobs:
 
       - name: Pruebas unitarias con cobertura
         run: pytest -m unit --cov --cov-report=xml
+
+      # El umbral del 80 % se mide solo sobre services/. Los cuatro modulos que importan
+      # PyTorch no cuentan: el CI no instala el extra "ml" y esos modulos solo corren con
+      # las pruebas "ml", que se miden en local (research.md R17 de la funcionalidad 002).
+      - name: Cobertura de services
+        run: >-
+          coverage report --include="src/radvol3d/services/*"
+          --omit="*/en1_network.py,*/en1_reconstructor.py,*/lung_unet_network.py,*/lung_segmenter.py"
+          --fail-under=80

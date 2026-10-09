@@ -9,6 +9,12 @@ tocar el bucket y no pisa los archivos del estudio original. Si algo falla despu
 de subir, la transaccion se revierte y los archivos quedan sueltos en el bucket,
 pero sin fila que los registre; como las rutas son deterministas, reintentar con el
 mismo codigo los reemplaza.
+
+Orden de delete_study (research.md R8 de la funcionalidad 002): todo dentro de una
+transaccion. Se bloquea la fila del estudio, se comprueba que no se este procesando,
+se borra la fila (lo demas cae en cascada) y despues se borran sus diez archivos del
+bucket. Si el bucket falla, la transaccion se revierte: el estudio sigue en pie y el
+borrado se puede reintentar.
 """
 
 from dataclasses import dataclass
@@ -18,8 +24,8 @@ import numpy as np
 
 from radvol3d import config
 from radvol3d.domain.entities import PatientDetails, Projection, Study
-from radvol3d.domain.enums import OrganName
-from radvol3d.domain.exceptions import InvalidProjectionError
+from radvol3d.domain.enums import OrganName, StudyStatus
+from radvol3d.domain.exceptions import InvalidProjectionError, StudyInProgressError
 from radvol3d.persistence.connection import Database
 from radvol3d.persistence.object_storage import ObjectStorage
 from radvol3d.persistence.repositories.lesion_repository import LesionRepository
@@ -34,7 +40,12 @@ from radvol3d.persistence.repositories.study_repository import (
     find_study_id,
 )
 from radvol3d.persistence.storage_layout import (
+    mask_path,
+    organ_mesh_path,
+    probability_path,
     projection_path,
+    summary_path,
+    tumor_mesh_path,
     validate_projection_angle,
     validate_study_code,
     volume_path,
@@ -108,6 +119,21 @@ class StudyMetadataStore:
         self._storage.upload_array(path, volume)
         return path
 
+    def delete_study(self, study_code: str) -> None:
+        """Borra el estudio con sus filas y sus archivos. El paciente se conserva.
+
+        Lanza StudyInProgressError si el estudio se esta procesando, sin tocar nada.
+        """
+        validate_study_code(study_code)
+        with self._database.transaction() as connection:
+            studies = StudyRepository(connection)
+            if studies.lock_status(study_code) is StudyStatus.PROCESSING:
+                raise StudyInProgressError(
+                    f"El estudio '{study_code}' se esta procesando y no se puede borrar."
+                )
+            studies.delete(study_code)
+            self._storage.remove_many(self._study_files(study_code))
+
     def list_studies(self) -> list[Study]:
         """Devuelve los estudios del mas reciente al mas antiguo, sin datos anidados."""
         with self._database.transaction() as connection:
@@ -126,6 +152,18 @@ class StudyMetadataStore:
                 "Se necesitan las cuatro proyecciones: 0, 45, 90 y 135 grados."
             )
         return [(u, projection_path(study_code, u.angle_degrees)) for u in projections]
+
+    @staticmethod
+    def _study_files(study_code: str) -> list[str]:
+        """Las diez rutas que puede tener un estudio en el bucket."""
+        return [projection_path(study_code, a) for a in config.PROJECTION_ANGLES] + [
+            volume_path(study_code),
+            mask_path(study_code),
+            probability_path(study_code),
+            summary_path(study_code),
+            organ_mesh_path(study_code),
+            tumor_mesh_path(study_code),
+        ]
 
     @staticmethod
     def _load(connection: Any, study_code: str) -> Study:

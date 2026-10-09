@@ -1,23 +1,26 @@
 """Guarda y consulta los resultados de la segmentacion de un estudio.
 
 Un resultado son cinco archivos del bucket (mascara, probabilidad, resumen y las
-mallas del organo y del tumor), las filas de lesion y las etapas 3 y 4 marcadas como
-completadas.
+mallas del organo y del tumor) y las filas de lesion.
 
-Orden de save_result (research.md R8 y R12):
+Orden de save_result (research.md R8 y R12 de 001; R7 de 002):
 
 1. Se valida TODO sin tocar nada: el codigo, el resumen y las lesiones.
 2. Se comprueba que el estudio existe, en una transaccion corta que suelta la
    conexion antes de subir nada. Asi no se acumulan archivos de un estudio inexistente.
 3. Se suben los cinco archivos.
-4. En UNA sola unidad de trabajo se insertan las lesiones, se registra el modelo de
-   segmentacion y se marcan las etapas 3 y 4. Si algo falla, las etapas quedan como
-   estaban. Los archivos ya subidos quedan sueltos en el bucket, pero get_result no
-   los cuenta como resultado porque las etapas no estan completadas.
+4. En UNA sola unidad de trabajo se insertan las lesiones.
 
-Un estudio "tiene resultado" cuando sus etapas 3 y 4 estan en completed. Quien guarda
-un resultado por segunda vez sobre el mismo estudio duplica las filas de lesion: la
-capa no tiene borrado todavia.
+save_result NO cambia el estado de las etapas ni registra el modelo: eso lo hace la
+tuberia con ProcessingProgressStore, que cierra la etapa 3 al terminar la
+segmentacion y la etapa 4 despues de este guardado. Si save_result cerrara la etapa
+3, pisaria su hora de fin con la del final de la etapa 4.
+
+Un estudio "tiene resultado" cuando sus etapas 3 y 4 estan en completed. Como la
+etapa 4 se cierra despues de guardar, el resultado aparece entero o no aparece: los
+archivos de un guardado fallido quedan sueltos en el bucket, pero get_result no los
+cuenta. Quien guarda un resultado por segunda vez sobre el mismo estudio duplica las
+filas de lesion; para rehacerlo, se borra el estudio.
 """
 
 import json
@@ -39,7 +42,6 @@ from radvol3d.persistence.repositories.lesion_repository import (
     LesionRepository,
     validate_lesions,
 )
-from radvol3d.persistence.repositories.model_repository import ModelRepository
 from radvol3d.persistence.repositories.processing_stage_repository import (
     ProcessingStageRepository,
 )
@@ -73,10 +75,10 @@ class ResultStore:
         organ_mesh: bytes,
         tumor_mesh: bytes,
     ) -> StoredResult:
-        """Guarda el resultado de la segmentacion y de las mallas de un estudio."""
+        """Guarda los archivos del resultado y sus lesiones. No toca las etapas."""
         validate_study_code(study_code)
         lesions = self._lesions_from_summary(summary, tumor_mesh_path(study_code))
-        model_name, model_version = self._model_of(summary)
+        self._model_of(summary)
         summary_bytes = self._summary_as_json(summary)
 
         # Comprobacion previa: termina (y suelta la conexion) antes de la subida lenta.
@@ -92,10 +94,6 @@ class ResultStore:
         with self._database.transaction() as connection:
             lesion_repository = LesionRepository(connection)
             lesion_repository.add_many(study_code, lesions)
-            model = ModelRepository(connection).get_or_create(model_name, model_version)
-            stages = ProcessingStageRepository(connection)
-            stages.set_status(study_code, StageNumber.SEGMENTATION, StageStatus.COMPLETED, model)
-            stages.set_status(study_code, StageNumber.MESHING, StageStatus.COMPLETED)
             saved = lesion_repository.list_by_study(study_code)
         return self._build_result(study_code, saved)
 
@@ -167,7 +165,11 @@ class ResultStore:
 
     @staticmethod
     def _model_of(summary: Mapping[str, Any]) -> tuple[str, str]:
-        """Nombre y version del modelo de segmentacion, tal como los trae el resumen."""
+        """Nombre y version del modelo de segmentacion, tal como los trae el resumen.
+
+        El resumen debe traerlos aunque save_result ya no registre el modelo: son la
+        trazabilidad de summary.json.
+        """
         name, version = summary.get("model_name"), summary.get("model_version")
         for value in (name, version):
             if not isinstance(value, str) or not value.strip():

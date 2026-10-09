@@ -1,12 +1,13 @@
-"""Fixtures de las pruebas de integracion de la persistencia.
+"""Fixtures compartidas por las pruebas de integracion (persistencia y servicios).
 
 Estas pruebas leen SOLO .env.test, nunca .env, para que ninguna pueda escribir en
 la base real por error. Si .env.test no existe, se omiten.
 
 Los codigos de estudio llevan el prefijo "it_". Al terminar, la limpieza borra los
-estudios con ese prefijo (las proyecciones, etapas y lesiones se borran en
-cascada), los pacientes que la prueba haya creado y los archivos del bucket. Ese
-codigo de limpieza vive solo aqui: la capa de persistencia no tiene borrado.
+estudios con ese prefijo con StudyMetadataStore.delete_study (filas en cascada y
+sus diez archivos del bucket). Solo quedan en SQL directo, aqui y en ningun otro
+lugar, dos cosas que la persistencia no borra a proposito: los pacientes y los
+modelos que la prueba haya creado, y un estudio que haya quedado en processing.
 """
 
 import uuid
@@ -17,11 +18,13 @@ import pytest
 from dotenv import dotenv_values
 from pydantic import SecretStr
 
+from radvol3d.domain.exceptions import StudyInProgressError
 from radvol3d.persistence.connection import Database
 from radvol3d.persistence.object_storage import ObjectStorage
 from radvol3d.persistence.settings import Settings
+from radvol3d.persistence.study_metadata_store import StudyMetadataStore
 
-ENV_TEST_FILE = Path(__file__).resolve().parents[3] / ".env.test"
+ENV_TEST_FILE = Path(__file__).resolve().parents[2] / ".env.test"
 STUDY_PREFIX = "it_"
 REQUIRED_VARIABLES = ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "STORAGE_BUCKET")
 
@@ -99,8 +102,20 @@ def cleanup_after_test(
         rows = connection.execute(
             "select study_code from study where study_code like %s", (f"{STUDY_PREFIX}%",)
         ).fetchall()
-        study_codes = [row["study_code"] for row in rows]
-        connection.execute("delete from study where study_code like %s", (f"{STUDY_PREFIX}%",))
+    metadata = StudyMetadataStore(database, object_storage)
+    for row in rows:
+        try:
+            metadata.delete_study(row["study_code"])
+        except StudyInProgressError:
+            # Una prueba que fallo a mitad de la tuberia deja el estudio en processing.
+            with database.transaction() as connection:
+                connection.execute(
+                    "update study set status = 'failed' where study_code = %s",
+                    (row["study_code"],),
+                )
+            metadata.delete_study(row["study_code"])
+
+    with database.transaction() as connection:
         # Los modelos de prueba se borran despues de los estudios que los usaban.
         connection.execute("delete from model where model_name like %s", (f"{STUDY_PREFIX}%",))
         for patient_code in created_patient_codes:
@@ -111,18 +126,3 @@ def cleanup_after_test(
                     "where study.patient_id = patient.patient_id)",
                     (patient_code,),
                 )
-
-    # El cliente de storage3 se usa directamente: ObjectStorage no borra archivos.
-    bucket = object_storage._bucket  # noqa: SLF001
-    for study_code in study_codes:
-        paths = [
-            f"{study_code}/projections/angle_{angle:03d}.npy" for angle in (0, 45, 90, 135)
-        ] + [
-            f"{study_code}/volume.npy",
-            f"{study_code}/segmentation/mask.npy",
-            f"{study_code}/segmentation/probability.npy",
-            f"{study_code}/segmentation/summary.json",
-            f"{study_code}/meshes/organ.glb",
-            f"{study_code}/meshes/tumor.glb",
-        ]
-        bucket.remove(paths)

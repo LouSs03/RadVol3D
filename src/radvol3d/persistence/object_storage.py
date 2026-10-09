@@ -6,10 +6,18 @@ archivo con objetos serializados de Python podria ejecutar codigo al leerse.
 
 Los errores de storage3 y de la red se traducen a errores del dominio con mensaje
 propio, sin copiar el texto original y sin encadenar la causa.
+
+Las llamadas al bucket de una misma instancia se hacen de a una (un candado por
+instancia). El cliente HTTP de Supabase no admite dos peticiones a la vez desde
+hilos distintos: con dos estudios en paralelo, una subida fallaba con
+httpx.ReadError. Serializar solo afecta a la transferencia; la inferencia, que es
+lo lento, sigue en paralelo (funcionalidad 002, FR-020).
 """
 
 import io
 import logging
+import threading
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -43,36 +51,43 @@ def _keep_credentials_out_of_debug_logs() -> None:
 
 
 class ObjectStorage:
-    """Subir, bajar y comprobar archivos en el bucket del proyecto."""
+    """Subir, bajar, comprobar y borrar archivos en el bucket del proyecto."""
 
     def __init__(self, bucket: Any) -> None:
         self._bucket = bucket
+        self._lock = threading.Lock()
 
     @classmethod
-    def from_settings(cls, settings: Settings) -> "ObjectStorage":
-        """Arma el cliente del bucket con la URL, la clave de servicio y el nombre del bucket."""
+    def from_settings(cls, settings: Settings, bucket: str | None = None) -> "ObjectStorage":
+        """Arma el cliente del bucket con la URL, la clave de servicio y el nombre del bucket.
+
+        Sin bucket, abre el bucket de datos (settings.storage_bucket). Con bucket, abre
+        ese otro con las mismas credenciales: asi se abre el bucket de modelos.
+        """
         _keep_credentials_out_of_debug_logs()
         client = create_client(
             settings.supabase_url,
             settings.supabase_service_key.get_secret_value(),
         )
-        return cls(client.storage.from_(settings.storage_bucket))
+        return cls(client.storage.from_(bucket or settings.storage_bucket))
 
     def upload_bytes(self, path: str, data: bytes, content_type: str) -> None:
         """Sube un archivo. Si la ruta ya esta ocupada, reemplaza el anterior."""
         try:
-            self._bucket.upload(
-                path,
-                data,
-                {"content-type": content_type, "upsert": "true"},
-            )
+            with self._lock:
+                self._bucket.upload(
+                    path,
+                    data,
+                    {"content-type": content_type, "upsert": "true"},
+                )
         except _STORAGE_ERRORS:
             raise StorageError(f"No se pudo subir el archivo '{path}' al almacenamiento.") from None
 
     def download_bytes(self, path: str) -> bytes:
         """Baja un archivo. Distingue "no existe" de un fallo de acceso."""
         try:
-            return self._bucket.download(path)
+            with self._lock:
+                return self._bucket.download(path)
         except _STORAGE_ERRORS:
             pass
         if self._is_missing(path):
@@ -82,11 +97,22 @@ class ObjectStorage:
     def exists(self, path: str) -> bool:
         """Indica si el archivo esta en el bucket."""
         try:
-            return bool(self._bucket.exists(path))
+            with self._lock:
+                return bool(self._bucket.exists(path))
         except _STORAGE_ERRORS:
             raise StorageError(
                 f"No se pudo comprobar si existe el archivo '{path}' en el almacenamiento."
             ) from None
+
+    def remove_many(self, paths: Sequence[str]) -> None:
+        """Borra los archivos en una sola llamada. Una ruta que no existe no es error."""
+        if not paths:
+            return
+        try:
+            with self._lock:
+                self._bucket.remove(list(paths))
+        except _STORAGE_ERRORS:
+            raise StorageError("No se pudieron borrar los archivos del almacenamiento.") from None
 
     def upload_array(self, path: str, array: np.ndarray) -> None:
         """Guarda un arreglo como .npy, sin objetos serializados."""
@@ -115,6 +141,7 @@ class ObjectStorage:
     def _is_missing(self, path: str) -> bool:
         """True solo si el bucket responde que el archivo no existe."""
         try:
-            return not self._bucket.exists(path)
+            with self._lock:
+                return not self._bucket.exists(path)
         except _STORAGE_ERRORS:
             return False

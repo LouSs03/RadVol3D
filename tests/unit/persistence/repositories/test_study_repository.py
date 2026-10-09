@@ -328,3 +328,57 @@ def test_mark_completed_rejects_an_invalid_code_before_touching_the_database() -
         )
 
     assert connection.calls == []
+
+
+# --- lock_status y delete (funcionalidad 002, borrado de estudios) ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("status", ["pending", "processing", "completed", "failed"])
+def test_lock_status_locks_the_row_and_returns_its_status(status: str) -> None:
+    connection = FakeConnection([[{"status": status}]])
+
+    result = StudyRepository(connection).lock_status("it_a")
+
+    assert result is StudyStatus(status)
+    statement = connection.statements()[0]
+    assert statement.startswith("select status from study")
+    assert statement.endswith("for update")
+    assert connection.params_of("for update") == [("it_a",)]
+
+
+@pytest.mark.unit
+def test_lock_status_of_an_unknown_study_raises_not_found() -> None:
+    connection = FakeConnection([[]])
+
+    with pytest.raises(StudyNotFoundError):
+        StudyRepository(connection).lock_status("it_no_existe")
+
+
+@pytest.mark.unit
+def test_delete_removes_the_study_row() -> None:
+    connection = FakeConnection([FakeCursor([], rowcount=1)])
+
+    StudyRepository(connection).delete("it_a")
+
+    assert connection.statements() == ["delete from study where study_code = %s"]
+    assert connection.params_of("delete from study") == [("it_a",)]
+
+
+@pytest.mark.unit
+def test_delete_of_an_unknown_study_raises_not_found() -> None:
+    connection = FakeConnection([FakeCursor([], rowcount=0)])
+
+    with pytest.raises(StudyNotFoundError):
+        StudyRepository(connection).delete("it_no_existe")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("call", ["lock_status", "delete"])
+def test_lock_and_delete_reject_an_invalid_code_before_touching_the_database(call: str) -> None:
+    connection = FakeConnection()
+
+    with pytest.raises(InvalidStudyIdError):
+        getattr(StudyRepository(connection), call)("../x")
+
+    assert connection.calls == []

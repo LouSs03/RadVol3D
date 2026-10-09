@@ -257,6 +257,22 @@ repite en la descripción del pull request.
     garantía documentada para el TTA con volteos.
   - Una copia del modelo por hilo. Se descarta porque multiplica la memoria.
 
+- **Hallazgo durante la implementación (T070 y T077, 2026-10-09).** La prueba de
+  concurrencia encontró un segundo recurso compartido que no estaba previsto: el cliente
+  HTTP de Supabase. Con dos estudios a la vez, una subida al bucket fallaba con
+  `httpx.ReadError` (`WinError 10035`). Se reprodujo fuera de las pruebas: 4 de 8 subidas
+  concurrentes con el mismo cliente fallaron.
+  - **Decisión.** `ObjectStorage` serializa sus llamadas al bucket con un
+    `threading.Lock` por instancia.
+  - **Motivo.** Es el arreglo más simple y seguro. Solo serializa la transferencia; la
+    inferencia, que es lo lento, sigue en paralelo.
+  - **Alternativas.**
+    - Un cliente por hilo (`threading.local`). Más rendimiento, pero más conexiones y
+      más código.
+    - Desactivar HTTP/2. No hay garantía de que alcance.
+
+  Lo cubre `test_calls_from_several_threads_never_reach_the_bucket_at_the_same_time`.
+
 ## R14. Migración de `models/` sin cambiar la salida
 
 - **Decisión**: cada archivo original se reparte en módulos de servicios, con los
