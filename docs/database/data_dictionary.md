@@ -44,3 +44,17 @@ TODO
 ## lesion
 
 TODO
+
+## Verificacion del esquema
+Resultado de la consulta de verificacion de `001_create_tables.sql`,
+ejecutada el 2026-10-08 en Supabase:
+
+| table_name       | rows |
+| ---------------- | ---- |
+| lesion           | 0    |
+| model            | 0    |
+| organ            | 2    |
+| patient          | 1    |
+| processing_stage | 0    |
+| projection       | 0    |
+| study            | 0    |
