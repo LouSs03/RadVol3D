@@ -1,0 +1,2078 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RadVol 3D</title>
+<!--
+  Interfaz web (capa 3). Un solo archivo, sin build: CSS y JS en linea.
+  Three.js desde jsDelivr con version fija, la misma que usa web/viewer.html.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root{
+    --ink:#0F172A; --ink2:#334155; --muted:#64748B; --faint:#94A3B8;
+    --line:#E2E8F0; --line2:#CBD5E1; --bg:#F1F5F9; --card:#FFFFFF;
+    --brand:#0F6B5C; --brand-d:#0B5145; --brand-l:#E6F4F1;
+    --nav:#0B1220; --navtxt:#94A3B8;
+    --tumor:#E11D48; --tumor-l:#FFE4E6;
+    --warn:#B45309; --ok:#15803D;
+    --view-bg:#0A0F1A;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
+    background:var(--bg); color:var(--ink); font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{margin:0; font-weight:700; letter-spacing:-0.01em;}
+  button{font-family:inherit; cursor:pointer; border:0; background:none; color:inherit;}
+  input,select{font-family:inherit;}
+  ::selection{background:#CDEAE3;}
+  .hidden{display:none !important;}
+
+  /* ---------- shell ---------- */
+  .shell{max-width:1380px; margin:0 auto; padding:18px 26px 40px;}
+  @media (max-width:820px){ .shell{padding:14px 16px 32px;} }
+
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    background:var(--nav); border-radius:14px; padding:12px 18px; margin-bottom:18px; flex-wrap:wrap;
+  }
+  .brand{display:flex; align-items:center; gap:11px; min-width:0;}
+  .logo{
+    width:36px; height:36px; border-radius:10px; background:var(--brand);
+    display:flex; align-items:center; justify-content:center; flex:none;
+  }
+  .brand-txt{display:flex; flex-direction:column; line-height:1.15; min-width:0;}
+  .brand-txt b{color:#fff; font-size:15px; letter-spacing:-0.01em;}
+  .brand-txt span{color:#8B94A3; font-size:11px;}
+  .nav{display:flex; align-items:center; gap:4px; flex-wrap:wrap;}
+  .nav button{
+    color:var(--navtxt); font-size:13.5px; font-weight:500;
+    padding:7px 13px; border-radius:8px; transition:.15s;
+  }
+  .nav button:hover{color:#fff; background:rgba(255,255,255,.07);}
+  .nav button.on{color:#fff; background:rgba(255,255,255,.13); font-weight:600;}
+
+  /* ---------- generic ---------- */
+  .view{display:none;}
+  .view.on{display:block; animation:fade .18s ease;}
+  @keyframes fade{from{opacity:0; transform:translateY(3px);}to{opacity:1;transform:none;}}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px;}
+  .pad{padding:20px 22px;}
+  .head{display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:16px; flex-wrap:wrap;}
+  .head h1{font-size:23px;}
+  .head p{margin:3px 0 0; color:var(--muted); font-size:13.5px; max-width:760px;}
+  .eyebrow{font-size:11px; font-weight:700; letter-spacing:.09em; color:var(--brand); text-transform:uppercase;}
+  .sec{font-size:12px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin:0 0 12px;}
+
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; justify-content:center;
+    padding:10px 18px; border-radius:9px; font-size:13.5px; font-weight:600;
+    background:var(--brand); color:#fff; transition:.15s;
+  }
+  .btn:hover{background:var(--brand-d);}
+  .btn[disabled]{background:#CBD5E1; color:#fff; cursor:not-allowed;}
+  .btn.ghost{background:#fff; color:var(--ink2); border:1px solid var(--line2);}
+  .btn.ghost:hover{background:#F8FAFC; border-color:var(--muted);}
+  .btn.danger{background:#fff; color:#BE123C; border:1px solid #FECDD3;}
+  .btn.danger:hover{background:#FFF1F2; border-color:var(--tumor);}
+  .btn.sm{padding:7px 13px; font-size:12.5px;}
+
+  .grid{display:grid; gap:16px;}
+  .tag{
+    display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px;
+    font-size:11px; font-weight:700; letter-spacing:.02em; white-space:nowrap;
+  }
+  .tag.brand{background:var(--brand-l); color:var(--brand-d);}
+  .tag.tumor{background:var(--tumor-l); color:#9F1239;}
+  .tag.grey{background:#F1F5F9; color:var(--muted);}
+  .tag.ok{background:#DCFCE7; color:#166534;}
+  .tag.warn{background:#FEF3C7; color:#92400E;}
+
+  .kv{font-variant-numeric:tabular-nums;}
+  .mono{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;}
+  .spin{
+    width:13px; height:13px; border-radius:50%; border:2px solid currentColor; border-right-color:transparent;
+    display:inline-block; animation:rot .7s linear infinite; flex:none;
+  }
+  @keyframes rot{to{transform:rotate(360deg);}}
+
+  /* ---------- HOME ---------- */
+  .hero{
+    background:linear-gradient(135deg,#0B1220 0%,#12233A 55%,#0F3B33 100%);
+    border-radius:16px; padding:34px 34px 30px; color:#fff; margin-bottom:18px;
+  }
+  .hero h1{font-size:28px; max-width:640px; line-height:1.25;}
+  .hero p{margin:12px 0 0; color:#B6C2D2; font-size:14.5px; max-width:660px;}
+  .hero .row{display:flex; gap:10px; margin-top:22px; flex-wrap:wrap;}
+  .hero .btn.ghost{background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.22);}
+  .hero .btn.ghost:hover{background:rgba(255,255,255,.18);}
+  @media (max-width:560px){ .hero{padding:26px 20px 22px;} .hero h1{font-size:23px;} }
+
+  .pipe{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px;}
+  @media (max-width:900px){ .pipe{grid-template-columns:1fr 1fr;} }
+  @media (max-width:560px){ .pipe{grid-template-columns:1fr;} }
+  .step{background:var(--card); border:1px solid var(--line); border-radius:13px; padding:17px 16px; position:relative;}
+  .step .n{
+    width:26px; height:26px; border-radius:8px; background:var(--brand-l); color:var(--brand-d);
+    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12.5px; margin-bottom:10px;
+  }
+  .step h4{font-size:13.5px; margin-bottom:5px;}
+  .step p{margin:0; font-size:12.5px; color:var(--muted); line-height:1.45;}
+
+  .organs{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  @media (max-width:700px){ .organs{grid-template-columns:1fr;} }
+  .organ{
+    display:flex; gap:14px; align-items:flex-start;
+    background:var(--card); border:1px solid var(--line); border-radius:13px; padding:16px 17px;
+  }
+  .organ canvas{border-radius:9px; background:#0A0F1A; flex:none;}
+  .organ h4{font-size:14px; margin-bottom:3px;}
+  .organ p{margin:0 0 8px; font-size:12.5px; color:var(--muted);}
+  .ds{font-size:11.5px; color:var(--faint);}
+  @media (max-width:420px){ .organ canvas{width:96px; height:96px;} }
+
+  /* ---------- NEW STUDY ---------- */
+  .field{display:flex; flex-direction:column; gap:6px; max-width:420px; margin-bottom:18px;}
+  .field label{font-size:12.5px; font-weight:600; color:var(--ink2);}
+  .field input{
+    padding:10px 12px; border:1px solid var(--line2); border-radius:9px; font-size:14px;
+    color:var(--ink); background:#fff; transition:.15s; width:100%;
+  }
+  .field input:focus{outline:none; border-color:var(--brand); box-shadow:0 0 0 3px rgba(15,107,92,.15);}
+  .field input:disabled{background:#F8FAFC; color:var(--ink2);}
+  .field small{font-size:11.5px; color:var(--muted);}
+
+  .pick{display:grid; grid-template-columns:1fr 1fr; gap:13px; margin-bottom:18px;}
+  @media (max-width:700px){ .pick{grid-template-columns:1fr;} }
+  .opt{
+    border:2px solid var(--line); border-radius:13px; padding:15px 16px; background:var(--card);
+    cursor:pointer; transition:.15s; display:flex; gap:13px; align-items:center; text-align:left; width:100%;
+  }
+  .opt:hover{border-color:var(--line2); background:#FBFDFE;}
+  .opt.sel{border-color:var(--brand); background:var(--brand-l);}
+  .opt[disabled]{cursor:default;}
+  .opt[disabled]:not(.sel){opacity:.45;}
+  .opt .ic{width:42px; height:42px; border-radius:11px; background:#0A0F1A; flex:none; display:flex; align-items:center; justify-content:center; overflow:hidden;}
+  .opt b{display:block; font-size:14px;}
+  .opt span{font-size:12px; color:var(--muted);}
+  .opt .chk{
+    margin-left:auto; width:20px; height:20px; border-radius:50%; border:2px solid var(--line2); flex:none;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .opt.sel .chk{border-color:var(--brand); background:var(--brand);}
+  .opt.sel .chk::after{content:''; width:7px; height:7px; border-radius:50%; background:#fff;}
+
+  .row-end{display:flex; align-items:center; justify-content:flex-end; gap:10px; flex-wrap:wrap;}
+  .card.locked{opacity:.5; pointer-events:none;}
+
+  .drop{
+    border:2px dashed var(--line2); border-radius:12px; padding:16px; margin-bottom:13px;
+    display:flex; align-items:center; justify-content:center; gap:10px; text-align:center;
+    color:var(--muted); font-size:13px; background:#FAFCFD; cursor:pointer; transition:.15s;
+  }
+  .drop b{color:var(--ink2);}
+  .drop:hover{border-color:var(--muted);}
+  .drop.over,.proj.over{border-color:var(--brand); background:var(--brand-l);}
+
+  .projs{display:grid; grid-template-columns:repeat(4,1fr); gap:12px;}
+  @media (max-width:820px){ .projs{grid-template-columns:1fr 1fr;} }
+  .proj{
+    border:2px dashed var(--line2); border-radius:12px; padding:12px; text-align:center;
+    background:#FAFCFD; transition:.18s; position:relative; cursor:pointer;
+  }
+  .proj:hover{border-color:var(--muted);}
+  .proj.filled{border-style:solid; border-color:var(--brand); background:var(--card);}
+  .proj.ok{border-color:var(--ok);}
+  .proj.bad{border-style:solid; border-color:var(--tumor); background:#FFF1F2;}
+  .proj.lock{cursor:default;}
+  .proj .ph{
+    width:100%; aspect-ratio:1/1.25; border-radius:7px; background:#F1F5F9; margin-bottom:9px;
+    display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:12px; overflow:hidden;
+  }
+  .proj .ph.img{background:#0A0F1A;}
+  .proj .ph canvas{width:100%; height:auto; display:block;}
+  .proj b{font-size:12.5px; display:block;}
+  .proj > span{font-size:11px; color:var(--muted);}
+  .proj .pst{display:block; margin-top:4px; font-size:11px; color:var(--muted); min-height:16px; line-height:1.35;}
+  .proj.ok .pst{color:var(--ok); font-weight:700;}
+  .proj.bad .pst{color:#BE123C; font-weight:600;}
+  .proj .badge{
+    position:absolute; top:7px; right:7px; width:22px; height:22px; border-radius:50%;
+    background:var(--ok); color:#fff; display:none; align-items:center; justify-content:center;
+    box-shadow:0 0 0 2px #fff;
+  }
+  .proj.ok .badge{display:flex;}
+  .proj.busy .badge{display:flex; background:var(--brand-l); color:var(--brand);}
+
+  /* ---------- PROCESSING ---------- */
+  .stage{
+    display:flex; gap:14px; align-items:flex-start; padding:16px 0; border-bottom:1px solid var(--line);
+  }
+  .stage:last-child{border-bottom:0;}
+  .stage .dot{
+    width:30px; height:30px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+    background:#F1F5F9; color:var(--faint); font-weight:800; font-size:12px; transition:.2s;
+  }
+  .stage.run .dot{background:var(--brand-l); color:var(--brand-d);}
+  .stage.done .dot{background:var(--brand); color:#fff;}
+  .stage.skip .dot{background:#E2E8F0; color:var(--muted);}
+  .stage.fail .dot{background:var(--tumor); color:#fff;}
+  .stage .body{flex:1; min-width:0;}
+  .stage h4{font-size:13.5px; display:flex; align-items:center; gap:9px; flex-wrap:wrap;}
+  .stage p{margin:3px 0 9px; font-size:12.5px; color:var(--muted);}
+  .bar{height:6px; border-radius:6px; background:#EEF2F6; overflow:hidden;}
+  .bar i{display:block; height:100%; width:0%; border-radius:6px; background:var(--brand); transition:width .25s linear;}
+  .stage.run .bar i{
+    background-image:linear-gradient(90deg,var(--brand) 0%,#1FA58C 50%,var(--brand) 100%);
+    background-size:200% 100%; animation:shimmer 1.3s linear infinite;
+  }
+  @keyframes shimmer{from{background-position:200% 0;}to{background-position:0 0;}}
+  .stage.skip .bar i{background:var(--line2);}
+  .stage.fail .bar i{background:var(--tumor);}
+  .stg-st{font-size:11.5px; font-weight:700; color:var(--faint);}
+  .stage.run .stg-st{color:var(--brand);}
+  .stage.done .stg-st{color:var(--ok);}
+  .stage.skip .stg-st{color:var(--muted);}
+  .stage.fail .stg-st{color:var(--tumor);}
+
+  /* ---------- VIEWER ---------- */
+  .vgrid{display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:16px; align-items:start;}
+  @media (max-width:1040px){ .vgrid{grid-template-columns:1fr;} }
+  .stage3d{
+    background:var(--view-bg); border-radius:14px; position:relative; overflow:hidden;
+    border:1px solid #1E293B;
+  }
+  #cv3d{
+    display:block; width:100%; height:520px; cursor:grab; touch-action:none;
+    background:radial-gradient(circle at 50% 50%,#111C2E 0%,#070B12 72%);
+  }
+  #cv3d:active{cursor:grabbing;}
+  @media (max-width:700px){ #cv3d{height:400px;} }
+  .ov{position:absolute; pointer-events:none; color:#CBD5E1; font-size:11.5px;}
+  .ov.tl{top:12px; left:14px;}
+  .ov.tr{top:12px; right:14px; text-align:right;}
+  .ov.bl{bottom:12px; left:14px;}
+  .ov.br{bottom:12px; right:14px; text-align:right;}
+  .ov b{color:#F8FAFC; font-size:12.5px; display:block;}
+  .ov .dim{color:#64748B;}
+  .vmsg{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:10px;
+    padding:24px; text-align:center; color:#CBD5E1; font-size:13px; pointer-events:none;
+  }
+  .vmsg.err{color:#FDA4AF;}
+  .vtools{
+    position:absolute; top:12px; left:50%; transform:translateX(-50%);
+    display:flex; gap:5px; background:rgba(15,23,42,.82); padding:5px; border-radius:10px;
+    border:1px solid #1E293B; backdrop-filter:blur(4px);
+  }
+  .vtools button{
+    color:#94A3B8; font-size:11.5px; font-weight:600; padding:6px 11px; border-radius:7px; transition:.15s; white-space:nowrap;
+  }
+  .vtools button:hover{color:#fff; background:rgba(255,255,255,.08);}
+  .vtools button.on{color:#fff; background:var(--brand);}
+  @media (max-width:700px){
+    .vtools{top:auto; bottom:44px;}
+    .ov.tr{display:none;}
+  }
+
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:13px; padding:16px 17px; margin-bottom:14px;}
+  .panel h4{font-size:12px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:12px;}
+  .ctl{margin-bottom:14px;}
+  .ctl:last-child{margin-bottom:0;}
+  .ctl label{display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:6px; color:var(--ink2);}
+  .ctl label b{color:var(--ink); font-variant-numeric:tabular-nums;}
+  input[type=range]{width:100%; accent-color:var(--brand); height:4px;}
+  input[type=range]:disabled{opacity:.4;}
+  .sw{display:flex; align-items:center; justify-content:space-between; padding:7px 0; font-size:13px;}
+  .toggle{width:38px; height:21px; border-radius:20px; background:var(--line2); position:relative; transition:.18s; flex:none;}
+  .toggle::after{content:''; position:absolute; top:2.5px; left:2.5px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.18s;}
+  .toggle.on{background:var(--brand);}
+  .toggle.on::after{transform:translateX(17px);}
+
+  .find{border-left:3px solid var(--tumor); background:#FFF1F2; border-radius:0 10px 10px 0; padding:13px 15px; margin-bottom:13px;}
+  .find h4{font-size:13px; color:#9F1239; text-transform:none; letter-spacing:0; margin-bottom:8px;}
+  .find dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:12.5px;}
+  .find dt{color:#9F1239; opacity:.75;}
+  .find dd{margin:0; font-weight:600; color:#881337; text-align:right; font-variant-numeric:tabular-nums; overflow-wrap:anywhere;}
+  .find.none{border-left-color:var(--ok); background:#F0FDF4;}
+  .find.none h4{color:#166534; margin:0;}
+  .find.wait{border-left-color:var(--line2); background:#F8FAFC;}
+  .find.wait h4{color:var(--muted); margin:0;}
+  .lnav{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    margin:-2px 0 9px; font-size:12px; font-weight:600; color:#9F1239;
+  }
+  .lnav button{width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center; color:#9F1239;}
+  .lnav button:hover{background:var(--tumor-l);}
+  .lnav button[disabled]{opacity:.3; cursor:default; background:none;}
+
+  .slices{display:grid; grid-template-columns:repeat(3,1fr); gap:9px;}
+  .slice{text-align:center;}
+  .slice canvas{width:100%; height:auto; border-radius:8px; background:#0A0F1A; display:block; border:1px solid #1E293B;}
+  .slice span{font-size:10.5px; color:var(--muted); display:block; margin-top:5px; font-weight:600;}
+
+  .dls{list-style:none; margin:0; padding:0; display:grid; gap:7px;}
+  .dls a{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 11px; border:1px solid var(--line); border-radius:9px;
+    color:var(--ink2); text-decoration:none; font-size:12.5px; transition:.15s;
+  }
+  .dls a:hover{border-color:var(--brand); color:var(--brand-d); background:var(--brand-l);}
+  .dls a span{color:var(--faint); font-size:11px;}
+
+  .empty{padding:40px 22px; text-align:center; color:var(--muted);}
+  .empty h3{font-size:16px; color:var(--ink); margin-bottom:6px;}
+  .empty p{margin:0 auto 16px; max-width:460px; font-size:13px;}
+
+  /* ---------- METRICS ---------- */
+  .mtable{width:100%; border-collapse:collapse; font-size:13px;}
+  .mtable th{
+    text-align:left; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+    padding:0 12px 9px; border-bottom:1px solid var(--line); font-weight:700;
+  }
+  .mtable td{padding:12px; border-bottom:1px solid #F1F5F9; vertical-align:middle;}
+  .mtable tr:last-child td{border-bottom:0;}
+  .mtable .num{font-variant-numeric:tabular-nums; font-weight:700; text-align:right; white-space:nowrap;}
+  .mtable .ref{font-size:11.5px; color:var(--muted); line-height:1.35;}
+  .mscroll{overflow-x:auto;}
+  .mscroll .mtable{min-width:720px;}
+  .oe{
+    display:inline-block; font-size:10.5px; font-weight:800; color:var(--brand-d);
+    background:var(--brand-l); padding:2px 7px; border-radius:5px; margin-right:7px;
+  }
+  .delta{font-size:11px; font-weight:700; padding:2px 7px; border-radius:5px; white-space:nowrap;}
+  .delta.up{background:#DCFCE7; color:#166534;}
+  .delta.down{background:#FEE2E2; color:#991B1B;}
+
+  /* ---------- HISTORY ---------- */
+  .hrow{
+    display:grid; grid-template-columns:140px minmax(0,1fr) 110px 90px 120px 32px;
+    gap:12px; padding:14px 18px; align-items:center; font-size:13px;
+    border-bottom:1px solid #F1F5F9; cursor:pointer; transition:.12s; text-align:left; width:100%;
+  }
+  .hrow:hover{background:#F8FAFC;}
+  .hrow:focus-visible{outline:2px solid var(--brand); outline-offset:-2px;}
+  .hrow:last-child{border-bottom:0;}
+  .hrow.gone{cursor:default; opacity:.6;}
+  .hhead{
+    display:grid; grid-template-columns:140px minmax(0,1fr) 110px 90px 120px 32px;
+    gap:12px; padding:12px 18px; background:#F8FAFC; border-bottom:1px solid var(--line);
+    font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:700;
+  }
+  .hrow .del{
+    width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+    color:var(--faint); transition:.15s;
+  }
+  .hrow .del:hover{color:var(--tumor); background:#FFF1F2;}
+  .hcode{overflow-wrap:anywhere;}
+  @media (max-width:860px){
+    .hrow,.hhead{grid-template-columns:1fr 1fr; }
+    .hhead{display:none;}
+  }
+
+  .note{
+    background:#FFFBEB; border:1px solid #FDE68A; border-radius:11px; padding:13px 15px;
+    font-size:12.5px; color:#78350F; display:flex; gap:10px; align-items:flex-start;
+  }
+  .note svg{flex:none; margin-top:1px;}
+  .note.err{background:#FFF1F2; border-color:#FECDD3; color:#9F1239;}
+  .note.info{background:var(--brand-l); border-color:#B7E0D7; color:var(--brand-d);}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v6"/><path d="M8.5 8C6 8 4.2 10 4 12.6c-.2 2.4.3 5 1.2 6.8.5 1 1.8 1.2 2.5.3 1.2-1.4 1.8-3.4 1.8-5.6V8z"/>
+          <path d="M15.5 8c2.5 0 4.3 2 4.5 4.6.2 2.4-.3 5-1.2 6.8-.5 1-1.8 1.2-2.5.3-1.2-1.4-1.8-3.4-1.8-5.6V8z"/>
+        </svg>
+      </div>
+      <div class="brand-txt">
+        <b>RadVol 3D</b>
+        <span>Reconstrucción volumétrica y detección tumoral</span>
+      </div>
+    </div>
+    <div class="nav" id="nav">
+      <button data-go="home">Inicio</button>
+      <button data-go="new">Nuevo estudio</button>
+      <button data-go="viewer">Visor 3D</button>
+      <button data-go="metrics">Métricas</button>
+      <button data-go="history">Historial</button>
+    </div>
+  </div>
+
+  <!-- ==================== HOME ==================== -->
+  <div class="view" id="v-home">
+    <div class="hero">
+      <div class="eyebrow" style="color:#5EEAD4">Taller Integrador 1</div>
+      <h1 style="margin-top:8px">Del plano a la profundidad: reconstrucción 3D de órganos usando solo radiografías</h1>
+      <p>El sistema toma varias proyecciones radiográficas del mismo órgano tomadas desde distintos ángulos,
+         reconstruye con una red neuronal convolucional un volumen tridimensional aproximado, detecta el tumor
+         dentro de ese volumen con un segundo modelo, y se lo entrega al médico en un visor 3D donde la lesión
+         aparece resaltada en color.</p>
+      <div class="row">
+        <button class="btn" data-go="new">Iniciar un estudio</button>
+        <button class="btn ghost" data-go="history">Ver estudios anteriores</button>
+      </div>
+    </div>
+
+    <div class="pipe">
+      <div class="step">
+        <div class="n">1</div>
+        <h4>Ingreso de proyecciones</h4>
+        <p>Se cargan 4 radiografías del órgano tomadas a 0°, 45°, 90° y 135°. Equipo convencional, dosis baja.</p>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <h4>Reconstrucción volumétrica</h4>
+        <p>Una CNN generativa expande las proyecciones 2D a un volumen 3D tipo TC. Es la etapa central del proyecto.</p>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <h4>Segmentación del tumor</h4>
+        <p>Un segundo modelo 3D recorre el volumen reconstruido y delimita vóxel a vóxel la lesión.</p>
+      </div>
+      <div class="step">
+        <div class="n">4</div>
+        <h4>Entrega al médico</h4>
+        <p>Visor 3D interactivo con el órgano semitransparente, las lesiones en color y cortes ortogonales del volumen.</p>
+      </div>
+    </div>
+
+    <div class="head" style="margin-bottom:12px">
+      <div>
+        <h2 style="font-size:17px">Órganos dentro del alcance</h2>
+        <p>Seleccionados por disponibilidad de datasets públicos con anotación tumoral verificada.</p>
+      </div>
+    </div>
+    <div class="organs">
+      <div class="organ">
+        <canvas class="mini" data-organ="lung" width="150" height="150"></canvas>
+        <div>
+          <h4>Pulmón</h4>
+          <p>Nódulos y tumores primarios de pulmón. Línea base del estado del arte: Dice 0,63 sobre TC.</p>
+          <div class="ds">LIDC-IDRI · LUNA16 · NSCLC-Radiomics · MSD Task06</div>
+        </div>
+      </div>
+      <div class="organ">
+        <canvas class="mini" data-organ="liver" width="150" height="150"></canvas>
+        <div>
+          <h4>Hígado</h4>
+          <p>Lesiones hepáticas focales. Línea base del estado del arte: Dice 0,832 sobre 3DIRCADb.</p>
+          <div class="ds">LiTS17 · 3DIRCADb · MSD Task03</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== NUEVO ESTUDIO ==================== -->
+  <div class="view" id="v-new">
+    <div class="head">
+      <div>
+        <div class="eyebrow">Paso 1 de 2</div>
+        <h1 style="margin-top:5px">Nuevo estudio</h1>
+        <p>Crea el estudio con su código y órgano, carga las cuatro proyecciones radiográficas y mándalo a procesar.</p>
+      </div>
+    </div>
+
+    <div class="card pad" style="margin-bottom:16px" id="study-card">
+      <h4 class="sec">Datos del estudio</h4>
+      <div class="field">
+        <label for="f-code">Código del estudio</label>
+        <input id="f-code" class="mono" autocomplete="off" spellcheck="false" maxlength="64" placeholder="RV-0418">
+        <small>Letras, dígitos, guion y guion bajo (hasta 64). Nunca uses el nombre o el DNI del paciente.</small>
+      </div>
+      <h4 class="sec">Órgano</h4>
+      <div class="pick" id="pick">
+        <button class="opt" data-organ="lung" type="button">
+          <div class="ic"><canvas class="mini" data-organ="lung" width="42" height="42"></canvas></div>
+          <div><b>Pulmón</b><span>Tórax · 4 proyecciones</span></div>
+          <div class="chk"></div>
+        </button>
+        <button class="opt" data-organ="liver" type="button">
+          <div class="ic"><canvas class="mini" data-organ="liver" width="42" height="42"></canvas></div>
+          <div><b>Hígado</b><span>Abdomen superior · 4 proyecciones</span></div>
+          <div class="chk"></div>
+        </button>
+      </div>
+      <div class="row-end">
+        <span class="tag ok hidden" id="study-created"></span>
+        <button class="btn" id="btn-create" type="button">Crear estudio</button>
+      </div>
+    </div>
+
+    <div class="card pad locked" style="margin-bottom:16px" id="proj-card">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:13px; flex-wrap:wrap">
+        <h4 class="sec" style="margin:0">Proyecciones radiográficas</h4>
+        <button class="btn ghost sm" id="btn-pick" type="button">Elegir archivos</button>
+        <input type="file" id="file-many" accept=".npy" multiple hidden>
+        <input type="file" id="file-one" accept=".npy" hidden>
+      </div>
+      <div class="drop" id="drop">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        <div>Arrastra aquí las <b>4 proyecciones .npy</b>. Si el nombre trae el ángulo (<span class="mono">000</span>, <span class="mono">045</span>, <span class="mono">090</span>, <span class="mono">135</span>) se asignan solas; si no, en orden de nombre. También puedes soltar un archivo sobre su casilla.</div>
+      </div>
+      <div class="projs" id="projs">
+        <div class="proj" data-ang="0"><div class="badge"></div><div class="ph">sin cargar</div><b>Proyección AP</b><span>0°</span><span class="pst"></span></div>
+        <div class="proj" data-ang="45"><div class="badge"></div><div class="ph">sin cargar</div><b>Oblicua derecha</b><span>45°</span><span class="pst"></span></div>
+        <div class="proj" data-ang="90"><div class="badge"></div><div class="ph">sin cargar</div><b>Lateral</b><span>90°</span><span class="pst"></span></div>
+        <div class="proj" data-ang="135"><div class="badge"></div><div class="ph">sin cargar</div><b>Oblicua izquierda</b><span>135°</span><span class="pst"></span></div>
+      </div>
+    </div>
+
+    <div class="note err hidden" id="new-err" role="alert" style="margin-bottom:16px"></div>
+
+    <div class="note" style="margin-bottom:16px">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16.5v.01"/></svg>
+      <div>Cada proyección debe ser un <b>.npy</b> de 128 × 128 (convenio TA-2, integrales de línea) de hasta 1 MiB.
+      Las cuatro se suben juntas: si una no es válida, el servidor no guarda ninguna. Los nombres de archivo no se envían ni se muestran.</div>
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap">
+      <button class="btn ghost" id="btn-cancel" type="button">Cancelar</button>
+      <button class="btn ghost" id="btn-upload" type="button" disabled>Subir proyecciones</button>
+      <button class="btn" id="btn-process" type="button" disabled>Procesar</button>
+    </div>
+  </div>
+
+  <!-- ==================== PROCESANDO ==================== -->
+  <div class="view" id="v-run">
+    <div class="head">
+      <div>
+        <div class="eyebrow">Paso 2 de 2</div>
+        <h1 style="margin-top:5px">Procesando el estudio</h1>
+        <p id="run-sub">Ejecutando la cadena de reconstrucción y detección.</p>
+      </div>
+    </div>
+
+    <div class="card pad">
+      <div class="stage" id="st-1">
+        <div class="dot">1</div>
+        <div class="body">
+          <h4>Preprocesamiento y calibración geométrica <span class="stg-st">en espera</span></h4>
+          <p>Normalización de intensidades, alineación de las 4 proyecciones y estimación de la geometría de adquisición.</p>
+          <div class="bar"><i></i></div>
+        </div>
+      </div>
+      <div class="stage" id="st-2">
+        <div class="dot">2</div>
+        <div class="body">
+          <h4>Reconstrucción volumétrica 3D <span class="stg-st">en espera</span></h4>
+          <p>CNN generativa 2D→3D. Expande las proyecciones a un volumen de 128 × 128 × 128 vóxeles.</p>
+          <div class="bar"><i></i></div>
+        </div>
+      </div>
+      <div class="stage" id="st-3">
+        <div class="dot">3</div>
+        <div class="body">
+          <h4>Segmentación tumoral <span class="stg-st">en espera</span></h4>
+          <p>Red 3D tipo U-Net que delimita las lesiones vóxel a vóxel dentro del volumen reconstruido.</p>
+          <div class="bar"><i></i></div>
+        </div>
+      </div>
+      <div class="stage" id="st-4">
+        <div class="dot">4</div>
+        <div class="body">
+          <h4>Generación de mallas 3D <span class="stg-st">en espera</span></h4>
+          <p>Extrae la superficie del órgano y de cada lesión, y exporta las mallas .glb que dibuja el visor.</p>
+          <div class="bar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note err hidden" id="run-err" role="alert" style="margin-top:16px"></div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:16px; flex-wrap:wrap">
+      <div class="kv" style="font-size:12.5px; color:var(--muted)">Tiempo transcurrido: <b id="clk" class="mono">0,0 s</b></div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap">
+        <button class="btn ghost hidden" id="btn-resume" type="button">Completar el estudio</button>
+        <button class="btn ghost" data-go="history" type="button">Historial</button>
+        <button class="btn" id="btn-open" type="button" disabled>Abrir en el visor 3D</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== VISOR 3D ==================== -->
+  <div class="view" id="v-viewer">
+    <div class="card empty hidden" id="vw-empty">
+      <h3>No hay un estudio abierto</h3>
+      <p>Abre un estudio terminado desde el historial, o crea uno nuevo y espera a que termine de procesarse.</p>
+      <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap">
+        <button class="btn ghost" data-go="history" type="button">Ir al historial</button>
+        <button class="btn" data-go="new" type="button">Nuevo estudio</button>
+      </div>
+    </div>
+
+    <div id="vw-main">
+      <div class="head">
+        <div>
+          <div class="eyebrow">Resultado del estudio</div>
+          <h1 style="margin-top:5px" id="vw-title">Reconstrucción volumétrica</h1>
+          <p id="vw-sub">Arrastra para rotar, rueda para acercar. Las lesiones detectadas aparecen en rojo.</p>
+        </div>
+        <div style="display:flex; gap:9px; flex-wrap:wrap">
+          <button class="btn ghost sm" data-go="history" type="button">Historial</button>
+          <button class="btn danger sm" id="btn-delete" type="button">Eliminar estudio</button>
+        </div>
+      </div>
+
+      <div class="vgrid">
+        <div class="stage3d">
+          <canvas id="cv3d"></canvas>
+          <div class="vmsg" id="vw-msg"></div>
+          <div class="vtools">
+            <button data-mode="tissue" class="on" type="button">Tejido</button>
+            <button data-mode="tumor" type="button">Solo tumor</button>
+            <button id="btn-home-view" type="button">Vista inicial</button>
+          </div>
+          <div class="ov tl">
+            <b id="ov-organ">—</b>
+            <span class="dim" id="ov-organ-sub">Malla del órgano</span>
+          </div>
+          <div class="ov tr">
+            <b id="ov-case">—</b>
+            <span class="dim">4 proyecciones · 0/45/90/135°</span>
+          </div>
+          <div class="ov bl">
+            <span class="dim">Rotación</span>
+            <b id="ov-rot" class="mono">Az 0° · El 0°</b>
+          </div>
+          <div class="ov br">
+            <span class="dim">Render</span>
+            <b id="ov-fps" class="mono">— FPS</b>
+          </div>
+        </div>
+
+        <div>
+          <div class="find wait" id="find">
+            <h4 id="f-title">Cargando lesiones…</h4>
+            <div class="lnav hidden" id="f-nav">
+              <button id="f-prev" type="button" aria-label="Lesión anterior">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 5 8 12 15 19"/></svg>
+              </button>
+              <span id="f-pos">Lesión 1 de 1</span>
+              <button id="f-next" type="button" aria-label="Lesión siguiente">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 5 16 12 9 19"/></svg>
+              </button>
+            </div>
+            <dl id="f-dl" class="hidden">
+              <dt>Volumen</dt><dd id="f-vol">—</dd>
+              <dt>Diámetro máx.</dt><dd id="f-diam">—</dd>
+              <dt>Localización</dt><dd id="f-loc">—</dd>
+              <dt>Confianza</dt><dd id="f-conf">—</dd>
+            </dl>
+          </div>
+
+          <div class="panel">
+            <h4>Controles de visualización</h4>
+            <div class="ctl">
+              <label for="r-op">Opacidad del órgano <b id="lb-op">35 %</b></label>
+              <input type="range" id="r-op" min="4" max="100" value="35">
+            </div>
+            <div class="sw">
+              <span>Mostrar tumor</span>
+              <button class="toggle on" id="t-tumor" aria-pressed="true" aria-label="Mostrar tumor" type="button"></button>
+            </div>
+            <div class="sw">
+              <span>Rotación automática</span>
+              <button class="toggle on" id="t-spin" aria-pressed="true" aria-label="Rotación automática" type="button"></button>
+            </div>
+            <div class="sw">
+              <span>Ejes del volumen</span>
+              <button class="toggle" id="t-axes" aria-pressed="false" aria-label="Ejes del volumen" type="button"></button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h4>Cortes ortogonales</h4>
+            <div class="ctl">
+              <label for="r-sl">Posición del corte <b id="lb-sl">centrado</b></label>
+              <input type="range" id="r-sl" min="0" max="100" value="50" disabled>
+            </div>
+            <div class="slices">
+              <div class="slice"><canvas id="sl-ax" width="120" height="120"></canvas><span>AXIAL</span></div>
+              <div class="slice"><canvas id="sl-co" width="120" height="120"></canvas><span>CORONAL</span></div>
+              <div class="slice"><canvas id="sl-sa" width="120" height="120"></canvas><span>SAGITAL</span></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h4>Descargas</h4>
+            <ul class="dls">
+              <li><a id="dl-organ" href="#" download>Malla del órgano <span>.glb</span></a></li>
+              <li><a id="dl-tumor" href="#" download>Malla del tumor completo <span>.glb</span></a></li>
+              <li><a id="dl-volume" href="#" download>Volumen reconstruido <span>.npy</span></a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MÉTRICAS ==================== -->
+  <div class="view" id="v-metrics">
+    <div class="head">
+      <div>
+        <div class="eyebrow">Evaluación</div>
+        <h1 style="margin-top:5px">Métricas computacionales</h1>
+        <p>Cada métrica se contrasta contra el valor reportado en el estado del arte que el proyecto se propone superar,
+           según los objetivos específicos del Project Charter.</p>
+      </div>
+      <button class="btn ghost sm" data-go="viewer" type="button">Volver al visor</button>
+    </div>
+
+    <div class="card" style="overflow:hidden">
+      <div class="mscroll" style="padding:18px 10px 0">
+        <table class="mtable">
+          <thead>
+            <tr>
+              <th style="width:36%">Métrica</th>
+              <th style="width:30%">Referencia del estado del arte</th>
+              <th style="text-align:right">Estado del arte</th>
+              <th style="text-align:right">Este sistema</th>
+              <th style="text-align:right">Resultado</th>
+            </tr>
+          </thead>
+          <tbody id="mbody"></tbody>
+        </table>
+      </div>
+      <div style="padding:14px 22px 18px">
+        <div class="note">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16.5v.01"/></svg>
+          <div>Los valores de la columna <b>Este sistema</b> son datos de maqueta para ilustrar cómo se presentarán
+          los resultados: la API todavía no expone métricas. Los valores del estado del arte sí son reales y corresponden a los artículos citados.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== HISTORIAL ==================== -->
+  <div class="view" id="v-history">
+    <div class="head">
+      <div>
+        <div class="eyebrow">Registro</div>
+        <h1 style="margin-top:5px">Historial de estudios</h1>
+        <p>Estudios creados desde este navegador, del más reciente al más antiguo. El estado se consulta al servidor cada vez que abres esta página.</p>
+      </div>
+      <button class="btn sm" data-go="new" type="button">Nuevo estudio</button>
+    </div>
+    <div class="card" style="overflow:hidden">
+      <div class="hhead">
+        <div>Fecha</div><div>Estudio · Órgano</div><div>Estado</div><div>Lesiones</div><div>Hallazgo</div><div></div>
+      </div>
+      <div id="hbody"></div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+'use strict';
+// Convencion del proyecto: snake_case tambien en JavaScript. Los metodos de Three.js
+// (setSize, traverse, ...) son de la biblioteca y conservan su nombre.
+// Privacidad: la pagina nunca pide, guarda, muestra ni registra nombre, apellido o DNI
+// del paciente. Solo maneja el codigo del estudio.
+
+/* ============================================================
+   0. CONFIGURACION
+   ============================================================ */
+// Base de la API. Servida por el propio backend se usa su origen (asi abrirla como
+// 127.0.0.1 no choca con CORS); abierta como archivo suelto, el backend local.
+const API = window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:8000';
+
+const POLL_MS = 3000;
+const TUMOR_COLOR = '#E11D48';
+const ORGAN_COLOR = '#CBD5E1';
+const ORGAN_OPACITY = 0.35;
+const GHOST_OPACITY = 0.06;
+const ANGLES = [0, 45, 90, 135];
+const GRID_SIZE = 128;
+const FIELD_OF_VIEW_MM = 320;
+const MAX_PROJECTION_BYTES = 1048576;
+const STUDY_CODE_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+const HISTORY_KEY = 'radvol3d.history.v1';
+const ORGAN_LABELS = { lung: 'Pulmón', liver: 'Hígado' };
+const STAGE_LABELS = {
+  preprocessing: 'preprocesamiento', reconstruction: 'reconstrucción',
+  segmentation: 'segmentación', meshing: 'generación de mallas',
+};
+// Constante de tiempo de la barra de cada etapa mientras corre, en segundos. La API no
+// informa el avance dentro de una etapa: la barra se acerca al 95 % y salta al 100 % al terminar.
+// Medidos en CPU: preprocesamiento < 1 s, reconstruccion ~15 s, segmentacion ~3 min.
+const STAGE_TAU_S = [1, 10, 90, 10];
+
+const number_format = new Intl.NumberFormat('es', { maximumFractionDigits: 1 });
+const percent_format = new Intl.NumberFormat('es', { style: 'percent', maximumFractionDigits: 0 });
+
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+function escape_html(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ============================================================
+   1. API
+   ============================================================ */
+function study_path(code, suffix = '') {
+  return '/studies/' + encodeURIComponent(code) + suffix;
+}
+
+function error_text(http_status, body) {
+  const detail = body && body.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail.length) return detail.map((item) => item.msg).join(' · ');
+  return 'El servidor respondió ' + http_status + '.';
+}
+
+// Nunca lanza: devuelve el estado HTTP (0 si no hubo conexion), el cuerpo JSON y el error.
+async function api(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(API + path, options);
+  } catch {
+    return { http_status: 0, ok: false, body: null, error: 'No se pudo conectar con el servidor (' + API + ').' };
+  }
+  let body = null;
+  if ((response.headers.get('content-type') || '').includes('application/json')) {
+    try { body = await response.json(); } catch { body = null; }
+  }
+  return { http_status: response.status, ok: response.ok, body, error: response.ok ? null : error_text(response.status, body) };
+}
+
+/* ============================================================
+   2. HISTORIAL LOCAL
+   La API no lista estudios: el historial vive en este navegador.
+   Cada entrada guarda solo study_code, organ, created_at, status y lesion_count.
+   ============================================================ */
+function read_history() {
+  try {
+    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function write_history(list) {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch { /* sin almacenamiento */ }
+}
+
+function remember(entry) {
+  const list = read_history();
+  const index = list.findIndex((item) => item.study_code === entry.study_code);
+  const clean = {};
+  for (const key of ['study_code', 'organ', 'created_at', 'status', 'lesion_count']) {
+    if (entry[key] !== undefined) clean[key] = entry[key];
+  }
+  if (index >= 0) list[index] = { ...list[index], ...clean };
+  else list.unshift(clean);
+  write_history(list);
+}
+
+function forget(code) {
+  write_history(read_history().filter((item) => item.study_code !== code));
+}
+
+/* ============================================================
+   3. LECTURA DE .npy (proyecciones y volumen)
+   ============================================================ */
+const NPY_TYPES = {
+  f4: Float32Array, f8: Float64Array, i1: Int8Array, u1: Uint8Array, b1: Uint8Array,
+  i2: Int16Array, u2: Uint16Array, i4: Int32Array, u4: Uint32Array,
+};
+
+function parse_npy(buffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length < 12 || bytes[0] !== 0x93 || String.fromCharCode(...bytes.subarray(1, 6)) !== 'NUMPY') return null;
+  const view = new DataView(buffer);
+  const header_start = bytes[6] === 1 ? 10 : 12;
+  const header_length = bytes[6] === 1 ? view.getUint16(8, true) : view.getUint32(8, true);
+  const header = new TextDecoder('latin1').decode(bytes.subarray(header_start, header_start + header_length));
+  const descr = /'descr'\s*:\s*'([<>|=])([a-z])(\d+)'/.exec(header);
+  const shape_match = /'shape'\s*:\s*\(([^)]*)\)/.exec(header);
+  if (!descr || !shape_match || descr[1] === '>') return null;
+  const array_type = NPY_TYPES[descr[2] + descr[3]];
+  if (!array_type) return null;
+  const shape = shape_match[1].split(',').map((s) => s.trim()).filter(Boolean).map(Number);
+  const count = shape.reduce((a, b) => a * b, 1);
+  const start = header_start + header_length;
+  const end = start + count * array_type.BYTES_PER_ELEMENT;
+  if (buffer.byteLength < end) return null;
+  return {
+    shape,
+    dtype: descr[2] + descr[3],
+    fortran: /'fortran_order'\s*:\s*True/.test(header),
+    data: new array_type(buffer.slice(start, end)),
+  };
+}
+
+function value_range(data) {
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < data.length; i++) {
+    const v = data[i];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return { min: 0, max: 1 };
+  return { min, max };
+}
+
+// Miniatura en grises de una proyeccion 2D (fila 0 arriba).
+function projection_canvas(npy) {
+  const [rows, cols] = npy.shape;
+  const { min, max } = value_range(npy.data);
+  const canvas = document.createElement('canvas');
+  canvas.width = cols; canvas.height = rows;
+  const ctx = canvas.getContext('2d');
+  const image = ctx.createImageData(cols, rows);
+  for (let p = 0; p < rows * cols; p++) {
+    const lum = 255 * Math.pow((npy.data[p] - min) / (max - min), 0.6);
+    const q = p * 4;
+    image.data[q] = lum; image.data[q + 1] = lum; image.data[q + 2] = Math.min(255, lum * 1.02); image.data[q + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+/* ============================================================
+   4. MINIATURAS DECORATIVAS DE LOS ORGANOS (inicio y selector)
+   Ilustraciones de nube de puntos del prototipo; no son datos de ningun estudio.
+   ============================================================ */
+function lung_inside(x, y, z) {
+  const side = x < 0 ? -1 : 1;
+  const ax = Math.abs(x);
+  const t = (1 - y) / 2;
+  if (t < 0 || t > 1) return false;
+  const w = 0.14 + 0.28 * Math.sin(Math.PI * (0.15 + 0.80 * t));
+  const d = 0.14 + 0.26 * Math.sin(Math.PI * (0.18 + 0.78 * t));
+  const cx = 0.30 + 0.22 * t;
+  const u = (ax - cx) / w, v = z / d;
+  const rr = u * u + v * v;
+  if (rr > 1) return false;
+  if (y < -0.95 + 0.22 * (1 - rr)) return false;
+  if (side < 0) {
+    const dx = ax - 0.26, dy = y + 0.24, dz = z - 0.20;
+    if (dx * dx + dy * dy + dz * dz < 0.085) return false;
+  }
+  return true;
+}
+
+function liver_inside(x, y, z) {
+  if (y < -0.40 + 0.16 * x) return false;
+  if (Math.abs(x + 0.08) < 0.045 && z > 0.04 && y > -0.02) return false;
+  let dx = (x - 0.30) / 0.58, dy = y / 0.42, dz = z / 0.40;
+  if (dx * dx + dy * dy + dz * dz <= 1) return true;
+  dx = (x + 0.40) / 0.42; dy = (y + 0.04) / 0.26; dz = (z - 0.04) / 0.30;
+  return dx * dx + dy * dy + dz * dz <= 1;
+}
+
+const MINI_ORGANS = {
+  lung: { inside: lung_inside, box: [1.02, 1.02, 0.60], tissue: [168, 190, 212], tumor: { x: 0.50, y: 0.38, z: 0.06, r: 0.145 }, seed: 1337 },
+  liver: { inside: liver_inside, box: [0.95, 0.62, 0.48], tissue: [198, 138, 106], tumor: { x: 0.36, y: 0.06, z: 0.11, r: 0.155 }, seed: 9001 },
+};
+
+function mulberry(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function shellness(organ, x, y, z) {
+  const e = 0.055;
+  let out = 0;
+  if (!organ.inside(x + e, y, z)) out++;
+  if (!organ.inside(x - e, y, z)) out++;
+  if (!organ.inside(x, y + e, z)) out++;
+  if (!organ.inside(x, y - e, z)) out++;
+  if (!organ.inside(x, y, z + e)) out++;
+  if (!organ.inside(x, y, z - e)) out++;
+  return out / 6;
+}
+
+const mini_cache = {};
+function mini_cloud(key) {
+  if (mini_cache[key]) return mini_cache[key];
+  const organ = MINI_ORGANS[key];
+  const rnd = mulberry(organ.seed);
+  const [bx, by, bz] = organ.box;
+  const tumor = organ.tumor;
+  const points = [];
+  for (let i = 0; points.length < 1500 && i < 120000; i++) {
+    const x = (rnd() * 2 - 1) * bx, y = (rnd() * 2 - 1) * by, z = (rnd() * 2 - 1) * bz;
+    if (!organ.inside(x, y, z)) continue;
+    const dx = x - tumor.x, dy = y - tumor.y, dz = z - tumor.z;
+    if (dx * dx + dy * dy + dz * dz <= tumor.r * tumor.r) continue;
+    points.push([x, y, z, shellness(organ, x, y, z), 0]);
+  }
+  for (let j = 0, m = 0; m < 260 && j < 20000; j++) {
+    const ux = rnd() * 2 - 1, uy = rnd() * 2 - 1, uz = rnd() * 2 - 1;
+    if (ux * ux + uy * uy + uz * uz > 1) continue;
+    points.push([tumor.x + ux * tumor.r, tumor.y + uy * tumor.r, tumor.z + uz * tumor.r, 0, 1]);
+    m++;
+  }
+  mini_cache[key] = points;
+  return points;
+}
+
+function render_mini(canvas, key) {
+  const organ = MINI_ORGANS[key];
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const g = ctx.createRadialGradient(W / 2, H / 2, 4, W / 2, H / 2, W * 0.72);
+  g.addColorStop(0, '#111C2E'); g.addColorStop(1, '#070B12');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const cy = Math.cos(0.55), sy = Math.sin(0.55), cx = Math.cos(-0.16), sx = Math.sin(-0.16);
+  const scale = W * 0.40, focal = 3.4;
+  const projected = mini_cloud(key).map(([x, y, z, sh, tu]) => {
+    const x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
+    return [x1, y * cx - z1 * sx, y * sx + z1 * cx, sh, tu];
+  }).sort((a, b) => a[2] - b[2]);
+  const radius = Math.max(0.7, W / 120);
+  const tissue = organ.tissue;
+  for (const [x, y, z, sh, tu] of projected) {
+    const persp = focal / (focal - z);
+    const depth = (z + 1) / 2;
+    if (tu) {
+      ctx.fillStyle = 'rgba(244,63,94,0.85)';
+    } else {
+      const lum = 0.78 + 0.5 * depth;
+      const alpha = 0.50 * (0.42 + 0.58 * sh) * (0.58 + 0.42 * depth);
+      ctx.fillStyle = 'rgba(' + tissue.map((c) => Math.round(Math.min(255, c * lum))).join(',') + ',' + alpha.toFixed(3) + ')';
+    }
+    ctx.beginPath();
+    ctx.arc(W / 2 + x * scale * persp, H / 2 - y * scale * persp, radius * persp, 0, 6.2832);
+    ctx.fill();
+  }
+}
+
+/* ============================================================
+   5. NAVEGACION (hash: #/vista/codigo)
+   ============================================================ */
+const VIEWS = ['home', 'new', 'run', 'viewer', 'metrics', 'history'];
+const NAV_OF = { home: 'home', new: 'new', run: 'new', viewer: 'viewer', metrics: 'metrics', history: 'history' };
+let current_view = null;
+
+function parse_hash() {
+  const parts = window.location.hash.replace(/^#\/?/, '').split('/');
+  const view = VIEWS.includes(parts[0]) ? parts[0] : 'home';
+  let code = null;
+  try { code = parts[1] ? decodeURIComponent(parts[1]) : null; } catch { code = null; }
+  return { view, code };
+}
+
+function go(view, code) {
+  const hash = '#/' + view + (code ? '/' + encodeURIComponent(code) : '');
+  if (window.location.hash === hash) route();
+  else window.location.hash = hash;
+}
+
+function route() {
+  const { view, code } = parse_hash();
+  if (current_view === 'run') stop_run();
+  if (current_view === 'viewer' && view !== 'viewer') pause_viewer();
+  current_view = view;
+  VIEWS.forEach((key) => $('#v-' + key).classList.toggle('on', key === view));
+  $$('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.go === NAV_OF[view]));
+  window.scrollTo(0, 0);
+  if (view === 'new') enter_new(code);
+  if (view === 'run') enter_run(code);
+  if (view === 'viewer') enter_viewer(code);
+  if (view === 'history') render_history(true);
+}
+
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-go]');
+  if (!button) return;
+  event.preventDefault();
+  const target = button.dataset.go;
+  go(target, target === 'viewer' ? viewer.code : null);
+});
+window.addEventListener('hashchange', route);
+
+/* ============================================================
+   6. NUEVO ESTUDIO
+   ============================================================ */
+function fresh_new_state() {
+  const slots = {};
+  for (const angle of ANGLES) slots[angle] = { file: null, preview: null, state: 'empty', message: '' };
+  return { code: null, organ: 'lung', created: false, uploaded: false, busy: false, slots };
+}
+let new_state = fresh_new_state();
+
+function default_code() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return 'RV-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes());
+}
+
+function show_new_error(text) {
+  const box = $('#new-err');
+  box.textContent = text || '';
+  box.classList.toggle('hidden', !text);
+}
+
+async function enter_new(code) {
+  show_new_error('');
+  if (!code) {
+    // Un estudio ya creado y sin procesar se conserva al volver a esta vista.
+    if (!new_state.created && !$('#f-code').value) $('#f-code').value = default_code();
+    render_new();
+    return;
+  }
+  if (code === new_state.code) { render_new(); return; }
+  // Retomar un estudio pending desde el historial.
+  const { http_status, body, error } = await api(study_path(code, '/status'));
+  if (http_status === 404) { show_new_error('El estudio ' + code + ' no existe.'); return; }
+  if (!body) { show_new_error(error); return; }
+  remember({ study_code: code, organ: body.organ, created_at: body.created_at, status: body.status });
+  if (body.status !== 'pending') { go(body.status === 'completed' ? 'viewer' : 'run', code); return; }
+  new_state = fresh_new_state();
+  Object.assign(new_state, { code, organ: body.organ, created: true });
+  $('#f-code').value = code;
+  render_new();
+}
+
+function render_new() {
+  const s = new_state;
+  $('#f-code').disabled = s.created || s.busy;
+  $$('#pick .opt').forEach((opt) => {
+    opt.classList.toggle('sel', opt.dataset.organ === s.organ);
+    opt.disabled = s.created || s.busy;
+  });
+  $('#btn-create').classList.toggle('hidden', s.created);
+  $('#btn-create').disabled = s.busy;
+  const created_tag = $('#study-created');
+  created_tag.classList.toggle('hidden', !s.created);
+  created_tag.textContent = s.created ? '✓ Estudio ' + s.code + ' creado · ' + ORGAN_LABELS[s.organ] : '';
+  $('#proj-card').classList.toggle('locked', !s.created);
+  $('#btn-pick').disabled = s.uploaded || s.busy;
+
+  for (const angle of ANGLES) {
+    const slot = s.slots[angle];
+    const el = $('.proj[data-ang="' + angle + '"]');
+    el.classList.toggle('filled', slot.state === 'ready' || slot.state === 'uploading' || slot.state === 'uploaded');
+    el.classList.toggle('ok', slot.state === 'uploaded');
+    el.classList.toggle('bad', slot.state === 'invalid');
+    el.classList.toggle('busy', slot.state === 'uploading' || slot.state === 'checking');
+    el.classList.toggle('lock', s.uploaded || s.busy);
+    const badge = el.querySelector('.badge');
+    badge.innerHTML = slot.state === 'uploaded'
+      ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12.5 10 17.5 19 7"/></svg>'
+      : '<span class="spin"></span>';
+    const ph = el.querySelector('.ph');
+    if (slot.preview) {
+      if (ph.firstChild !== slot.preview) ph.replaceChildren(slot.preview);
+      ph.classList.add('img');
+    } else {
+      ph.classList.remove('img');
+      ph.textContent = slot.state === 'checking' ? 'leyendo…' : 'sin cargar';
+    }
+    el.querySelector('.pst').textContent = slot.message;
+  }
+
+  const all_ready = ANGLES.every((angle) => s.slots[angle].state === 'ready');
+  $('#btn-upload').disabled = !(s.created && all_ready && !s.uploaded && !s.busy);
+  $('#btn-process').disabled = !(s.uploaded && !s.busy);
+  $('#btn-upload').innerHTML = s.busy === 'upload' ? '<span class="spin"></span> Subiendo…' : (s.uploaded ? '✓ Proyecciones subidas' : 'Subir proyecciones');
+  $('#btn-process').innerHTML = s.busy === 'process' ? '<span class="spin"></span> Lanzando…' : 'Procesar';
+  $('#btn-create').innerHTML = s.busy === 'create' ? '<span class="spin"></span> Creando…' : 'Crear estudio';
+}
+
+$$('#pick .opt').forEach((opt) => opt.addEventListener('click', () => {
+  if (new_state.created) return;
+  new_state.organ = opt.dataset.organ;
+  render_new();
+}));
+
+$('#f-code').addEventListener('keydown', (event) => { if (event.key === 'Enter') $('#btn-create').click(); });
+
+$('#btn-create').addEventListener('click', async () => {
+  const code = $('#f-code').value.trim();
+  if (!STUDY_CODE_REGEX.test(code)) {
+    show_new_error('El código solo admite letras, dígitos, guion y guion bajo, hasta 64 caracteres.');
+    return;
+  }
+  show_new_error('');
+  new_state.busy = 'create'; render_new();
+  const { ok, body, error, http_status } = await api('/studies', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ study_code: code, organ: new_state.organ }),
+  });
+  new_state.busy = false;
+  if (!ok) {
+    show_new_error(http_status === 409 ? 'Ya existe un estudio con el código ' + code + '. Elige otro.' : error);
+    render_new();
+    return;
+  }
+  Object.assign(new_state, { code: body.study_code, created: true });
+  remember({ study_code: body.study_code, organ: body.organ, created_at: body.created_at, status: body.status });
+  render_new();
+  window.history.replaceState(null, '', '#/new/' + encodeURIComponent(body.study_code));
+});
+
+// Si el nombre trae el angulo con tres digitos (como los campos angle_000..angle_135), manda.
+function angle_from_name(name) {
+  const match = /(?:^|[^0-9])(000|045|090|135)(?:[^0-9]|$)/.exec(name);
+  return match ? Number(match[1]) : null;
+}
+
+async function assign_file(angle, file) {
+  const slot = new_state.slots[angle];
+  Object.assign(slot, { file, preview: null, state: 'checking', message: '' });
+  render_new();
+  const fail = (message) => { Object.assign(slot, { state: 'invalid', message }); render_new(); };
+  if (!file.name.toLowerCase().endsWith('.npy')) return fail('No es un .npy');
+  if (file.size > MAX_PROJECTION_BYTES) return fail('Supera 1 MiB');
+  let npy = null;
+  try { npy = parse_npy(await file.arrayBuffer()); } catch { npy = null; }
+  if (slot.file !== file) return; // lo reemplazaron mientras se leia
+  if (!npy) return fail('No se puede leer como .npy numérico');
+  if (npy.fortran || npy.shape.length !== 2 || npy.shape[0] !== GRID_SIZE || npy.shape[1] !== GRID_SIZE) {
+    return fail('Debe medir ' + GRID_SIZE + ' × ' + GRID_SIZE + ' (mide ' + npy.shape.join(' × ') + ')');
+  }
+  Object.assign(slot, {
+    preview: projection_canvas(npy),
+    state: 'ready',
+    message: npy.shape.join(' × ') + ' · ' + npy.dtype + ' · ' + Math.round(file.size / 1024) + ' KB',
+  });
+  render_new();
+}
+
+function assign_many(file_list) {
+  if (new_state.uploaded || new_state.busy) return;
+  const files = Array.from(file_list).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const pending = [];
+  const taken = new Set();
+  for (const file of files) {
+    const angle = angle_from_name(file.name);
+    if (angle !== null && !taken.has(angle)) { taken.add(angle); assign_file(angle, file); } else pending.push(file);
+  }
+  // Los demas, primero en las casillas vacias y despues en las que no se tocaron.
+  const free = ANGLES.filter((a) => !taken.has(a) && new_state.slots[a].state === 'empty')
+    .concat(ANGLES.filter((a) => !taken.has(a) && new_state.slots[a].state !== 'empty'));
+  pending.slice(0, free.length).forEach((file, i) => assign_file(free[i], file));
+  show_new_error(files.length > 4 ? 'Se soltaron ' + files.length + ' archivos; solo se usan cuatro.' : '');
+}
+
+function bind_drop(element, on_files) {
+  element.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    if (!new_state.uploaded) element.classList.add('over');
+  });
+  element.addEventListener('dragleave', () => element.classList.remove('over'));
+  element.addEventListener('drop', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    element.classList.remove('over');
+    if (event.dataTransfer && event.dataTransfer.files.length) on_files(event.dataTransfer.files);
+  });
+}
+
+// Un archivo soltado fuera de las zonas no debe abrirse en la pestana.
+window.addEventListener('dragover', (event) => event.preventDefault());
+window.addEventListener('drop', (event) => event.preventDefault());
+
+bind_drop($('#drop'), assign_many);
+$('#drop').addEventListener('click', () => { if (!new_state.uploaded) $('#file-many').click(); });
+$('#btn-pick').addEventListener('click', () => $('#file-many').click());
+$('#file-many').addEventListener('change', (event) => { assign_many(event.target.files); event.target.value = ''; });
+
+let picking_angle = null;
+$$('#projs .proj').forEach((el) => {
+  const angle = Number(el.dataset.ang);
+  bind_drop(el, (files) => {
+    if (new_state.uploaded || new_state.busy) return;
+    if (files.length > 1) assign_many(files); else assign_file(angle, files[0]);
+  });
+  el.addEventListener('click', () => {
+    if (new_state.uploaded || new_state.busy) return;
+    picking_angle = angle;
+    $('#file-one').click();
+  });
+});
+$('#file-one').addEventListener('change', (event) => {
+  if (event.target.files.length && picking_angle !== null) assign_file(picking_angle, event.target.files[0]);
+  event.target.value = '';
+});
+
+$('#btn-upload').addEventListener('click', async () => {
+  const s = new_state;
+  const form = new FormData();
+  // Nombre neutro: el nombre original del archivo podria traer datos del paciente.
+  for (const angle of ANGLES) {
+    const field = 'angle_' + String(angle).padStart(3, '0');
+    form.append(field, s.slots[angle].file, field + '.npy');
+  }
+  show_new_error('');
+  s.busy = 'upload';
+  ANGLES.forEach((angle) => { s.slots[angle].state = 'uploading'; });
+  render_new();
+  const { ok, http_status, error } = await api(study_path(s.code, '/projections'), { method: 'POST', body: form });
+  s.busy = false;
+  if (ok || http_status === 409) {
+    // 409: el estudio ya tenia sus cuatro proyecciones guardadas.
+    s.uploaded = true;
+    ANGLES.forEach((angle) => Object.assign(s.slots[angle], { state: 'uploaded', message: '✓ subida' }));
+    if (http_status === 409) show_new_error('');
+  } else {
+    ANGLES.forEach((angle) => { s.slots[angle].state = 'ready'; });
+    // El detalle nombra el angulo ("La proyeccion de 45 grados ..."): marca esa casilla.
+    const match = /de (\d+) grados/.exec(error || '');
+    if (match && s.slots[Number(match[1])]) Object.assign(s.slots[Number(match[1])], { state: 'invalid', message: 'Rechazada por el servidor' });
+    show_new_error(error);
+  }
+  render_new();
+});
+
+$('#btn-process').addEventListener('click', async () => {
+  const s = new_state;
+  show_new_error('');
+  s.busy = 'process'; render_new();
+  const { ok, error } = await api(study_path(s.code, '/process'), { method: 'POST' });
+  s.busy = false;
+  if (!ok) { show_new_error(error); render_new(); return; }
+  remember({ study_code: s.code, status: 'processing' });
+  const code = s.code;
+  new_state = fresh_new_state();
+  $('#f-code').value = '';
+  go('run', code);
+});
+
+$('#btn-cancel').addEventListener('click', () => {
+  // El estudio creado queda en pending y se puede retomar desde el historial.
+  new_state = fresh_new_state();
+  $('#f-code').value = '';
+  show_new_error('');
+  go('home');
+});
+
+/* ============================================================
+   7. PROCESANDO (consulta el estado cada 3 s)
+   ============================================================ */
+const run = { code: null, token: 0, poll_timer: null, ticker: null, started: 0, running_since: {}, stages: [], final_time: null };
+
+function format_seconds(seconds) {
+  if (seconds < 60) return seconds.toFixed(1).replace('.', ',') + ' s';
+  return Math.floor(seconds / 60) + ' min ' + String(Math.floor(seconds % 60)).padStart(2, '0') + ' s';
+}
+
+function stop_run() {
+  run.token++;
+  clearTimeout(run.poll_timer);
+  clearInterval(run.ticker);
+}
+
+function show_run_error(text) {
+  const box = $('#run-err');
+  box.textContent = text || '';
+  box.classList.toggle('hidden', !text);
+}
+
+function enter_run(code) {
+  if (!code) { go('new'); return; }
+  stop_run();
+  Object.assign(run, { code, started: performance.now(), running_since: {}, stages: [], final_time: null });
+  show_run_error('');
+  $('#btn-open').disabled = true;
+  $('#btn-resume').classList.add('hidden');
+  $('#run-sub').textContent = 'Consultando el estado del estudio ' + code + '…';
+  $('#clk').textContent = format_seconds(0);
+  for (let n = 1; n <= 4; n++) paint_stage(n, 'waiting');
+  run.ticker = setInterval(tick_run, 100);
+  poll_status(run.token);
+}
+
+function paint_stage(number, status) {
+  const el = $('#st-' + number);
+  el.className = 'stage' + ({ running: ' run', completed: ' done', skipped: ' skip', failed: ' fail' }[status] || '');
+  el.querySelector('.stg-st').textContent = { waiting: 'en espera', running: 'procesando', completed: 'completada', skipped: 'omitida', failed: 'falló' }[status] || status;
+  if (status !== 'running') el.querySelector('.bar i').style.width = status === 'waiting' ? '0%' : '100%';
+}
+
+function tick_run() {
+  const now = performance.now();
+  if (run.final_time === null) $('#clk').textContent = format_seconds((now - run.started) / 1000);
+  for (const [number, since] of Object.entries(run.running_since)) {
+    const elapsed = (now - since) / 1000;
+    const width = 95 * (1 - Math.exp(-elapsed / STAGE_TAU_S[number - 1]));
+    $('#st-' + number + ' .bar i').style.width = width.toFixed(1) + '%';
+  }
+}
+
+async function poll_status(token) {
+  const { http_status, body, error } = await api(study_path(run.code, '/status'));
+  if (token !== run.token) return;
+  if (http_status === 404) {
+    show_run_error('El estudio ' + run.code + ' no existe. Pudo haber sido eliminado.');
+    $('#run-sub').textContent = 'No se encontró el estudio.';
+    stop_run();
+    return;
+  }
+  if (!body) {
+    // Fallo transitorio (red o servidor): se avisa y se sigue consultando.
+    show_run_error(error + ' Se reintentará en unos segundos.');
+    run.poll_timer = setTimeout(() => poll_status(token), POLL_MS);
+    return;
+  }
+  show_run_error('');
+  remember({ study_code: run.code, organ: body.organ, created_at: body.created_at, status: body.status });
+  for (const stage of body.stages || []) {
+    const n = stage.stage_number;
+    if (stage.status === 'running') {
+      if (!run.running_since[n]) run.running_since[n] = performance.now();
+    } else {
+      delete run.running_since[n];
+    }
+    paint_stage(n, stage.status);
+  }
+  const organ = (ORGAN_LABELS[body.organ] || body.organ || '').toLowerCase();
+  if (body.status === 'processing') {
+    $('#run-sub').textContent = 'Ejecutando la cadena de reconstrucción y detección sobre el estudio ' + run.code + ' de ' + organ + '.';
+    run.poll_timer = setTimeout(() => poll_status(token), POLL_MS);
+    return;
+  }
+  clearInterval(run.ticker);
+  run.running_since = {};
+  if (typeof body.total_time_sec === 'number') {
+    run.final_time = body.total_time_sec;
+    $('#clk').textContent = format_seconds(body.total_time_sec);
+  }
+  if (body.status === 'completed') {
+    $('#btn-open').disabled = false;
+    $('#run-sub').textContent = 'Procesamiento completado. El volumen del estudio ' + run.code + ' está listo para revisión.';
+  } else if (body.status === 'failed') {
+    const failed = (body.stages || []).find((stage) => stage.status === 'failed');
+    const where = failed ? ' en la etapa ' + failed.stage_number + ' (' + (STAGE_LABELS[failed.stage_name] || failed.stage_name) + ')' : '';
+    $('#run-sub').textContent = 'El procesamiento del estudio ' + run.code + ' no terminó.';
+    show_run_error('El procesamiento falló' + where + '. Revisa los registros del servidor y vuelve a crear el estudio.');
+  } else {
+    $('#run-sub').textContent = 'El estudio ' + run.code + ' todavía no se mandó a procesar.';
+    $('#btn-resume').classList.remove('hidden');
+  }
+}
+
+$('#btn-open').addEventListener('click', () => go('viewer', run.code));
+$('#btn-resume').addEventListener('click', () => go('new', run.code));
+
+/* ============================================================
+   8. VISOR 3D (Three.js)
+   ============================================================ */
+const viewer = {
+  code: null, token: 0, loaded: false,
+  three: null, GLTFLoader: null, renderer: null, scene: null, camera: null, controls: null,
+  root: null, organ: null, organ_material: null, lesions: [], axes: null, home: null,
+  result: null, selected: 0, mode: 'tissue', opacity: ORGAN_OPACITY,
+  show_tumor: true, spin: true, show_axes: false, volume: null,
+  fps_frames: 0, fps_since: 0,
+};
+
+function viewer_message(text, is_error = false, busy = false) {
+  const box = $('#vw-msg');
+  box.classList.toggle('err', is_error);
+  box.innerHTML = text ? (busy ? '<span class="spin"></span>' : '') + '<span>' + escape_html(text) + '</span>' : '';
+}
+
+function latest_completed_code() {
+  const entry = read_history().find((item) => item.status === 'completed');
+  return entry ? entry.study_code : null;
+}
+
+async function enter_viewer(code) {
+  code = code || viewer.code || latest_completed_code();
+  $('#vw-empty').classList.toggle('hidden', !!code);
+  $('#vw-main').classList.toggle('hidden', !code);
+  if (!code) return;
+  if (parse_hash().code !== code) window.history.replaceState(null, '', '#/viewer/' + encodeURIComponent(code));
+  if (code === viewer.code && viewer.loaded) { resume_viewer(); return; }
+  await load_study(code);
+}
+
+function reset_viewer_panels(code) {
+  $('#vw-title').textContent = 'Reconstrucción volumétrica · ' + code;
+  $('#vw-sub').textContent = 'Arrastra para rotar, rueda para acercar. Las lesiones detectadas aparecen en rojo.';
+  $('#ov-case').textContent = 'Estudio ' + code;
+  $('#ov-organ').textContent = '—';
+  $('#ov-organ-sub').textContent = 'Malla del órgano';
+  $('#ov-fps').textContent = '— FPS';
+  const find = $('#find');
+  find.className = 'find wait';
+  $('#f-title').textContent = 'Cargando lesiones…';
+  $('#f-nav').classList.add('hidden');
+  $('#f-dl').classList.add('hidden');
+  for (const id of ['#dl-organ', '#dl-tumor', '#dl-volume']) $(id).removeAttribute('href');
+  draw_slice_placeholders('Cargando…');
+  $('#r-sl').disabled = true;
+}
+
+async function load_study(code) {
+  const token = ++viewer.token;
+  viewer.code = code;
+  viewer.loaded = false;
+  viewer.result = null;
+  viewer.volume = null;
+  pause_viewer();
+  clear_scene();
+  reset_viewer_panels(code);
+  viewer_message('Consultando el estudio…', false, true);
+
+  const status = await api(study_path(code, '/status'));
+  if (token !== viewer.token) return;
+  if (status.http_status === 404) {
+    viewer_message('El estudio ' + code + ' no existe.', true);
+    $('#f-title').textContent = 'Sin datos';
+    draw_slice_placeholders('No disponible');
+    return;
+  }
+  if (!status.body) { viewer_message(status.error, true); return; }
+  const study = status.body;
+  remember({ study_code: code, organ: study.organ, created_at: study.created_at, status: study.status });
+  const organ_label = ORGAN_LABELS[study.organ] || study.organ;
+  $('#vw-title').textContent = 'Reconstrucción volumétrica · ' + organ_label;
+  $('#ov-organ').textContent = organ_label;
+  if (study.status !== 'completed') {
+    const text = { pending: 'todavía no se procesó', processing: 'se está procesando', failed: 'falló al procesarse' }[study.status] || study.status;
+    viewer_message('El estudio ' + code + ' ' + text + '. El visor se habilita cuando termina.', study.status === 'failed');
+    $('#f-title').textContent = 'Sin resultado todavía';
+    draw_slice_placeholders('No disponible');
+    return;
+  }
+
+  const result = await api(study_path(code, '/result'));
+  if (token !== viewer.token) return;
+  if (!result.ok) { viewer_message(result.error, true); return; }
+  viewer.result = result.body;
+  viewer.selected = 0;
+  fill_downloads(result.body);
+  render_finding();
+  $('#ov-organ-sub').textContent = 'Malla del órgano · ' + lesion_count_text(result.body.lesions.length);
+  remember({ study_code: code, lesion_count: result.body.lesions.length });
+  load_volume(result.body.volume_url, token);
+
+  viewer_message('Cargando el visor 3D…', false, true);
+  try {
+    await ensure_three();
+  } catch (problem) {
+    if (token !== viewer.token) return;
+    viewer_message(problem && problem.message === 'webgl'
+      ? 'Este navegador no puede dibujar 3D (WebGL). Puedes descargar las mallas.'
+      : 'No se pudo cargar Three.js desde la red. Puedes descargar las mallas.', true);
+    return;
+  }
+  if (token !== viewer.token) return;
+
+  viewer_message('Descargando las mallas…', false, true);
+  const loader = new viewer.GLTFLoader();
+  let organ_gltf, lesion_gltfs;
+  try {
+    [organ_gltf, ...lesion_gltfs] = await Promise.all([
+      loader.loadAsync(API + result.body.organ_mesh_url),
+      ...result.body.lesions.map((lesion) => loader.loadAsync(API + lesion.mesh_url)),
+    ]);
+  } catch {
+    if (token !== viewer.token) return;
+    viewer_message('No se pudieron cargar las mallas del estudio. Puedes descargarlas.', true);
+    return;
+  }
+  if (token !== viewer.token) return;
+  build_scene(organ_gltf.scene, lesion_gltfs.map((gltf) => gltf.scene));
+  viewer.loaded = true;
+  viewer_message('');
+  if (current_view === 'viewer') resume_viewer();
+}
+
+function lesion_count_text(count) {
+  return count === 0 ? 'sin lesiones' : count === 1 ? '1 lesión' : count + ' lesiones';
+}
+
+async function ensure_three() {
+  if (viewer.three) return;
+  const [three, gltf_module, orbit_module] = await Promise.all([
+    import('three'),
+    import('three/addons/loaders/GLTFLoader.js'),
+    import('three/addons/controls/OrbitControls.js'),
+  ]);
+  const canvas = $('#cv3d');
+  let renderer;
+  try {
+    renderer = new three.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  } catch {
+    throw new Error('webgl');
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+  const scene = new three.Scene();
+  scene.add(new three.HemisphereLight(0xffffff, 0x1E293B, 1.4));
+  const camera = new three.PerspectiveCamera(40, 1, 0.1, 10000);
+  // La luz principal viaja con la camara: el lado que se mira siempre queda iluminado.
+  const key_light = new three.DirectionalLight(0xffffff, 1.8);
+  key_light.position.set(1, 1.5, 2);
+  key_light.target.position.set(0, 0, -1);
+  camera.add(key_light, key_light.target);
+  scene.add(camera);
+  const controls = new orbit_module.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.autoRotate = viewer.spin;
+  controls.autoRotateSpeed = 1.4;
+  Object.assign(viewer, { three, GLTFLoader: gltf_module.GLTFLoader, renderer, scene, camera, controls });
+  new ResizeObserver(resize_viewer).observe(canvas);
+  resize_viewer();
+}
+
+function resize_viewer() {
+  const { renderer, camera } = viewer;
+  if (!renderer) return;
+  const canvas = $('#cv3d');
+  const width = canvas.clientWidth, height = canvas.clientHeight;
+  if (!width || !height) return;
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+}
+
+function dispose_object(object) {
+  object.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) [].concat(child.material).forEach((material) => material.dispose());
+  });
+}
+
+function clear_scene() {
+  if (!viewer.scene) return;
+  for (const key of ['root', 'axes']) {
+    if (viewer[key]) {
+      viewer.scene.remove(viewer[key]);
+      dispose_object(viewer[key]);
+      viewer[key] = null;
+    }
+  }
+  viewer.organ = null;
+  viewer.organ_material = null;
+  viewer.lesions = [];
+}
+
+function paint(object, material) {
+  object.traverse((child) => {
+    if (child.isMesh) {
+      if (child.material) [].concat(child.material).forEach((old) => old.dispose());
+      child.material = material;
+    }
+  });
+}
+
+function build_scene(organ_object, lesion_objects) {
+  const three = viewer.three;
+  clear_scene();
+  const root = new three.Group();
+  lesion_objects.forEach((object, index) => {
+    const material = new three.MeshStandardMaterial({
+      color: TUMOR_COLOR, emissive: TUMOR_COLOR, emissiveIntensity: 0.1,
+      roughness: 0.45, metalness: 0.05, side: three.DoubleSide,
+    });
+    paint(object, material);
+    object.renderOrder = 1;
+    root.add(object);
+    viewer.lesions.push({ object, material, info: viewer.result.lesions[index] });
+  });
+  // El organo se dibuja despues y sin escribir profundidad: las lesiones se ven a traves.
+  viewer.organ_material = new three.MeshStandardMaterial({
+    color: ORGAN_COLOR, transparent: true, opacity: viewer.opacity,
+    depthWrite: false, roughness: 0.6, metalness: 0, side: three.DoubleSide,
+  });
+  paint(organ_object, viewer.organ_material);
+  organ_object.renderOrder = 2;
+  root.add(organ_object);
+  viewer.root = root;
+  viewer.organ = organ_object;
+  viewer.scene.add(root);
+  frame_camera();
+  apply_view_state();
+}
+
+// Encuadra el organo completo; si no tiene geometria, toda la escena.
+function frame_camera() {
+  const { three, camera, controls } = viewer;
+  let box = new three.Box3().setFromObject(viewer.organ);
+  if (box.isEmpty()) box = new three.Box3().setFromObject(viewer.root);
+  const center = box.isEmpty() ? new three.Vector3() : box.getCenter(new three.Vector3());
+  const radius = box.isEmpty() ? 50 : Math.max(box.getSize(new three.Vector3()).length() / 2, 1e-3);
+  const distance = radius / Math.sin((camera.fov * Math.PI / 180) / 2);
+  camera.position.copy(center).addScaledVector(new three.Vector3(0.45, 0.25, 1).normalize(), distance * 1.02);
+  camera.near = distance / 100;
+  camera.far = distance * 10;
+  camera.updateProjectionMatrix();
+  controls.target.copy(center);
+  controls.update();
+  viewer.home = { position: camera.position.clone(), target: center.clone() };
+  viewer.axes = new three.AxesHelper(radius * 1.1);
+  viewer.axes.position.copy(center);
+  viewer.scene.add(viewer.axes);
+}
+
+function apply_view_state() {
+  if (viewer.organ_material) {
+    viewer.organ_material.opacity = viewer.mode === 'tumor' ? GHOST_OPACITY : viewer.opacity;
+  }
+  viewer.lesions.forEach(({ object, material }, index) => {
+    object.visible = viewer.show_tumor;
+    const chosen = viewer.lesions.length > 1 && index === viewer.selected;
+    material.emissiveIntensity = chosen ? 0.6 : 0.1;
+  });
+  if (viewer.axes) viewer.axes.visible = viewer.show_axes;
+  if (viewer.controls) viewer.controls.autoRotate = viewer.spin;
+}
+
+function render_frame(time) {
+  const { controls, renderer, scene, camera } = viewer;
+  controls.update();
+  renderer.render(scene, camera);
+  viewer.fps_frames++;
+  if (!viewer.fps_since) viewer.fps_since = time;
+  if (time - viewer.fps_since >= 500) {
+    $('#ov-fps').textContent = Math.round(viewer.fps_frames * 1000 / (time - viewer.fps_since)) + ' FPS';
+    viewer.fps_frames = 0;
+    viewer.fps_since = time;
+    let azimuth = Math.round(controls.getAzimuthalAngle() * 180 / Math.PI);
+    if (azimuth < 0) azimuth += 360;
+    const elevation = Math.round(90 - controls.getPolarAngle() * 180 / Math.PI);
+    $('#ov-rot').textContent = 'Az ' + azimuth + '° · El ' + elevation + '°';
+  }
+}
+
+function resume_viewer() {
+  if (!viewer.renderer || !viewer.loaded) return;
+  resize_viewer();
+  viewer.fps_frames = 0;
+  viewer.fps_since = 0;
+  viewer.renderer.setAnimationLoop(render_frame);
+}
+
+function pause_viewer() {
+  if (viewer.renderer) viewer.renderer.setAnimationLoop(null);
+}
+
+function fill_downloads(result) {
+  $('#dl-organ').href = API + result.organ_mesh_url;
+  $('#dl-tumor').href = API + result.tumor_mesh_url;
+  $('#dl-volume').href = API + result.volume_url;
+}
+
+function format_volume(mm3) {
+  return mm3 >= 1000 ? number_format.format(mm3 / 1000) + ' cm³' : number_format.format(mm3) + ' mm³';
+}
+
+function render_finding() {
+  const lesions = viewer.result ? viewer.result.lesions : [];
+  const find = $('#find');
+  if (!lesions.length) {
+    find.className = 'find none';
+    $('#f-title').textContent = 'Sin lesiones detectadas';
+    $('#f-nav').classList.add('hidden');
+    $('#f-dl').classList.add('hidden');
+    return;
+  }
+  find.className = 'find';
+  $('#f-title').textContent = lesions.length === 1 ? 'Lesión detectada' : lesions.length + ' lesiones detectadas';
+  $('#f-nav').classList.toggle('hidden', lesions.length < 2);
+  $('#f-pos').textContent = 'Lesión ' + (viewer.selected + 1) + ' de ' + lesions.length;
+  $('#f-prev').disabled = viewer.selected === 0;
+  $('#f-next').disabled = viewer.selected === lesions.length - 1;
+  const lesion = lesions[viewer.selected];
+  $('#f-vol').textContent = format_volume(lesion.volume_mm3);
+  $('#f-diam').textContent = typeof lesion.max_diameter_mm === 'number' ? number_format.format(lesion.max_diameter_mm) + ' mm' : '—';
+  $('#f-loc').textContent = lesion.location || '—';
+  $('#f-conf').textContent = percent_format.format(lesion.confidence);
+  $('#f-dl').classList.remove('hidden');
+}
+
+function select_lesion(step) {
+  if (!viewer.result) return;
+  const count = viewer.result.lesions.length;
+  viewer.selected = Math.min(count - 1, Math.max(0, viewer.selected + step));
+  render_finding();
+  apply_view_state();
+}
+$('#f-prev').addEventListener('click', () => select_lesion(-1));
+$('#f-next').addEventListener('click', () => select_lesion(1));
+
+$$('.vtools button[data-mode]').forEach((button) => button.addEventListener('click', () => {
+  $$('.vtools button[data-mode]').forEach((other) => other.classList.toggle('on', other === button));
+  viewer.mode = button.dataset.mode;
+  apply_view_state();
+}));
+
+$('#btn-home-view').addEventListener('click', () => {
+  if (!viewer.home) return;
+  viewer.camera.position.copy(viewer.home.position);
+  viewer.controls.target.copy(viewer.home.target);
+  viewer.controls.update();
+});
+
+$('#r-op').addEventListener('input', (event) => {
+  const value = Number(event.target.value);
+  $('#lb-op').textContent = value + ' %';
+  viewer.opacity = value / 100;
+  apply_view_state();
+});
+
+function bind_toggle(selector, apply) {
+  const el = $(selector);
+  el.addEventListener('click', () => {
+    const on = !el.classList.contains('on');
+    el.classList.toggle('on', on);
+    el.setAttribute('aria-pressed', String(on));
+    apply(on);
+    apply_view_state();
+  });
+}
+bind_toggle('#t-tumor', (on) => { viewer.show_tumor = on; });
+bind_toggle('#t-spin', (on) => { viewer.spin = on; });
+bind_toggle('#t-axes', (on) => { viewer.show_axes = on; });
+
+$('#btn-delete').addEventListener('click', async () => {
+  const code = viewer.code;
+  if (!code || !window.confirm('¿Eliminar el estudio ' + code + ' con todos sus archivos? No se puede deshacer.')) return;
+  const { ok, http_status, error } = await api(study_path(code), { method: 'DELETE' });
+  if (!ok && http_status !== 404) { window.alert(error); return; }
+  forget(code);
+  viewer.token++;
+  viewer.code = null;
+  viewer.loaded = false;
+  pause_viewer();
+  clear_scene();
+  go('history');
+});
+
+/* ============================================================
+   9. CORTES ORTOGONALES (desde volume.npy)
+   ============================================================ */
+const SLICE_CANVASES = { ax: '#sl-ax', co: '#sl-co', sa: '#sl-sa' };
+
+function draw_slice_placeholders(text) {
+  for (const selector of Object.values(SLICE_CANVASES)) {
+    const canvas = $(selector);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#080D16';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#64748B';
+    ctx.font = '600 11px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  }
+}
+
+async function load_volume(url, token) {
+  let npy = null;
+  try {
+    const response = await fetch(API + url);
+    if (response.ok) npy = parse_npy(await response.arrayBuffer());
+  } catch {
+    npy = null;
+  }
+  if (token !== viewer.token) return;
+  if (!npy || npy.fortran || npy.shape.length !== 3) {
+    draw_slice_placeholders('No disponible');
+    return;
+  }
+  viewer.volume = { ...npy, ...value_range(npy.data) };
+  $('#r-sl').disabled = false;
+  $('#r-sl').value = 50;
+  $('#lb-sl').textContent = 'centrado';
+  draw_slices();
+}
+
+function draw_slice(canvas, plane, fraction) {
+  const { shape: [a, b, c], data, min, max } = viewer.volume;
+  let rows, cols, index_of;
+  if (plane === 'ax') {
+    const i = Math.round(fraction * (a - 1));
+    rows = b; cols = c; index_of = (r, k) => (i * b + r) * c + k;
+  } else if (plane === 'co') {
+    const j = Math.round(fraction * (b - 1));
+    rows = a; cols = c; index_of = (r, k) => (r * b + j) * c + k;
+  } else {
+    const k0 = Math.round(fraction * (c - 1));
+    rows = a; cols = b; index_of = (r, k) => (r * b + k) * c + k0;
+  }
+  const source = document.createElement('canvas');
+  source.width = cols; source.height = rows;
+  const source_ctx = source.getContext('2d');
+  const image = source_ctx.createImageData(cols, rows);
+  for (let r = 0; r < rows; r++) {
+    for (let k = 0; k < cols; k++) {
+      const lum = 255 * (data[index_of(r, k)] - min) / (max - min);
+      const q = (r * cols + k) * 4;
+      image.data[q] = lum; image.data[q + 1] = lum + 4; image.data[q + 2] = lum + 10; image.data[q + 3] = 255;
+    }
+  }
+  source_ctx.putImageData(image, 0, 0);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#080D16';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const scale = Math.min(canvas.width / cols, canvas.height / rows);
+  const w = cols * scale, h = rows * scale;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(source, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+  ctx.strokeStyle = 'rgba(148,163,184,0.22)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(canvas.width / 2, 0); ctx.lineTo(canvas.width / 2, canvas.height);
+  ctx.moveTo(0, canvas.height / 2); ctx.lineTo(canvas.width, canvas.height / 2);
+  ctx.stroke();
+}
+
+function draw_slices() {
+  if (!viewer.volume) return;
+  const fraction = Number($('#r-sl').value) / 100;
+  for (const [plane, selector] of Object.entries(SLICE_CANVASES)) draw_slice($(selector), plane, fraction);
+}
+
+$('#r-sl').addEventListener('input', (event) => {
+  const value = Number(event.target.value);
+  const offset_mm = Math.round((value - 50) / 100 * FIELD_OF_VIEW_MM);
+  $('#lb-sl').textContent = offset_mm === 0 ? 'centrado' : (offset_mm > 0 ? '+' : '') + offset_mm + ' mm';
+  draw_slices();
+});
+
+/* ============================================================
+   10. METRICAS (maqueta del prototipo)
+   ============================================================ */
+const METRICS = [
+  ['OE1', 'PSNR del volumen reconstruido', 'Zanier et al. (2026) · TomoRay cranial, European Radiology', '15,61 dB', '18,42 dB', '+2,81 dB'],
+  ['OE1', 'SSIM del volumen reconstruido', 'Zanier et al. (2026) · TomoRay cranial, European Radiology', '0,782', '0,834', '+0,052'],
+  ['OE1', 'Dice de la estructura anatómica', 'Chen et al. (2024) · ReVerteR, Scientific Reports', '0,8247', '0,8613', '+0,0366'],
+  ['OE2', 'Dice del tumor — pulmón', 'Carles et al. (2024) · nnU-Net, European Radiology', '0,630', '0,671', '+0,041'],
+  ['OE2', 'Dice del tumor — hígado', 'Shin et al. (2026) · G-UNETR++, Diagnostics', '0,832', '0,847', '+0,015'],
+  ['OE2', 'Sensibilidad en la detección', 'Carles et al. (2024) · nnU-Net, European Radiology', '0,688', '0,742', '+0,054'],
+  ['OE3', 'Tiempo extremo a extremo', 'Chen et al. (2024) · ReVerteR, Scientific Reports', '7,72 s', '5,84 s', '−1,88 s'],
+  ['OE3', 'Refresco del visor 3D', 'AboArab et al. (2025) · DECODE-3DViz, J. Imaging Inform. Med.', '144 FPS', '96 FPS', 'objetivo ≥60 ✓'],
+  ['OE4', 'Caída en validación externa', 'Yu et al. (2022) · Radiology: Artificial Intelligence', '−0,046', '−0,028', '+0,018'],
+  ['OE4', 'Desviación estándar del Dice', 'Carles et al. (2024) · nnU-Net, European Radiology', '±0,340', '±0,192', '−0,148'],
+];
+
+$('#mbody').innerHTML = METRICS.map((m) =>
+  '<tr><td><span class="oe">' + m[0] + '</span>' + m[1] + '</td>' +
+  '<td class="ref">' + m[2] + '</td>' +
+  '<td class="num" style="color:var(--muted)">' + m[3] + '</td>' +
+  '<td class="num">' + m[4] + '</td>' +
+  '<td class="num"><span class="delta up">' + m[5] + '</span></td></tr>').join('');
+
+/* ============================================================
+   11. HISTORIAL
+   ============================================================ */
+const STATUS_TAGS = {
+  pending: ['grey', 'pendiente'], processing: ['warn', 'procesando'], completed: ['brand', 'completado'],
+  failed: ['tumor', 'falló'], deleted: ['grey', 'eliminado'],
+};
+const TRASH_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></svg>';
+
+function format_date(iso) {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' · ' +
+    date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+}
+
+function finding_tag(entry) {
+  if (entry.status !== 'completed' || typeof entry.lesion_count !== 'number') return '<span style="color:var(--faint)">—</span>';
+  if (entry.lesion_count === 0) return '<span class="tag ok">Sin hallazgo</span>';
+  return '<span class="tag tumor">' + (entry.lesion_count === 1 ? 'Lesión única' : entry.lesion_count + ' lesiones') + '</span>';
+}
+
+let history_token = 0;
+async function render_history(refresh) {
+  const list = read_history();
+  const body = $('#hbody');
+  if (!list.length) {
+    body.innerHTML = '<div class="empty"><h3>Todavía no hay estudios</h3><p>Los estudios que crees desde este navegador aparecerán aquí.</p>' +
+      '<button class="btn" data-go="new" type="button">Nuevo estudio</button></div>';
+    return;
+  }
+  body.innerHTML = list.map((entry) => {
+    const [tone, label] = STATUS_TAGS[entry.status] || ['grey', entry.status || '—'];
+    const gone = entry.status === 'deleted';
+    return '<div class="hrow' + (gone ? ' gone' : '') + '" role="button" tabindex="0" data-code="' + escape_html(entry.study_code) + '">' +
+      '<div style="color:var(--ink2)">' + format_date(entry.created_at) + '</div>' +
+      '<div class="hcode"><b class="mono">' + escape_html(entry.study_code) + '</b> · ' + escape_html(ORGAN_LABELS[entry.organ] || entry.organ || '—') + '</div>' +
+      '<div><span class="tag ' + tone + '">' + escape_html(label) + '</span></div>' +
+      '<div class="kv" style="font-weight:700">' + (entry.status === 'completed' && typeof entry.lesion_count === 'number' ? entry.lesion_count : '—') + '</div>' +
+      '<div>' + finding_tag(entry) + '</div>' +
+      '<div><button class="del" type="button" title="' + (gone ? 'Quitar de la lista' : 'Eliminar estudio') + '" aria-label="Eliminar">' + TRASH_ICON + '</button></div>' +
+      '</div>';
+  }).join('');
+  if (!refresh) return;
+  // Actualiza el estado de cada estudio contra el servidor y vuelve a dibujar una vez.
+  const token = ++history_token;
+  await Promise.all(list.map(async (entry) => {
+    const { http_status, body: study } = await api(study_path(entry.study_code, '/status'));
+    if (http_status === 404) remember({ study_code: entry.study_code, status: 'deleted' });
+    else if (study) remember({ study_code: entry.study_code, organ: study.organ, created_at: study.created_at, status: study.status });
+  }));
+  if (token === history_token && current_view === 'history') render_history(false);
+}
+
+function open_history_entry(code) {
+  const entry = read_history().find((item) => item.study_code === code);
+  if (!entry) return;
+  if (entry.status === 'completed') go('viewer', code);
+  else if (entry.status === 'pending') go('new', code);
+  else if (entry.status !== 'deleted') go('run', code);
+}
+
+$('#hbody').addEventListener('click', async (event) => {
+  const row = event.target.closest('.hrow');
+  if (!row) return;
+  const code = row.dataset.code;
+  if (event.target.closest('.del')) {
+    event.stopPropagation();
+    const entry = read_history().find((item) => item.study_code === code);
+    if (entry && entry.status !== 'deleted') {
+      if (!window.confirm('¿Eliminar el estudio ' + code + ' con todos sus archivos? No se puede deshacer.')) return;
+      const { ok, http_status, error } = await api(study_path(code), { method: 'DELETE' });
+      if (!ok && http_status !== 404) { window.alert(error); return; }
+    }
+    forget(code);
+    if (viewer.code === code) { viewer.token++; viewer.code = null; viewer.loaded = false; clear_scene(); }
+    render_history(false);
+    return;
+  }
+  open_history_entry(code);
+});
+$('#hbody').addEventListener('keydown', (event) => {
+  const row = event.target.closest('.hrow');
+  if (row && event.target === row && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault();
+    open_history_entry(row.dataset.code);
+  }
+});
+
+/* ============================================================
+   12. INICIO
+   ============================================================ */
+$$('canvas.mini').forEach((canvas) => render_mini(canvas, canvas.dataset.organ));
+draw_slice_placeholders('No disponible');
+route();
+</script>
+</body>
+</html>

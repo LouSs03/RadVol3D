@@ -140,7 +140,7 @@ def test_the_organ_mesh_is_coarser_than_the_tumor_mesh(strategy: MarchingCubesSt
 @pytest.mark.unit
 def test_marching_cubes_has_a_name_but_no_model_row(strategy: MarchingCubesStrategy) -> None:
     assert strategy.model_name == "marching_cubes"
-    assert strategy.model_version == "1.0.0"
+    assert strategy.model_version == "1.1.0"
 
 
 # --- Una malla por lesion (funcionalidad 004, research.md R9) ---
@@ -164,7 +164,8 @@ def test_each_lesion_gets_its_own_mesh_covering_only_its_region(
     first_low, first_high = first.bounds
     second_low, second_high = second.bounds
     # La primera region del resumen es la mas grande: la esfera de radio 6.
-    assert np.allclose(first_high - first_low, 2 * 6 * MM, atol=MM)
+    # El filtro gaussiano mete la superficie de una esfera chica ~0,4 voxeles por lado.
+    assert np.allclose(first_high - first_low, 2 * 6 * MM, atol=1.5 * MM)
     assert np.allclose((first_low + first_high) / 2, [to_mm(20.0)] * 3, atol=MM)
     assert np.allclose(
         (second_low + second_high) / 2, [to_mm(46.0), to_mm(44.0), to_mm(40.0)], atol=MM
@@ -213,3 +214,175 @@ def test_a_region_without_surface_gives_a_valid_empty_mesh(
 @pytest.mark.unit
 def test_a_mesh_set_without_lesions_defaults_to_an_empty_tuple() -> None:
     assert MeshSet(organ=b"o", tumor=b"t").lesions == ()
+
+
+# --- Suavizado y decimacion de la malla del organo ---
+
+
+def organ_mesh(scene: trimesh.Scene) -> trimesh.Trimesh:
+    return trimesh.util.concatenate(list(scene.geometry.values()))
+
+
+@pytest.mark.unit
+def test_the_organ_surface_is_smooth_not_a_staircase_of_voxels(
+    strategy: MarchingCubesStrategy,
+) -> None:
+    radius = 20
+    volume = np.where(sphere((CENTER,) * 3, radius), 0.8, 0.1).astype(np.float32)
+    mask = np.zeros((N, N, N), dtype=np.uint8)
+
+    mesh = organ_mesh(reload(strategy.build_meshes(volume, mask, []).organ))
+
+    distances = np.linalg.norm(mesh.vertices, axis=1)
+    # Sin suavizar, los escalones de la esfera binaria dispersan el radio ~0.3 voxeles.
+    assert distances.std() < 0.15 * MM
+    assert abs(distances.mean() - radius * MM) < MM
+
+
+@pytest.mark.unit
+def test_an_organ_touching_the_border_still_gives_a_closed_surface(
+    strategy: MarchingCubesStrategy,
+) -> None:
+    volume = np.full((N, N, N), 0.1, dtype=np.float32)
+    volume[:30, 10:50, 10:50] = 0.8
+    mask = np.zeros((N, N, N), dtype=np.uint8)
+
+    mesh = organ_mesh(reload(strategy.build_meshes(volume, mask, []).organ))
+
+    assert mesh.is_watertight
+
+
+@pytest.mark.unit
+def test_an_organ_mesh_with_too_many_faces_is_decimated(
+    strategy: MarchingCubesStrategy, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from radvol3d.services.meshing import marching_cubes_strategy as module
+
+    monkeypatch.setattr(module, "MAX_FACES", 1_000)
+    monkeypatch.setattr(module, "TARGET_FACES", 500)
+    volume = np.where(sphere((CENTER,) * 3, 20), 0.8, 0.1).astype(np.float32)
+    mask = np.zeros((N, N, N), dtype=np.uint8)
+
+    mesh = organ_mesh(reload(strategy.build_meshes(volume, mask, []).organ))
+
+    assert 0 < len(mesh.faces) <= 1_000
+
+
+@pytest.mark.unit
+def test_the_organ_faces_point_outwards(strategy: MarchingCubesStrategy) -> None:
+    volume = np.where(sphere((CENTER,) * 3, 20), 0.8, 0.1).astype(np.float32)
+    mask = np.zeros((N, N, N), dtype=np.uint8)
+
+    mesh = organ_mesh(reload(strategy.build_meshes(volume, mask, []).organ))
+
+    assert mesh.volume > 0
+
+
+@pytest.mark.unit
+def test_thin_spikes_around_the_organ_are_trimmed(strategy: MarchingCubesStrategy) -> None:
+    body = sphere((CENTER,) * 3, 14)
+    spike = np.zeros_like(body)
+    spike[int(CENTER) - 1 : int(CENTER) + 2, int(CENTER) - 1 : int(CENTER) + 2, 4:60] = True
+    volume = np.where(body | spike, 0.8, 0.1).astype(np.float32)
+    mask = np.zeros((N, N, N), dtype=np.uint8)
+
+    low, high = reload(strategy.build_meshes(volume, mask, []).organ).bounds
+
+    # La punta llega casi al borde; sin ella, la caja es la de la esfera.
+    assert np.allclose(high - low, 2 * 14 * MM, atol=2 * MM)
+
+
+@pytest.mark.unit
+def test_an_organ_thinner_than_the_opening_is_kept(strategy: MarchingCubesStrategy) -> None:
+    volume = np.full((N, N, N), 0.1, dtype=np.float32)
+    volume[20:44, 20:44, 30:34] = 0.8  # una placa de 4 voxeles de espesor
+    mask = np.zeros((N, N, N), dtype=np.uint8)
+
+    assert vertex_count(reload(strategy.build_meshes(volume, mask, []).organ)) > 0
+
+
+# --- Lesiones: suavizado y descarte fuera del organo ---
+
+
+@pytest.mark.unit
+def test_a_lesion_outside_the_organ_box_is_discarded_and_left_out_of_the_tumor(
+    strategy: MarchingCubesStrategy,
+) -> None:
+    inside = sphere((CENTER,) * 3, 4)
+    outside = sphere((6.0, 6.0, 6.0), 4)
+    mask = (inside | outside).astype(np.uint8)
+    volume = np.where(sphere((CENTER,) * 3, 14), 0.7, 0.05).astype(np.float32)
+    regions = regions_for(mask)
+
+    meshes = strategy.build_meshes(volume, mask, regions)
+
+    outside_position = next(
+        i for i, region in enumerate(regions) if region["centroid_voxel"] == [6, 6, 6]
+    )
+    assert meshes.discarded == (outside_position,)
+    assert len(meshes.lesions) == 1
+    assert np.allclose(reload(meshes.tumor).bounds, reload(meshes.lesions[0]).bounds)
+
+
+@pytest.mark.unit
+def test_lesions_inside_the_organ_box_are_all_kept(strategy: MarchingCubesStrategy) -> None:
+    mask = (sphere((24.0, 31.0, 31.0), 4) | sphere((40.0, 31.0, 31.0), 4)).astype(np.uint8)
+    volume = np.where(sphere((CENTER,) * 3, 25), 0.7, 0.05).astype(np.float32)
+
+    meshes = strategy.build_meshes(volume, mask, regions_for(mask))
+
+    assert meshes.discarded == ()
+    assert len(meshes.lesions) == 2
+
+
+@pytest.mark.unit
+def test_the_lesion_surface_is_smooth_not_a_staircase_of_voxels(
+    strategy: MarchingCubesStrategy,
+) -> None:
+    mask = sphere((CENTER,) * 3, 10).astype(np.uint8)
+    volume = np.where(sphere((CENTER,) * 3, 25), 0.7, 0.05).astype(np.float32)
+
+    lesion = organ_mesh(reload(strategy.build_meshes(volume, mask, regions_for(mask)).lesions[0]))
+
+    distances = np.linalg.norm(lesion.vertices, axis=1)
+    assert distances.std() < 0.15 * MM
+    assert lesion.volume > 0
+
+
+@pytest.mark.unit
+def test_a_tiny_lesion_still_gets_a_mesh(strategy: MarchingCubesStrategy) -> None:
+    mask = np.zeros((N, N, N), dtype=np.uint8)
+    mask[31, 31, 31:33] = 1  # dos voxeles: el filtro gaussiano la deja bajo 0.5
+    volume = np.where(sphere((CENTER,) * 3, 25), 0.7, 0.05).astype(np.float32)
+
+    meshes = strategy.build_meshes(volume, mask, regions_for(mask))
+
+    assert vertex_count(reload(meshes.lesions[0])) > 0
+
+
+@pytest.mark.unit
+def test_the_tumor_is_the_union_of_the_kept_lesion_meshes(
+    strategy: MarchingCubesStrategy,
+) -> None:
+    mask = sphere((24.0, 31.0, 31.0), 5)
+    mask[40, 31, 31:33] = True  # una lesion de dos voxeles, que el filtro desvanece
+    mask = mask.astype(np.uint8)
+    volume = np.where(sphere((CENTER,) * 3, 25), 0.7, 0.05).astype(np.float32)
+
+    meshes = strategy.build_meshes(volume, mask, regions_for(mask))
+
+    tumor = organ_mesh(reload(meshes.tumor))
+    lesions = [organ_mesh(reload(glb)) for glb in meshes.lesions]
+    assert len(lesions) == 2
+    assert tumor.volume == pytest.approx(sum(lesion.volume for lesion in lesions))
+
+
+@pytest.mark.unit
+def test_a_thin_sheet_lesion_keeps_most_of_its_volume(strategy: MarchingCubesStrategy) -> None:
+    mask = np.zeros((N, N, N), dtype=np.uint8)
+    mask[31, 20:44, 20:44] = 1  # una lamina de un voxel de espesor
+    volume = np.where(sphere((CENTER,) * 3, 25), 0.7, 0.05).astype(np.float32)
+
+    lesion = organ_mesh(reload(strategy.build_meshes(volume, mask, regions_for(mask)).lesions[0]))
+
+    assert lesion.volume > 0.7 * mask.sum() * MM**3

@@ -53,3 +53,14 @@ def test_the_lifespan_logs_which_models_are_available(caplog) -> None:
         pass
 
     assert "segmentation:lung" in caplog.text
+
+
+@pytest.mark.unit
+def test_the_web_interface_is_served_under_static() -> None:
+    app = create_app(container_builder=FakeServiceContainer)
+
+    with TestClient(app) as client:
+        response = client.get("/static/")
+
+    assert response.status_code == 200
+    assert '<canvas id="cv3d">' in response.text

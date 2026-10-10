@@ -5,8 +5,11 @@ una copia nueva. No guarda estado entre corridas, asi que la misma instancia sir
 para varios estudios a la vez.
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from typing import Any
 
+from radvol3d.domain.entities import SegmentationResult
 from radvol3d.domain.enums import StageNumber
 from radvol3d.services.meshing.meshing_strategy import MeshingStrategy
 from radvol3d.services.pipeline.pipeline_data import PipelineData
@@ -67,6 +70,11 @@ class MeshingFilter:
 
     Las regiones salen del resumen de la segmentacion; las que no son lesion
     (has_lesion distinto de true) no generan malla, igual que no generan fila.
+
+    Si la estrategia descarta lesiones (MeshSet.discarded), sus regiones quedan en el
+    resumen con has_lesion en false y el motivo en "discarded", y los totales del
+    resumen pasan a contar solo las que quedan. Asi no generan fila y el resultado
+    guardado sigue alineado con sus mallas.
     """
 
     stage_number = StageNumber.MESHING
@@ -81,7 +89,43 @@ class MeshingFilter:
             for region in data.segmentation.summary.get("regions", [])
             if region.get("has_lesion", True) is True
         ]
-        return replace(
-            data,
-            meshes=self._strategy.build_meshes(data.volume, data.segmentation.mask, regions),
-        )
+        meshes = self._strategy.build_meshes(data.volume, data.segmentation.mask, regions)
+        segmentation = data.segmentation
+        if meshes.discarded:
+            segmentation = discard_regions(segmentation, regions, meshes.discarded)
+        return replace(data, segmentation=segmentation, meshes=meshes)
+
+
+DISCARD_REASON = "fuera_del_organo"
+
+
+def discard_regions(
+    segmentation: SegmentationResult,
+    regions: Sequence[Mapping[str, Any]],
+    discarded: Sequence[int],
+) -> SegmentationResult:
+    """Marca como descartadas las regiones en esas posiciones de regions.
+
+    Devuelve una copia: el resumen original no se modifica.
+    """
+    positions = set(discarded)
+    dropped = {id(regions[index]) for index in positions}
+    summary = dict(segmentation.summary)
+    summary["regions"] = [
+        {**region, "has_lesion": False, "discarded": DISCARD_REASON}
+        if id(region) in dropped
+        else region
+        for region in summary.get("regions", [])
+    ]
+    kept = [region for region in summary["regions"] if region.get("has_lesion", True) is True]
+    if "has_lesion" in summary:
+        summary["has_lesion"] = bool(kept)
+    if "lesion_count" in summary:
+        summary["lesion_count"] = len(kept)
+    if "total_volume_mm3" in summary:
+        summary["total_volume_mm3"] = round(sum(region["volume_mm3"] for region in kept), 2)
+    summary["discarded_count"] = len(dropped)
+    lesions = segmentation.lesions
+    if len(lesions) == len(regions):
+        lesions = [lesion for index, lesion in enumerate(lesions) if index not in positions]
+    return replace(segmentation, summary=summary, lesions=lesions)
