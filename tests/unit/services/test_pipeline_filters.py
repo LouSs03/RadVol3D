@@ -121,3 +121,48 @@ def test_no_filter_modifies_the_data_it_receives() -> None:
         assert (data.projections, data.volume, data.segmentation, data.meshes) == before
         assert result is not data
         data = result
+
+
+@pytest.mark.unit
+def test_meshing_marks_the_discarded_lesions_so_they_get_no_row() -> None:
+    from dataclasses import replace
+
+    from radvol3d.services.meshing.meshing_strategy import MeshSet
+
+    class DiscardingMeshing(FakeMeshingStrategy):
+        def build_meshes(self, volume, mask, regions):
+            kept = super().build_meshes(volume, mask, regions[1:])
+            return MeshSet(kept.organ, kept.tumor, kept.lesions, discarded=(0,))
+
+    data = SegmentationFilter(FakeSegmentationStrategy()).apply(after_reconstruction())
+    first = dict(data.segmentation.summary["regions"][0], volume_mm3=10.0)
+    second = dict(first, volume_mm3=30.0, location="otra")
+    summary = {
+        **data.segmentation.summary,
+        "regions": [first, second],
+        "has_lesion": True,
+        "lesion_count": 2,
+        "total_volume_mm3": 40.0,
+    }
+    data = replace(data, segmentation=replace(data.segmentation, summary=summary))
+
+    result = MeshingFilter(DiscardingMeshing()).apply(data)
+
+    regions = result.segmentation.summary["regions"]
+    assert regions[0]["has_lesion"] is False
+    assert regions[0]["discarded"] == "fuera_del_organo"
+    assert regions[1] == second
+    assert result.segmentation.summary["lesion_count"] == 1
+    assert result.segmentation.summary["total_volume_mm3"] == 30.0
+    assert result.segmentation.summary["discarded_count"] == 1
+    assert len(result.meshes.lesions) == 1
+    assert data.segmentation.summary["regions"][0]["has_lesion"] is True  # sin efectos
+
+
+@pytest.mark.unit
+def test_meshing_without_discarded_lesions_keeps_the_same_summary() -> None:
+    data = SegmentationFilter(FakeSegmentationStrategy()).apply(after_reconstruction())
+
+    result = MeshingFilter(FakeMeshingStrategy()).apply(data)
+
+    assert result.segmentation is data.segmentation

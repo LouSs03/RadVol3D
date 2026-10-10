@@ -87,7 +87,9 @@ def test_an_example_study_produces_volume_mask_summary_and_meshes(
     summary = json.loads(object_storage.download_bytes(result.summary_path))
     assert summary["study_code"] == code
     assert summary["organ"] == "lung"
-    assert len(result.lesions) == len(summary["regions"])
+    # Las regiones descartadas por la etapa de mallas quedan con has_lesion en false.
+    kept = [region for region in summary["regions"] if region.get("has_lesion", True) is True]
+    assert len(result.lesions) == len(kept)
     for path in (result.organ_mesh_path, result.tumor_mesh_path):
         glb = object_storage.download_bytes(path)
         assert glb.startswith(b"glTF")

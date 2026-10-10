@@ -27,6 +27,7 @@ from radvol3d.persistence.settings import get_model_settings, get_settings
 from radvol3d.services.service_container import build_service_container
 
 WEB_DIRECTORY = Path(__file__).parent / "web"
+STATIC_DIRECTORY = Path(__file__).parent / "static"
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,11 @@ def create_app(container_builder: Callable[[], Any] | None = None) -> FastAPI:
     app.include_router(projection_router.router)
     app.include_router(result_router.router)
     app.include_router(viewer_router.router)
+
+    # La interfaz web completa (un solo index.html). Va antes que "/": ese montaje
+    # atiende cualquier ruta y taparia a este.
+    if STATIC_DIRECTORY.is_dir():
+        app.mount("/static", StaticFiles(directory=STATIC_DIRECTORY, html=True), name="static")
 
     if WEB_DIRECTORY.is_dir():
         app.mount("/", StaticFiles(directory=WEB_DIRECTORY, html=True), name="web")

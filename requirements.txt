@@ -10,3 +10,4 @@ numpy>=1.26
 scipy>=1.13
 scikit-image>=0.24
 trimesh>=4.0
+fast-simplification>=0.1.7
