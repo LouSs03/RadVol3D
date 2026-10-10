@@ -3,8 +3,9 @@
 - Tumor: la superficie de la mascara de segmentacion, a resolucion completa.
 - Lesiones: una superficie por region del resumen, separada de la mascara con
   split_lesion_masks (research.md R9 de 004), con el mismo paso que el tumor. Se
-  descartan las lesiones con la mayoria de sus vertices fuera de la caja del organo
-  (MeshSet.discarded); el tumor es la union de las que quedan.
+  descartan las lesiones con la mayoria de sus vertices fuera de la caja de la region
+  del organo, en voxeles y antes de suavizar (MeshSet.discarded); el tumor es la union
+  de las que quedan.
 - Organo: la superficie del volumen reconstruido. El umbral sale del propio volumen
   por el metodo de Otsu, sin ningun numero fijado a mano. Se conserva solo la region
   conexa mas grande, con sus huecos rellenos, para descartar islas de ruido, y se
@@ -13,10 +14,12 @@
   estrella que deja reconstruir con cuatro angulos. La region es binaria y su
   superficie directa sale escalonada, como una masa de voxeles.
 
-Las tres mallas se suavizan igual: filtro gaussiano antes de marching cubes, pulido
-laplaciano despues y, si pasan de MAX_FACES caras, decimacion cuadrica (requiere
-fast-simplification). Las caras quedan orientadas hacia afuera. El organo se corta en
-0.5; las lesiones, en el nivel que conserva su cantidad de voxeles (ver _smooth_mesh).
+Las tres mallas se suavizan del mismo modo: filtro gaussiano antes de marching cubes,
+pulido laplaciano despues y, si pasan de MAX_FACES caras, decimacion cuadrica (requiere
+fast-simplification). El organo, con mas fuerza (ORGAN_SMOOTHING_SIGMA y
+ORGAN_LAPLACIAN_ITERATIONS) que tumor y lesiones. Las caras quedan orientadas hacia
+afuera. El organo se corta en 0.5; las lesiones, en el nivel que conserva su cantidad
+de voxeles (ver _smooth_mesh).
 
 La malla del organo depende de la calidad de la reconstruccion: si el volumen sale
 borroso, la superficie tambien (FR-026a). Un umbral fijo en HU queda como mejora.
@@ -50,8 +53,12 @@ ORGAN_STEP = 2
 # con las iteraciones necesarias para quitar las puntas, deja el organo al 31 %. Con
 # radio 6 (15 mm) las puntas pasan a lobulos suaves y queda el 90 % (prueba_real_001).
 ORGAN_OPENING_RADIUS = 6
-# Suavizado de todas las mallas: organo, tumor y lesiones.
-SMOOTHING_SIGMA = 1.5  # desvio del filtro gaussiano, en voxeles
+# Suavizado: desvio del filtro gaussiano (en voxeles) e iteraciones del laplaciano.
+# El organo se suaviza mas: es una malla de contexto y los lobulos que deja la
+# apertura se ven mejor redondeados. Tumor y lesiones conservan el suavizado leve.
+ORGAN_SMOOTHING_SIGMA = 2.5
+ORGAN_LAPLACIAN_ITERATIONS = 10
+SMOOTHING_SIGMA = 1.5
 LAPLACIAN_ITERATIONS = 5
 # Por encima de MAX_FACES caras se decima hasta TARGET_FACES.
 MAX_FACES = 50_000
@@ -65,7 +72,7 @@ class MarchingCubesStrategy(MeshingStrategy):
     """Genera la malla del organo, la del tumor y una por lesion con marching cubes."""
 
     model_name = "marching_cubes"
-    model_version = "1.1.0"
+    model_version = "1.2.0"
 
     def __init__(self, mm_per_voxel: float = config.MM_PER_VOXEL) -> None:
         self._mm_per_voxel = float(mm_per_voxel)
@@ -76,12 +83,19 @@ class MarchingCubesStrategy(MeshingStrategy):
         volume = np.asarray(volume, dtype=np.float32)
         tumor = np.asarray(mask) > 0
         lesion_masks = split_lesion_masks(tumor, regions)
-        organ = self._smooth_mesh(self._organ_region(volume), ORGAN_STEP)
+        organ_region = self._organ_region(volume)
+        organ = self._smooth_mesh(
+            organ_region,
+            ORGAN_STEP,
+            sigma=ORGAN_SMOOTHING_SIGMA,
+            iterations=ORGAN_LAPLACIAN_ITERATIONS,
+        )
         lesions = [
             self._smooth_mesh(lesion, TUMOR_STEP, keep_volume=True) for lesion in lesion_masks
         ]
+        organ_box = self._region_box(organ_region)
         discarded = tuple(
-            index for index, lesion in enumerate(lesions) if _mostly_outside(lesion, organ)
+            index for index, lesion in enumerate(lesions) if _mostly_outside(lesion, organ_box)
         )
         kept = [lesion for index, lesion in enumerate(lesions) if index not in discarded]
         return MeshSet(
@@ -108,6 +122,21 @@ class MarchingCubesStrategy(MeshingStrategy):
         meshes = [mesh for mesh in kept if mesh is not None]
         return trimesh.util.concatenate(meshes) if meshes else None
 
+    def _region_box(self, region: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+        """Caja de la region en mm, en las coordenadas de las mallas; None si esta vacia.
+
+        Sale de los voxeles y no de la malla suavizada: asi cambiar el suavizado del
+        organo no cambia que lesiones se descartan. Lleva medio voxel por lado, donde
+        marching cubes pone la superficie de una region binaria.
+        """
+        if not region.any():
+            return None
+        indices = np.argwhere(region)
+        center = (np.asarray(region.shape, dtype=np.float64) - 1) / 2
+        low = (indices.min(axis=0) - 0.5 - center) * self._mm_per_voxel
+        high = (indices.max(axis=0) + 0.5 - center) * self._mm_per_voxel
+        return low, high
+
     @staticmethod
     def _organ_region(volume: np.ndarray) -> np.ndarray:
         """Region del organo: Otsu, la componente conexa mas grande y sus huecos rellenos."""
@@ -129,7 +158,12 @@ class MarchingCubesStrategy(MeshingStrategy):
         return ndimage.binary_fill_holes(largest)
 
     def _smooth_mesh(
-        self, region: np.ndarray, step: int, keep_volume: bool = False
+        self,
+        region: np.ndarray,
+        step: int,
+        keep_volume: bool = False,
+        sigma: float = SMOOTHING_SIGMA,
+        iterations: int = LAPLACIAN_ITERATIONS,
     ) -> trimesh.Trimesh | None:
         """Malla suavizada de la region; None si no hay superficie que extraer.
 
@@ -142,8 +176,8 @@ class MarchingCubesStrategy(MeshingStrategy):
             return None
         # El margen supera el alcance del filtro (3 sigma): la superficie sigue
         # cerrada aunque la region toque el limite del volumen.
-        pad = 1 + int(np.ceil(3 * SMOOTHING_SIGMA))
-        field = ndimage.gaussian_filter(np.pad(region.astype(np.float32), pad), SMOOTHING_SIGMA)
+        pad = 1 + int(np.ceil(3 * sigma))
+        field = ndimage.gaussian_filter(np.pad(region.astype(np.float32), pad), sigma)
         level = _volume_level(field, int(region.sum())) if keep_volume else 0.5
         mesh = self._extract(field, pad, region.shape, step, level)
         if mesh is None:
@@ -153,7 +187,7 @@ class MarchingCubesStrategy(MeshingStrategy):
                 return None
         else:
             # Con el volumen constante (volume_constraint) el pulido no encoge la malla.
-            trimesh.smoothing.filter_laplacian(mesh, iterations=LAPLACIAN_ITERATIONS)
+            trimesh.smoothing.filter_laplacian(mesh, iterations=iterations)
         if len(mesh.faces) > MAX_FACES:
             mesh = mesh.simplify_quadric_decimation(face_count=TARGET_FACES)
         # marching cubes deja las caras orientadas hacia adentro (volumen negativo):
@@ -194,14 +228,16 @@ def _volume_level(field: np.ndarray, voxels: int) -> float:
     return float(top[0] + top[1]) / 2
 
 
-def _mostly_outside(lesion: trimesh.Trimesh | None, organ: trimesh.Trimesh | None) -> bool:
+def _mostly_outside(
+    lesion: trimesh.Trimesh | None, organ_box: tuple[np.ndarray, np.ndarray] | None
+) -> bool:
     """True si mas de MAX_OUTSIDE_FRACTION de los vertices cae fuera de la caja del organo.
 
     Sin organo o sin lesion no hay con que comparar: la lesion se conserva.
     """
-    if lesion is None or organ is None:
+    if lesion is None or organ_box is None:
         return False
-    low, high = organ.bounds
+    low, high = organ_box
     outside = np.any((lesion.vertices < low) | (lesion.vertices > high), axis=1)
     return float(outside.mean()) > MAX_OUTSIDE_FRACTION
 

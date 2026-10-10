@@ -140,7 +140,7 @@ def test_the_organ_mesh_is_coarser_than_the_tumor_mesh(strategy: MarchingCubesSt
 @pytest.mark.unit
 def test_marching_cubes_has_a_name_but_no_model_row(strategy: MarchingCubesStrategy) -> None:
     assert strategy.model_name == "marching_cubes"
-    assert strategy.model_version == "1.1.0"
+    assert strategy.model_version == "1.2.0"
 
 
 # --- Una malla por lesion (funcionalidad 004, research.md R9) ---
@@ -386,3 +386,23 @@ def test_a_thin_sheet_lesion_keeps_most_of_its_volume(strategy: MarchingCubesStr
     lesion = organ_mesh(reload(strategy.build_meshes(volume, mask, regions_for(mask)).lesions[0]))
 
     assert lesion.volume > 0.7 * mask.sum() * MM**3
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("sigma", [1.5, 2.5, 5.0])
+def test_the_organ_smoothing_does_not_change_which_lesions_are_discarded(
+    strategy: MarchingCubesStrategy, monkeypatch: pytest.MonkeyPatch, sigma: float
+) -> None:
+    from radvol3d.services.meshing import marching_cubes_strategy as module
+
+    monkeypatch.setattr(module, "ORGAN_SMOOTHING_SIGMA", sigma)
+    volume = np.where(sphere((CENTER,) * 3, 14), 0.7, 0.05).astype(np.float32)
+    # Junto al borde: dentro de la caja de la region del organo, pero fuera de la caja
+    # de su malla en cuanto el suavizado la encoge (con la caja de la malla, sigma 2.5
+    # ya la descartaba).
+    mask = sphere((45.0, CENTER, CENTER), 2).astype(np.uint8)
+
+    meshes = strategy.build_meshes(volume, mask, regions_for(mask))
+
+    assert meshes.discarded == ()
+    assert len(meshes.lesions) == 1
