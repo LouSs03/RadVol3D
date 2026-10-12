@@ -153,6 +153,12 @@
   .field input:focus{outline:none; border-color:var(--brand); box-shadow:0 0 0 3px rgba(15,107,92,.15);}
   .field input:disabled{background:#F8FAFC; color:var(--ink2);}
   .field small{font-size:11.5px; color:var(--muted);}
+  .patient{display:grid; grid-template-columns:1fr 1fr 150px; gap:0 14px; max-width:640px;}
+  .patient .field{max-width:none; margin-bottom:6px;}
+  @media (max-width:700px){ .patient{grid-template-columns:1fr;} }
+  .patient-note{display:block; font-size:11.5px; color:var(--muted); margin:0 0 18px;}
+  .field label .req{color:var(--tumor);}
+  .head p.patient-line{color:var(--ink2); font-weight:600;}
 
   .pick{display:grid; grid-template-columns:1fr 1fr; gap:13px; margin-bottom:18px;}
   @media (max-width:700px){ .pick{grid-template-columns:1fr;} }
@@ -490,13 +496,29 @@
       </div>
     </div>
 
-    <div class="card pad" style="margin-bottom:16px" id="study-card">
+    <form class="card pad" style="margin-bottom:16px" id="study-card">
       <h4 class="sec">Datos del estudio</h4>
       <div class="field">
         <label for="f-code">Código del estudio</label>
-        <input id="f-code" class="mono" autocomplete="off" spellcheck="false" maxlength="64" placeholder="RV-0418">
-        <small>Letras, dígitos, guion y guion bajo (hasta 64). Nunca uses el nombre o el DNI del paciente.</small>
+        <input id="f-code" class="mono" autocomplete="off" spellcheck="false" maxlength="64" placeholder="RV-0418" pattern="[A-Za-z0-9_\-]{1,64}" title="Letras, dígitos, guion y guion bajo, hasta 64 caracteres" required>
+        <small>Se propone uno con la fecha; puedes cambiarlo. Letras, dígitos, guion y guion bajo (hasta 64). Nunca uses el nombre o el DNI del paciente.</small>
       </div>
+      <h4 class="sec">Paciente</h4>
+      <div class="patient">
+        <div class="field">
+          <label for="f-patient-name">Nombre <span class="req" aria-hidden="true">*</span></label>
+          <input id="f-patient-name" name="patient_name" autocomplete="off" spellcheck="false" maxlength="80" required>
+        </div>
+        <div class="field">
+          <label for="f-patient-surname">Apellido <span class="req" aria-hidden="true">*</span></label>
+          <input id="f-patient-surname" name="patient_surname" autocomplete="off" spellcheck="false" maxlength="80" required>
+        </div>
+        <div class="field">
+          <label for="f-patient-dni">DNI (opcional)</label>
+          <input id="f-patient-dni" name="patient_dni" class="mono" autocomplete="off" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" placeholder="12345678" title="Exactamente 8 dígitos">
+        </div>
+      </div>
+      <small class="patient-note">Nombre y apellido son obligatorios. Se ven en esta pestaña mientras sigues el estudio y se borran al empezar uno nuevo; no quedan guardados en el navegador.</small>
       <h4 class="sec">Órgano</h4>
       <div class="pick" id="pick">
         <button class="opt" data-organ="lung" type="button">
@@ -512,9 +534,9 @@
       </div>
       <div class="row-end">
         <span class="tag ok hidden" id="study-created"></span>
-        <button class="btn" id="btn-create" type="button">Crear estudio</button>
+        <button class="btn" id="btn-create" type="submit">Crear estudio</button>
       </div>
-    </div>
+    </form>
 
     <div class="card pad locked" style="margin-bottom:16px" id="proj-card">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:13px; flex-wrap:wrap">
@@ -557,6 +579,7 @@
         <div class="eyebrow">Paso 2 de 2</div>
         <h1 style="margin-top:5px">Procesando el estudio</h1>
         <p id="run-sub">Ejecutando la cadena de reconstrucción y detección.</p>
+        <p class="patient-line hidden" id="run-patient"></p>
       </div>
     </div>
 
@@ -624,6 +647,7 @@
           <div class="eyebrow">Resultado del estudio</div>
           <h1 style="margin-top:5px" id="vw-title">Reconstrucción volumétrica</h1>
           <p id="vw-sub">Arrastra para rotar, rueda para acercar. Las lesiones detectadas aparecen en rojo.</p>
+          <p class="patient-line hidden" id="vw-patient"></p>
         </div>
         <div style="display:flex; gap:9px; flex-wrap:wrap">
           <button class="btn ghost sm" data-go="history" type="button">Historial</button>
@@ -785,8 +809,10 @@
 'use strict';
 // Convencion del proyecto: snake_case tambien en JavaScript. Los metodos de Three.js
 // (setSize, traverse, ...) son de la biblioteca y conservan su nombre.
-// Privacidad: la pagina nunca pide, guarda, muestra ni registra nombre, apellido o DNI
-// del paciente. Solo maneja el codigo del estudio.
+// Privacidad: nombre, apellido y DNI del paciente se piden en el formulario de nuevo
+// estudio y viajan una vez, en el POST /studies. La pagina los conserva solo en memoria
+// (session_patient) para mostrarlos mientras se sigue ese estudio; nunca van al historial
+// local ni a la consola, y se borran al reiniciar el formulario para un estudio nuevo.
 
 /* ============================================================
    0. CONFIGURACION
@@ -805,6 +831,7 @@ const GRID_SIZE = 128;
 const FIELD_OF_VIEW_MM = 320;
 const MAX_PROJECTION_BYTES = 1048576;
 const STUDY_CODE_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+const NATIONAL_ID_REGEX = /^[0-9]{8}$/;
 const HISTORY_KEY = 'radvol3d.history.v1';
 const ORGAN_LABELS = { lung: 'Pulmón', liver: 'Hígado' };
 const STAGE_LABELS = {
@@ -1114,9 +1141,48 @@ window.addEventListener('hashchange', route);
 function fresh_new_state() {
   const slots = {};
   for (const angle of ANGLES) slots[angle] = { file: null, preview: null, state: 'empty', message: '' };
-  return { code: null, organ: 'lung', created: false, uploaded: false, busy: false, slots };
+  return { code: null, organ: 'lung', created: false, uploaded: false, processed: false, busy: false, slots };
 }
 let new_state = fresh_new_state();
+
+// El paciente del ultimo estudio creado en esta pestaña: { study_code, first_name,
+// last_name, national_id }. Solo en memoria; la API nunca lo devuelve.
+let session_patient = null;
+
+function patient_of(code) {
+  return session_patient && session_patient.study_code === code ? session_patient : null;
+}
+
+function patient_text(patient) {
+  const name = [patient.first_name, patient.last_name].filter(Boolean).join(' ');
+  return 'Paciente: ' + name + (patient.national_id ? ' · DNI ' + patient.national_id : '');
+}
+
+// Muestra el paciente del estudio en una linea de cabecera, o la oculta si no es el suyo.
+function show_patient_line(selector, code) {
+  const patient = patient_of(code);
+  const line = $(selector);
+  line.textContent = patient ? patient_text(patient) : '';
+  line.classList.toggle('hidden', !patient);
+}
+
+// Los campos del paciente con los datos del estudio, o vacios si no es el de esta pestaña.
+function fill_patient_inputs(code) {
+  const patient = patient_of(code) || {};
+  $('#f-patient-name').value = patient.first_name || '';
+  $('#f-patient-surname').value = patient.last_name || '';
+  $('#f-patient-dni').value = patient.national_id || '';
+}
+
+// Reinicia el formulario por completo para un estudio nuevo. Es el unico lugar donde se
+// olvidan los datos del paciente.
+function reset_new_form() {
+  new_state = fresh_new_state();
+  session_patient = null;
+  $('#f-code').value = '';
+  fill_patient_inputs(null);
+  show_new_error('');
+}
 
 function default_code() {
   const now = new Date();
@@ -1133,12 +1199,14 @@ function show_new_error(text) {
 async function enter_new(code) {
   show_new_error('');
   if (!code) {
-    // Un estudio ya creado y sin procesar se conserva al volver a esta vista.
+    // Un estudio ya creado y sin procesar se conserva al volver a esta vista; uno ya
+    // mandado a procesar no: se empieza uno nuevo con el formulario en blanco.
+    if (new_state.processed) reset_new_form();
     if (!new_state.created && !$('#f-code').value) $('#f-code').value = default_code();
     render_new();
     return;
   }
-  if (code === new_state.code) { render_new(); return; }
+  if (code === new_state.code && !new_state.processed) { render_new(); return; }
   // Retomar un estudio pending desde el historial.
   const { http_status, body, error } = await api(study_path(code, '/status'));
   if (http_status === 404) { show_new_error('El estudio ' + code + ' no existe.'); return; }
@@ -1148,12 +1216,14 @@ async function enter_new(code) {
   new_state = fresh_new_state();
   Object.assign(new_state, { code, organ: body.organ, created: true });
   $('#f-code').value = code;
+  fill_patient_inputs(code);
   render_new();
 }
 
 function render_new() {
   const s = new_state;
   $('#f-code').disabled = s.created || s.busy;
+  for (const id of ['#f-patient-name', '#f-patient-surname', '#f-patient-dni']) $(id).disabled = s.created || s.busy;
   $$('#pick .opt').forEach((opt) => {
     opt.classList.toggle('sel', opt.dataset.organ === s.organ);
     opt.disabled = s.created || s.busy;
@@ -1191,7 +1261,7 @@ function render_new() {
 
   const all_ready = ANGLES.every((angle) => s.slots[angle].state === 'ready');
   $('#btn-upload').disabled = !(s.created && all_ready && !s.uploaded && !s.busy);
-  $('#btn-process').disabled = !(s.uploaded && !s.busy);
+  $('#btn-process').disabled = !(s.uploaded && !s.busy && !s.processed);
   $('#btn-upload').innerHTML = s.busy === 'upload' ? '<span class="spin"></span> Subiendo…' : (s.uploaded ? '✓ Proyecciones subidas' : 'Subir proyecciones');
   $('#btn-process').innerHTML = s.busy === 'process' ? '<span class="spin"></span> Lanzando…' : 'Procesar';
   $('#btn-create').innerHTML = s.busy === 'create' ? '<span class="spin"></span> Creando…' : 'Crear estudio';
@@ -1203,20 +1273,51 @@ $$('#pick .opt').forEach((opt) => opt.addEventListener('click', () => {
   render_new();
 }));
 
-$('#f-code').addEventListener('keydown', (event) => { if (event.key === 'Enter') $('#btn-create').click(); });
+// El DNI solo admite digitos: lo demas se quita al escribir o pegar.
+$('#f-patient-dni').addEventListener('input', (event) => {
+  const digits = event.target.value.replace(/[^0-9]/g, '').slice(0, 8);
+  if (digits !== event.target.value) event.target.value = digits;
+});
 
-$('#btn-create').addEventListener('click', async () => {
+// El objeto patient del contrato. El DNI va solo si se escribio.
+function patient_input() {
+  const patient = {
+    first_name: $('#f-patient-name').value.trim(),
+    last_name: $('#f-patient-surname').value.trim(),
+  };
+  const national_id = $('#f-patient-dni').value.trim();
+  if (national_id) patient.national_id = national_id;
+  return patient;
+}
+
+// El navegador valida antes de llegar aqui (required y pattern): con nombre o apellido
+// vacios, el evento submit ni se dispara. Lo que sigue cubre lo que required deja pasar,
+// como un nombre hecho solo de espacios.
+$('#study-card').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (new_state.created || new_state.busy) return;
   const code = $('#f-code').value.trim();
   if (!STUDY_CODE_REGEX.test(code)) {
     show_new_error('El código solo admite letras, dígitos, guion y guion bajo, hasta 64 caracteres.');
     return;
   }
+  const patient = patient_input();
+  if (!patient.first_name || !patient.last_name) {
+    show_new_error('El nombre y el apellido del paciente son obligatorios.');
+    $(patient.first_name ? '#f-patient-surname' : '#f-patient-name').focus();
+    return;
+  }
+  if (patient.national_id && !NATIONAL_ID_REGEX.test(patient.national_id)) {
+    show_new_error('El DNI debe tener exactamente 8 dígitos.');
+    return;
+  }
   show_new_error('');
   new_state.busy = 'create'; render_new();
+  const request = { study_code: code, organ: new_state.organ, patient };
   const { ok, body, error, http_status } = await api('/studies', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ study_code: code, organ: new_state.organ }),
+    body: JSON.stringify(request),
   });
   new_state.busy = false;
   if (!ok) {
@@ -1225,6 +1326,7 @@ $('#btn-create').addEventListener('click', async () => {
     return;
   }
   Object.assign(new_state, { code: body.study_code, created: true });
+  session_patient = { study_code: body.study_code, ...patient };
   remember({ study_code: body.study_code, organ: body.organ, created_at: body.created_at, status: body.status });
   render_new();
   window.history.replaceState(null, '', '#/new/' + encodeURIComponent(body.study_code));
@@ -1352,17 +1454,15 @@ $('#btn-process').addEventListener('click', async () => {
   s.busy = false;
   if (!ok) { show_new_error(error); render_new(); return; }
   remember({ study_code: s.code, status: 'processing' });
-  const code = s.code;
-  new_state = fresh_new_state();
-  $('#f-code').value = '';
-  go('run', code);
+  // El formulario queda como esta, con el paciente, hasta que se empiece otro estudio.
+  s.processed = true;
+  render_new();
+  go('run', s.code);
 });
 
 $('#btn-cancel').addEventListener('click', () => {
   // El estudio creado queda en pending y se puede retomar desde el historial.
-  new_state = fresh_new_state();
-  $('#f-code').value = '';
-  show_new_error('');
+  reset_new_form();
   go('home');
 });
 
@@ -1396,6 +1496,7 @@ function enter_run(code) {
   $('#btn-open').disabled = true;
   $('#btn-resume').classList.add('hidden');
   $('#run-sub').textContent = 'Consultando el estado del estudio ' + code + '…';
+  show_patient_line('#run-patient', code);
   $('#clk').textContent = format_seconds(0);
   for (let n = 1; n <= 4; n++) paint_stage(n, 'waiting');
   run.ticker = setInterval(tick_run, 100);
@@ -1503,6 +1604,7 @@ async function enter_viewer(code) {
   $('#vw-main').classList.toggle('hidden', !code);
   if (!code) return;
   if (parse_hash().code !== code) window.history.replaceState(null, '', '#/viewer/' + encodeURIComponent(code));
+  show_patient_line('#vw-patient', code);
   if (code === viewer.code && viewer.loaded) { resume_viewer(); return; }
   await load_study(code);
 }

@@ -433,6 +433,21 @@ el código del estudio.
 
 ---
 
+## Phase 8: Formulario de nuevo estudio — código editable y datos del paciente
+
+**Goal**: el usuario puede cambiar el código propuesto y cargar nombre, apellido y DNI
+opcionales. Se mandan en `patient` del contrato existente y nunca vuelven (FR-029).
+
+- [X] T080 En `src/radvol3d/api/schemas/study_schema.py`, `PatientInput` trata un campo en blanco como ausente (igual que `PatientRepository._clean`) y `PatientInput` y `StudyCreate` usan `hide_input_in_errors=True`, para que el texto de un `ValidationError` no lleve el valor recibido.
+- [X] T081 En `src/radvol3d/static/index.html`, agregar Nombre, Apellido y DNI (`maxlength=8`, solo dígitos, placeholder `12345678`) entre el código y el órgano; mandarlos como `patient` solo si hay alguno, validar el DNI antes de enviar, deshabilitarlos al crear y borrarlos del formulario al crear o cancelar. El código sigue propuesto por `default_code()` y editable, ahora con `pattern`.
+- [X] T082 [P] Crear `tests/unit/api/test_study_create_form.py`: código personalizado aceptado, código inválido → 422, DNI de 8 dígitos aceptado, con letras / 7 / 9 dígitos → `ValidationError`, DNI vacío aceptado, la respuesta de `POST /studies` sin datos personales y el 422 de un DNI inválido sin el valor enviado.
+- [X] T083 [P] Anotar en [contracts/http_api.md](contracts/http_api.md) que un campo de `patient` en blanco cuenta como ausente.
+- [X] T084 En `src/radvol3d/static/index.html`, la tarjeta del estudio pasa a ser un `<form>` con `btn-create` de tipo `submit`: Nombre y Apellido llevan `required` (el navegador no envía el formulario si falta uno) y el manejador de `submit` rechaza además un valor hecho solo de espacios. El DNI sigue opcional. La API no cambia: `patient` sigue siendo opcional para otros clientes.
+- [X] T085 En `src/radvol3d/static/index.html`, el paciente del estudio creado queda en memoria (`session_patient`, nunca en el historial local): los campos siguen visibles y con su valor al subir y procesar, y una línea "Paciente" se muestra en las vistas de procesamiento y del visor de ese estudio. Se borran solo en `reset_new_form()`, al empezar otro estudio o al cancelar.
+- [X] T086 [P] Crear `tests/unit/web/test_new_study_form.py`: con las reglas de validación de restricciones del estándar HTML sobre el formulario de `index.html`, Nombre vacío o Apellido vacío no envían el formulario y DNI vacío sí.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

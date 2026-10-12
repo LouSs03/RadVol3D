@@ -8,7 +8,7 @@ paciente.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from radvol3d.domain.enums import OrganName, StageStatus, StudyStatus
 
@@ -19,7 +19,13 @@ StageName = Literal["preprocessing", "reconstruction", "segmentation", "meshing"
 
 
 class PatientInput(BaseModel):
-    """Datos personales opcionales del paciente. La persistencia los vuelve a validar."""
+    """Datos personales opcionales del paciente. La persistencia los vuelve a validar.
+
+    hide_input_in_errors quita el valor recibido del texto de ValidationError: si ese
+    error llegara a un registro o a una traza, no lleva el DNI ni el nombre (FR-029).
+    """
+
+    model_config = ConfigDict(hide_input_in_errors=True)
 
     first_name: str | None = Field(default=None, max_length=80, description="Nombre")
     last_name: str | None = Field(default=None, max_length=80, description="Apellido")
@@ -27,9 +33,21 @@ class PatientInput(BaseModel):
         default=None, pattern=r"^[0-9]{8}$", description="DNI de ocho digitos"
     )
 
+    @field_validator("first_name", "last_name", "national_id", mode="before")
+    @classmethod
+    def blank_is_absent(cls, value: object) -> object:
+        """Quita espacios; un campo en blanco cuenta como ausente, igual que en la
+        persistencia. Asi un formulario puede mandar los tres campos aunque esten vacios.
+        """
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
 
 class StudyCreate(BaseModel):
     """Peticion para crear un estudio."""
+
+    model_config = ConfigDict(hide_input_in_errors=True)
 
     study_code: str = Field(
         pattern=STUDY_CODE_REGEX,

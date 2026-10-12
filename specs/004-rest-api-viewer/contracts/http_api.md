@@ -31,7 +31,11 @@ Cuerpo (`application/json`), `StudyCreate`:
 }
 ```
 
-`patient` es opcional, y cada uno de sus campos también.
+`patient` es opcional, y cada uno de sus campos también. Un campo en blanco (`""` o solo
+espacios) cuenta como ausente, igual que en la persistencia: así el formulario web puede
+mandar los tres campos aunque estén vacíos. `national_id`, si viene, tiene exactamente ocho
+dígitos. El código del estudio lo propone la interfaz con la fecha, pero el usuario lo puede
+cambiar; la API solo exige el formato.
 
 Respuesta, `StudyResponse`:
 
