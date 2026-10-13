@@ -106,3 +106,96 @@ def test_history_answers_503_when_the_database_is_down(client, service) -> None:
     service.list_history.side_effect = DatabaseUnavailableError("La base no responde.")
 
     assert client.get("/studies").status_code == 503
+
+
+# --- POST /studies/search ------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_search_passes_the_national_id_from_the_body(client, service) -> None:
+    service.list_history.return_value = page(entry("it_a"))
+
+    response = client.post("/studies/search", json={"national_id": NATIONAL_ID})
+
+    assert response.status_code == 200
+    service.list_history.assert_called_once_with(limit=50, offset=0, national_id=NATIONAL_ID)
+    assert response.json()["items"][0]["national_id"] == NATIONAL_ID
+
+
+@pytest.mark.unit
+def test_search_strips_the_spaces_around_the_national_id(client, service) -> None:
+    service.list_history.return_value = page()
+
+    client.post("/studies/search", json={"national_id": " 12345678 "})
+
+    service.list_history.assert_called_once_with(limit=50, offset=0, national_id=NATIONAL_ID)
+
+
+@pytest.mark.unit
+def test_search_passes_the_requested_page(client, service) -> None:
+    service.list_history.return_value = page(offset=50, limit=10)
+
+    client.post("/studies/search", json={"national_id": NATIONAL_ID, "offset": 50, "limit": 10})
+
+    service.list_history.assert_called_once_with(limit=10, offset=50, national_id=NATIONAL_ID)
+
+
+@pytest.mark.unit
+def test_search_without_studies_is_an_empty_page(client, service) -> None:
+    service.list_history.return_value = page()
+
+    response = client.post("/studies/search", json={"national_id": NATIONAL_ID})
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert response.json()["has_more"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("national_id", ["1234567", "123456789", "1234567a"])
+def test_search_rejects_an_invalid_national_id_without_echoing_it(
+    client, service, national_id: str
+) -> None:
+    response = client.post("/studies/search", json={"national_id": national_id})
+
+    assert response.status_code == 422
+    assert national_id not in response.text
+    service.list_history.assert_not_called()
+
+
+@pytest.mark.unit
+def test_search_requires_the_national_id(client, service) -> None:
+    response = client.post("/studies/search", json={})
+
+    assert response.status_code == 422
+    service.list_history.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("page_fields", [{"limit": 0}, {"limit": 101}, {"offset": -1}])
+def test_search_rejects_a_page_out_of_range(client, service, page_fields: dict) -> None:
+    response = client.post("/studies/search", json={"national_id": NATIONAL_ID, **page_fields})
+
+    assert response.status_code == 422
+    service.list_history.assert_not_called()
+
+
+@pytest.mark.unit
+def test_history_shows_the_national_id_or_null(client, service) -> None:
+    service.list_history.return_value = page(entry("con_dni"), entry("sin_dni", national_id=None))
+
+    items = client.get("/studies").json()["items"]
+
+    assert [item["national_id"] for item in items] == [NATIONAL_ID, None]
+
+
+@pytest.mark.unit
+def test_search_leaves_no_national_id_in_the_logs(client, service, caplog) -> None:
+    service.list_history.return_value = page(entry("it_a"))
+
+    with caplog.at_level("DEBUG"):
+        client.post("/studies/search", json={"national_id": NATIONAL_ID})
+        client.post("/studies/search", json={"national_id": "1234567"})
+
+    assert NATIONAL_ID not in caplog.text
+    assert "1234567" not in caplog.text
