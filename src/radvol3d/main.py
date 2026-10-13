@@ -18,6 +18,7 @@ from radvol3d import __version__
 from radvol3d.api.error_handlers import register_error_handlers
 from radvol3d.api.routers import (
     health_router,
+    history_router,
     projection_router,
     result_router,
     study_router,
@@ -78,6 +79,7 @@ def create_app(container_builder: Callable[[], Any] | None = None) -> FastAPI:
 
     app.include_router(health_router.router)
     app.include_router(study_router.router)
+    app.include_router(history_router.router)
     app.include_router(projection_router.router)
     app.include_router(result_router.router)
     app.include_router(viewer_router.router)
