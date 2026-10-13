@@ -108,6 +108,38 @@ class Study:
 
 
 @dataclass(frozen=True)
+class StudyHistoryEntry:
+    """Un estudio tal como se ve en el historial (funcionalidad 005).
+
+    lesion_count y total_lesion_volume_mm3 solo tienen valor en un estudio
+    completed; en los demas estados quedan en None. national_id es el unico dato
+    personal del historial y se excluye de la representacion en texto, como en
+    Patient.
+    """
+
+    study_code: str
+    organ: OrganName
+    status: StudyStatus
+    created_at: datetime | None
+    lesion_count: int | None
+    total_lesion_volume_mm3: float | None
+    national_id: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True)
+class StudyHistoryPage:
+    """Un tramo del historial, del mas reciente al mas antiguo.
+
+    has_more dice si existe al menos un estudio despues de esta pagina.
+    """
+
+    entries: list[StudyHistoryEntry]
+    offset: int
+    limit: int
+    has_more: bool
+
+
+@dataclass(frozen=True)
 class StoredResult:
     """Resultado guardado de un estudio: sus lesiones y las rutas de sus archivos.
 
