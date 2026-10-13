@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 
 from radvol3d import config
-from radvol3d.domain.entities import PatientDetails, StoredResult, Study
+from radvol3d.domain.entities import (
+    PatientDetails,
+    StoredResult,
+    Study,
+    StudyHistoryEntry,
+    StudyHistoryPage,
+)
 from radvol3d.domain.enums import OrganName, StageNumber, StudyStatus
 from radvol3d.domain.exceptions import (
     DuplicateStudyError,
@@ -484,3 +490,74 @@ def test_a_completed_study_delegates_its_result_and_files_to_the_result_store(
     assert harness.service.read_lesion_mesh(CODE, 1) == b"glTF-1"
     harness.results.read_file.assert_called_once_with(CODE, ResultFile.ORGAN_MESH)
     harness.results.read_lesion_mesh.assert_called_once_with(CODE, 1)
+
+
+# --- Historial (funcionalidad 005, research.md R4) -------------------------------------
+
+
+def history_entry(status: StudyStatus, lesion_count: int, volume: float) -> StudyHistoryEntry:
+    return StudyHistoryEntry(
+        study_code=f"it_{status.value}",
+        organ=OrganName.LUNG,
+        status=status,
+        created_at=None,
+        lesion_count=lesion_count,
+        total_lesion_volume_mm3=volume,
+        national_id="12345678",
+    )
+
+
+@pytest.mark.unit
+def test_list_history_delegates_with_its_defaults(harness: Harness) -> None:
+    harness.metadata.list_history.return_value = StudyHistoryPage([], 0, 50, False)
+
+    harness.service.list_history()
+
+    harness.metadata.list_history.assert_called_once_with(50, 0, None)
+
+
+@pytest.mark.unit
+def test_list_history_passes_the_page_and_the_national_id(harness: Harness) -> None:
+    harness.metadata.list_history.return_value = StudyHistoryPage([], 100, 25, True)
+
+    page = harness.service.list_history(limit=25, offset=100, national_id="12345678")
+
+    harness.metadata.list_history.assert_called_once_with(25, 100, "12345678")
+    assert (page.offset, page.limit, page.has_more) == (100, 25, True)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "status", [StudyStatus.PENDING, StudyStatus.PROCESSING, StudyStatus.FAILED]
+)
+def test_list_history_hides_lesions_of_unfinished_studies(
+    harness: Harness, status: StudyStatus
+) -> None:
+    harness.metadata.list_history.return_value = StudyHistoryPage(
+        [history_entry(status, 3, 120.5)], 0, 50, False
+    )
+
+    [entry] = harness.service.list_history().entries
+
+    assert entry.lesion_count is None
+    assert entry.total_lesion_volume_mm3 is None
+    assert entry.national_id == "12345678"
+    assert entry.status is status
+
+
+@pytest.mark.unit
+def test_list_history_keeps_lesions_of_completed_studies(harness: Harness) -> None:
+    harness.metadata.list_history.return_value = StudyHistoryPage(
+        [
+            history_entry(StudyStatus.COMPLETED, 0, 0.0),
+            history_entry(StudyStatus.COMPLETED, 2, 42.75),
+        ],
+        0,
+        50,
+        False,
+    )
+
+    without, with_lesions = harness.service.list_history().entries
+
+    assert (without.lesion_count, without.total_lesion_volume_mm3) == (0, 0.0)
+    assert (with_lesions.lesion_count, with_lesions.total_lesion_volume_mm3) == (2, 42.75)
