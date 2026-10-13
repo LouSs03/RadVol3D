@@ -12,7 +12,7 @@ ModelNotAvailableError (FR-019). La base, en cambio, es obligatoria.
 
 import logging
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from radvol3d.domain.enums import OrganName
@@ -24,6 +24,7 @@ from radvol3d.persistence.processing_progress_store import ProcessingProgressSto
 from radvol3d.persistence.result_store import ResultStore
 from radvol3d.persistence.settings import ModelSettings, Settings
 from radvol3d.persistence.study_metadata_store import StudyMetadataStore
+from radvol3d.services.meshing.lung_air_region import LungAirRegion
 from radvol3d.services.meshing.marching_cubes_strategy import MarchingCubesStrategy
 from radvol3d.services.meshing.meshing_strategy import MeshingStrategy
 from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
@@ -51,6 +52,10 @@ class StrategyBuilders:
     reconstruction: Mapping[str, Callable[[], ReconstructionStrategy]]
     segmentation: Mapping[OrganName, Callable[[], SegmentationStrategy]]
     meshing: Callable[[], MeshingStrategy]
+    # Mallas propias de un organo; el resto usa meshing.
+    organ_meshing: Mapping[OrganName, Callable[[], MeshingStrategy]] = field(
+        default_factory=dict
+    )
 
 
 class ServiceContainer:
@@ -97,6 +102,10 @@ def default_strategy_builders(
             ),
         },
         meshing=MarchingCubesStrategy,
+        organ_meshing={
+            # El pulmon es aire: su malla sale del aire que encierra el cuerpo.
+            OrganName.LUNG: lambda: MarchingCubesStrategy(organ_region=LungAirRegion()),
+        },
     )
 
 
@@ -124,6 +133,7 @@ def build_service_container(
         segmentation_builders=builders.segmentation,
         meshing_builder=builders.meshing,
         reconstruction_key=model_settings.reconstruction_strategy,
+        organ_meshing_builders=builders.organ_meshing,
     )
     factory.preload()
 

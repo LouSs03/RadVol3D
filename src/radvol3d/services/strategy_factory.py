@@ -3,6 +3,10 @@
 Sin esto, la decision se repartiria en if dispersos por la tuberia, el servicio y
 la generacion de mallas, y cada organo nuevo obligaria a tocar los tres.
 
+Las mallas tienen un constructor comun y, opcionalmente, uno por organo
+(organ_meshing_builders): el pulmon necesita su propia region del organo
+(services/meshing/lung_air_region.py). Un organo sin constructor propio usa el comun.
+
 La fabrica recibe constructores sin argumentos, no estrategias ya hechas. Los llama
 una sola vez, en preload(), que corre al arrancar: asi cada modelo se carga una vez
 y todos los estudios comparten la misma instancia (research.md R12). Las pruebas la
@@ -50,16 +54,21 @@ class StrategyFactory:
         segmentation_builders: Mapping[OrganName, Callable[[], SegmentationStrategy]],
         meshing_builder: Callable[[], MeshingStrategy],
         reconstruction_key: str,
+        organ_meshing_builders: Mapping[OrganName, Callable[[], MeshingStrategy]] | None = None,
     ) -> None:
         self._reconstruction_builders = dict(reconstruction_builders)
         self._segmentation_builders = {
             OrganName(organ): builder for organ, builder in segmentation_builders.items()
         }
         self._meshing_builder = meshing_builder
+        self._organ_meshing_builders = {
+            OrganName(organ): builder for organ, builder in (organ_meshing_builders or {}).items()
+        }
         self._reconstruction_key = reconstruction_key
         self._reconstruction: dict[str, ReconstructionStrategy] = {}
         self._segmentation: dict[OrganName, SegmentationStrategy] = {}
         self._meshing: MeshingStrategy | None = None
+        self._organ_meshing: dict[OrganName, MeshingStrategy] = {}
 
     def preload(self) -> None:
         """Construye cada estrategia registrada, una sola vez. Nunca lanza."""
@@ -68,6 +77,8 @@ class StrategyFactory:
         for organ, builder in self._segmentation_builders.items():
             self._segmentation[organ] = self._build(f"segmentation:{organ.value}", builder)
         self._meshing = self._build("meshing", self._meshing_builder)
+        for organ, builder in self._organ_meshing_builders.items():
+            self._organ_meshing[organ] = self._build(f"meshing:{organ.value}", builder)
 
     def strategies_for(self, organ: OrganName | str) -> StrategySet:
         """Devuelve las estrategias ya construidas para el organo pedido."""
@@ -87,7 +98,12 @@ class StrategyFactory:
         segmentation = self._loaded(
             f"segmentation:{organ_name.value}", self._segmentation.get(organ_name)
         )
-        meshing = self._loaded("meshing", self._meshing)
+        if organ_name in self._organ_meshing_builders:
+            meshing = self._loaded(
+                f"meshing:{organ_name.value}", self._organ_meshing.get(organ_name)
+            )
+        else:
+            meshing = self._loaded("meshing", self._meshing)
         return StrategySet(reconstruction, segmentation, meshing)
 
     def availability(self) -> dict[str, bool]:
@@ -103,6 +119,12 @@ class StrategyFactory:
             }
         )
         status["meshing"] = self._meshing is not None
+        status.update(
+            {
+                f"meshing:{organ.value}": self._organ_meshing.get(organ) is not None
+                for organ in self._organ_meshing_builders
+            }
+        )
         return status
 
     def model_strategies(self) -> list[ReconstructionStrategy | SegmentationStrategy]:

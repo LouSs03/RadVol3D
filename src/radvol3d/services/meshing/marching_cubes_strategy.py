@@ -6,20 +6,19 @@
   descartan las lesiones con la mayoria de sus vertices fuera de la caja de la region
   del organo, en voxeles y antes de suavizar (MeshSet.discarded); el tumor es la union
   de las que quedan.
-- Organo: la superficie del volumen reconstruido. El umbral sale del propio volumen
-  por el metodo de Otsu, sin ningun numero fijado a mano. Se conserva solo la region
-  conexa mas grande, con sus huecos rellenos, para descartar islas de ruido, y se
-  extrae con un paso de 2 voxeles: basta como contexto y el archivo pesa ~7 veces
-  menos. Antes, una apertura morfologica con una esfera recorta las puntas en
-  estrella que deja reconstruir con cuatro angulos. La region es binaria y su
-  superficie directa sale escalonada, como una masa de voxeles.
+- Organo: la superficie de una region del volumen reconstruido, que elige la
+  OrganRegionStrategy recibida (organ_region.py). En el pulmon es el aire que encierra
+  el cuerpo (LungAirRegion); por omision, el tejido mas brillante
+  (LargestComponentRegion). Se extrae con un paso de 2 voxeles: basta como contexto y
+  el archivo pesa ~7 veces menos. La region es binaria y su superficie directa sale
+  escalonada, como una masa de voxeles.
 
 Las tres mallas se suavizan del mismo modo: filtro gaussiano antes de marching cubes,
 pulido laplaciano despues y, si pasan de MAX_FACES caras, decimacion cuadrica (requiere
-fast-simplification). El organo, con mas fuerza (ORGAN_SMOOTHING_SIGMA y
-ORGAN_LAPLACIAN_ITERATIONS) que tumor y lesiones. Las caras quedan orientadas hacia
-afuera. El organo se corta en 0.5; las lesiones, en el nivel que conserva su cantidad
-de voxeles (ver _smooth_mesh).
+fast-simplification). El organo, con el suavizado que trae su estrategia de region;
+tumor y lesiones, con SMOOTHING_SIGMA y LAPLACIAN_ITERATIONS. Las caras quedan
+orientadas hacia afuera. El organo se corta en 0.5; las lesiones, en el nivel que
+conserva su cantidad de voxeles (ver _smooth_mesh).
 
 La malla del organo depende de la calidad de la reconstruccion: si el volumen sale
 borroso, la superficie tambien (FR-026a). Un umbral fijo en HU queda como mejora.
@@ -36,28 +35,19 @@ from typing import Any
 import numpy as np
 import trimesh
 from scipy import ndimage
-from skimage.filters import threshold_otsu
 from skimage.measure import marching_cubes
-from skimage.morphology import ball
 
 from radvol3d import config
 from radvol3d.services.meshing.lesion_regions import split_lesion_masks
 from radvol3d.services.meshing.meshing_strategy import MeshingStrategy, MeshSet
+from radvol3d.services.meshing.organ_region import LargestComponentRegion, OrganRegionStrategy
 
 # Paso de marching cubes para cada malla, en voxeles.
 TUMOR_STEP = 1
 ORGAN_STEP = 2
 
-# Radio de la esfera de la apertura morfologica de la region del organo, en voxeles.
-# Una esfera y no la cruz por defecto de scipy: la cruz deja contornos de diamante y,
-# con las iteraciones necesarias para quitar las puntas, deja el organo al 31 %. Con
-# radio 6 (15 mm) las puntas pasan a lobulos suaves y queda el 90 % (prueba_real_001).
-ORGAN_OPENING_RADIUS = 6
-# Suavizado: desvio del filtro gaussiano (en voxeles) e iteraciones del laplaciano.
-# El organo se suaviza mas: es una malla de contexto y los lobulos que deja la
-# apertura se ven mejor redondeados. Tumor y lesiones conservan el suavizado leve.
-ORGAN_SMOOTHING_SIGMA = 2.5
-ORGAN_LAPLACIAN_ITERATIONS = 10
+# Suavizado de tumor y lesiones: desvio del filtro gaussiano (en voxeles) e iteraciones
+# del laplaciano. El del organo lo trae su estrategia de region.
 SMOOTHING_SIGMA = 1.5
 LAPLACIAN_ITERATIONS = 5
 # Por encima de MAX_FACES caras se decima hasta TARGET_FACES.
@@ -72,10 +62,20 @@ class MarchingCubesStrategy(MeshingStrategy):
     """Genera la malla del organo, la del tumor y una por lesion con marching cubes."""
 
     model_name = "marching_cubes"
-    model_version = "1.2.0"
+    model_version = "1.3.0"
 
-    def __init__(self, mm_per_voxel: float = config.MM_PER_VOXEL) -> None:
+    def __init__(
+        self,
+        mm_per_voxel: float = config.MM_PER_VOXEL,
+        organ_region: OrganRegionStrategy | None = None,
+    ) -> None:
         self._mm_per_voxel = float(mm_per_voxel)
+        self._organ_region = organ_region or LargestComponentRegion()
+
+    @property
+    def organ_region(self) -> OrganRegionStrategy:
+        """La estrategia que elige la region de la malla del organo."""
+        return self._organ_region
 
     def build_meshes(
         self, volume: Any, mask: Any, regions: Sequence[Mapping[str, Any]]
@@ -83,12 +83,12 @@ class MarchingCubesStrategy(MeshingStrategy):
         volume = np.asarray(volume, dtype=np.float32)
         tumor = np.asarray(mask) > 0
         lesion_masks = split_lesion_masks(tumor, regions)
-        organ_region = self._organ_region(volume)
+        organ_region = self._organ_region.region(volume)
         organ = self._smooth_mesh(
             organ_region,
             ORGAN_STEP,
-            sigma=ORGAN_SMOOTHING_SIGMA,
-            iterations=ORGAN_LAPLACIAN_ITERATIONS,
+            sigma=self._organ_region.smoothing_sigma,
+            iterations=self._organ_region.laplacian_iterations,
         )
         lesions = [
             self._smooth_mesh(lesion, TUMOR_STEP, keep_volume=True) for lesion in lesion_masks
@@ -136,26 +136,6 @@ class MarchingCubesStrategy(MeshingStrategy):
         low = (indices.min(axis=0) - 0.5 - center) * self._mm_per_voxel
         high = (indices.max(axis=0) + 0.5 - center) * self._mm_per_voxel
         return low, high
-
-    @staticmethod
-    def _organ_region(volume: np.ndarray) -> np.ndarray:
-        """Region del organo: Otsu, la componente conexa mas grande y sus huecos rellenos."""
-        if not np.isfinite(volume).all() or float(volume.min()) == float(volume.max()):
-            return np.zeros(volume.shape, dtype=bool)
-        foreground = volume > threshold_otsu(volume)
-        # La apertura recorta las puntas en estrella que deja reconstruir con solo
-        # cuatro angulos. Va antes de elegir la region: si al recortar se desprende un
-        # fragmento, queda como isla y se descarta. Si el organo es mas fino que la
-        # esfera y la apertura lo borra entero, se usa la region sin abrir.
-        opened = ndimage.binary_opening(foreground, structure=ball(ORGAN_OPENING_RADIUS))
-        if opened.any():
-            foreground = opened
-        labels, count = ndimage.label(foreground)
-        if count == 0:
-            return foreground
-        sizes = ndimage.sum(foreground, labels, range(1, count + 1))
-        largest = labels == int(np.argmax(sizes)) + 1
-        return ndimage.binary_fill_holes(largest)
 
     def _smooth_mesh(
         self,
