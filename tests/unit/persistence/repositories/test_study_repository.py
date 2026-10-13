@@ -9,6 +9,7 @@ from radvol3d.domain.entities import Model, Patient
 from radvol3d.domain.enums import OrganName, StudyStatus
 from radvol3d.domain.exceptions import (
     DuplicateStudyError,
+    InvalidPatientDataError,
     InvalidStudyIdError,
     PersistenceError,
     StudyNotFoundError,
@@ -403,3 +404,104 @@ def test_list_codes_by_status_rejects_an_unknown_status_before_touching_the_data
         StudyRepository(connection).list_codes_by_status("perdido")
 
     assert connection.calls == []
+
+
+# --- Historial (funcionalidad 005, research.md R2) -------------------------------------
+
+
+def history_row(**overrides) -> dict:
+    row = {
+        "study_code": "it_a",
+        "status": "completed",
+        "created_at": CREATED_AT,
+        "organ_name": "lung",
+        "national_id": "12345678",
+        "lesion_count": 2,
+        "total_volume_mm3": Decimal("42.75"),
+    }
+    row.update(overrides)
+    return row
+
+
+@pytest.mark.unit
+def test_list_history_aggregates_the_lesions_in_one_ordered_query() -> None:
+    connection = FakeConnection([[history_row()]])
+
+    StudyRepository(connection).list_history(limit=50, offset=100)
+
+    [statement] = connection.statements()
+    assert "left join lesion l on l.study_id = s.study_id" in statement
+    assert "group by" in statement
+    assert "order by s.created_at desc, s.study_id desc" in statement
+    assert "national_id = %s" not in statement
+    assert connection.calls[0][1] == (50, 100)
+
+
+@pytest.mark.unit
+def test_list_history_filters_by_national_id_as_a_parameter() -> None:
+    connection = FakeConnection([[history_row()]])
+
+    StudyRepository(connection).list_history(limit=10, offset=0, national_id="12345678")
+
+    [statement] = connection.statements()
+    assert "p.national_id = %s" in statement
+    assert "12345678" not in statement
+    assert connection.calls[0][1] == ("12345678", 10, 0)
+
+
+@pytest.mark.unit
+def test_list_history_converts_the_row_types() -> None:
+    connection = FakeConnection([[history_row(organ_name="liver")]])
+
+    [entry] = StudyRepository(connection).list_history(limit=50, offset=0)
+
+    assert entry.study_code == "it_a"
+    assert entry.organ is OrganName.LIVER
+    assert entry.status is StudyStatus.COMPLETED
+    assert entry.created_at == CREATED_AT
+    assert entry.lesion_count == 2
+    assert isinstance(entry.lesion_count, int)
+    assert entry.total_lesion_volume_mm3 == 42.75
+    assert isinstance(entry.total_lesion_volume_mm3, float)
+    assert entry.national_id == "12345678"
+
+
+@pytest.mark.unit
+def test_list_history_returns_the_counts_as_stored_for_every_status() -> None:
+    connection = FakeConnection(
+        [[history_row(status="failed", lesion_count=3, total_volume_mm3=Decimal("120.50"))]]
+    )
+
+    [entry] = StudyRepository(connection).list_history(limit=50, offset=0)
+
+    assert entry.status is StudyStatus.FAILED
+    assert (entry.lesion_count, entry.total_lesion_volume_mm3) == (3, 120.5)
+
+
+@pytest.mark.unit
+def test_list_history_does_not_read_first_or_last_name() -> None:
+    connection = FakeConnection([[history_row(national_id=None)]])
+
+    [entry] = StudyRepository(connection).list_history(limit=50, offset=0)
+
+    [statement] = connection.statements()
+    assert "first_name" not in statement
+    assert "last_name" not in statement
+    assert entry.national_id is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("national_id", ["1234567", "123456789", "1234567a"])
+def test_list_history_rejects_an_invalid_national_id_without_echoing_it(national_id: str) -> None:
+    connection = FakeConnection()
+
+    with pytest.raises(InvalidPatientDataError) as error:
+        StudyRepository(connection).list_history(limit=50, offset=0, national_id=national_id)
+
+    assert national_id not in str(error.value)
+    assert connection.calls == []
+
+
+@pytest.mark.unit
+def test_list_history_returns_an_empty_list_when_there_are_no_studies() -> None:
+    assert StudyRepository(FakeConnection([[]])).list_history(limit=50, offset=0) == []

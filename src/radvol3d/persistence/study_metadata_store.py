@@ -39,7 +39,7 @@ from typing import Any
 import numpy as np
 
 from radvol3d import config
-from radvol3d.domain.entities import PatientDetails, Projection, Study
+from radvol3d.domain.entities import PatientDetails, Projection, Study, StudyHistoryPage
 from radvol3d.domain.enums import OrganName, StudyStatus
 from radvol3d.domain.exceptions import (
     InvalidProjectionError,
@@ -240,6 +240,23 @@ class StudyMetadataStore:
         """Devuelve los estudios del mas reciente al mas antiguo, sin datos anidados."""
         with self._database.transaction() as connection:
             return StudyRepository(connection).list_recent()
+
+    def list_history(
+        self, limit: int, offset: int, national_id: str | None = None
+    ) -> StudyHistoryPage:
+        """Una pagina del historial (funcionalidad 005, research.md R3).
+
+        Pide una fila de mas: si llega, hay otra pagina despues de esta. Asi no hace
+        falta contar todos los estudios aparte.
+        """
+        with self._database.transaction() as connection:
+            entries = StudyRepository(connection).list_history(limit + 1, offset, national_id)
+        return StudyHistoryPage(
+            entries=entries[:limit],
+            offset=offset,
+            limit=limit,
+            has_more=len(entries) > limit,
+        )
 
     @staticmethod
     def _insert_study(

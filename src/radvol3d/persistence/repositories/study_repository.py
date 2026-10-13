@@ -8,11 +8,16 @@ que sale de aqui trae esas tres listas vacias.
 
 from typing import Any
 
-from radvol3d.domain.entities import Model, Study
+from radvol3d.domain.entities import Model, Study, StudyHistoryEntry
 from radvol3d.domain.enums import OrganName, StudyStatus
-from radvol3d.domain.exceptions import PersistenceError, StudyNotFoundError
+from radvol3d.domain.exceptions import (
+    InvalidPatientDataError,
+    PersistenceError,
+    StudyNotFoundError,
+)
 from radvol3d.persistence.database_errors import execute_translated
 from radvol3d.persistence.repositories.organ_repository import parse_organ_name
+from radvol3d.persistence.repositories.patient_repository import NATIONAL_ID_PATTERN
 from radvol3d.persistence.repositories.row_mapping import model_from_row, patient_from_row
 from radvol3d.persistence.storage_layout import validate_study_code
 
@@ -26,6 +31,25 @@ _SELECT_STUDY = """
     join organ o on o.organ_id = s.organ_id
     join patient p on p.patient_id = s.patient_id
     left join model m on m.model_id = s.model_id
+"""
+
+# El historial (funcionalidad 005, research.md R2): cada estudio con su organo, el DNI
+# de su paciente y el conteo y la suma de volumen de sus lesiones, en una sola consulta.
+# No lee nombre ni apellido. El filtro por DNI se inserta en {where}.
+_SELECT_HISTORY = """
+    select s.study_code, s.status, s.created_at,
+           o.name as organ_name,
+           p.national_id,
+           count(l.lesion_id) as lesion_count,
+           coalesce(sum(l.volume_mm3), 0) as total_volume_mm3
+    from study s
+    join organ o on o.organ_id = s.organ_id
+    join patient p on p.patient_id = s.patient_id
+    left join lesion l on l.study_id = s.study_id
+    {where}
+    group by s.study_id, o.name, p.national_id
+    order by s.created_at desc, s.study_id desc
+    limit %s offset %s
 """
 
 
@@ -79,6 +103,26 @@ class StudyRepository:
             self._connection, _SELECT_STUDY + " order by s.created_at desc, s.study_id desc"
         ).fetchall()
         return [self._to_entity(row) for row in rows]
+
+    def list_history(
+        self, limit: int, offset: int, national_id: str | None = None
+    ) -> list[StudyHistoryEntry]:
+        """Un tramo del historial, del mas reciente al mas antiguo.
+
+        Con national_id, solo los estudios del paciente con ese DNI. Los conteos de
+        lesiones salen tal como estan en la base, para cualquier estado: decidir que
+        se muestra le toca al servicio. El DNI se revalida antes de tocar la base y
+        nunca aparece en el mensaje de error.
+        """
+        if national_id is None:
+            sql, params = _SELECT_HISTORY.format(where=""), (limit, offset)
+        else:
+            if NATIONAL_ID_PATTERN.fullmatch(national_id) is None:
+                raise InvalidPatientDataError("El DNI debe tener exactamente ocho digitos.")
+            sql = _SELECT_HISTORY.format(where="where p.national_id = %s")
+            params = (national_id, limit, offset)
+        rows = execute_translated(self._connection, sql, params).fetchall()
+        return [self._to_history_entry(row) for row in rows]
 
     def list_codes_by_status(self, status: StudyStatus | str) -> list[str]:
         """Codigos de los estudios en ese estado, del mas antiguo al mas reciente."""
@@ -192,6 +236,18 @@ class StudyRepository:
             raise PersistenceError(
                 "El estado del estudio debe ser pending, processing, completed o failed."
             ) from None
+
+    @staticmethod
+    def _to_history_entry(row: Any) -> StudyHistoryEntry:
+        return StudyHistoryEntry(
+            study_code=row["study_code"],
+            organ=OrganName(row["organ_name"]),
+            status=StudyStatus(row["status"]),
+            created_at=row["created_at"],
+            lesion_count=int(row["lesion_count"]),
+            total_lesion_volume_mm3=float(row["total_volume_mm3"]),
+            national_id=row["national_id"],
+        )
 
     @staticmethod
     def _to_entity(row: Any) -> Study:
