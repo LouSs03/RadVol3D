@@ -77,15 +77,15 @@ los esquemas de la API. Las tres historias la usan.
 
 **⚠️ CRITICAL**: ninguna historia empieza hasta terminar esta fase
 
-- [ ] T003 [P] Agregar a `tests/unit/domain/test_entities.py` las pruebas de `StudyHistoryEntry` y `StudyHistoryPage`:
+- [X] T003 [P] Agregar a `tests/unit/domain/test_entities.py` las pruebas de `StudyHistoryEntry` y `StudyHistoryPage`:
   - `repr(StudyHistoryEntry(..., national_id="12345678"))` no contiene `"12345678"`, como `test_patient_representation_hides_personal_data`;
   - las dos son `frozen` (asignar un campo lanza `FrozenInstanceError`);
   - `StudyHistoryPage` guarda `entries`, `offset`, `limit` y `has_more`.
-- [ ] T004 Agregar `StudyHistoryEntry` y `StudyHistoryPage` (`@dataclass(frozen=True)`) en `src/radvol3d/domain/entities.py`, según [data-model.md §2](data-model.md):
+- [X] T004 Agregar `StudyHistoryEntry` y `StudyHistoryPage` (`@dataclass(frozen=True)`) en `src/radvol3d/domain/entities.py`, según [data-model.md §2](data-model.md):
   - `StudyHistoryEntry` tiene `study_code: str`, `organ: OrganName`, `status: StudyStatus`, `created_at: datetime | None`, `lesion_count: int | None`, `total_lesion_volume_mm3: float | None` y `national_id: str | None = field(default=None, repr=False)`;
   - `StudyHistoryPage` tiene `entries: list[StudyHistoryEntry]`, `offset: int`, `limit: int` y `has_more: bool`;
   - los docstrings van en español.
-- [ ] T005 [P] Agregar a `tests/unit/persistence/repositories/test_study_repository.py` las pruebas de `StudyRepository.list_history`, con un ayudante `history_row(**overrides)` que tiene `study_code`, `status`, `created_at`, `organ_name`, `national_id`, `lesion_count` y `total_volume_mm3` (`Decimal`):
+- [X] T005 [P] Agregar a `tests/unit/persistence/repositories/test_study_repository.py` las pruebas de `StudyRepository.list_history`, con un ayudante `history_row(**overrides)` que tiene `study_code`, `status`, `created_at`, `organ_name`, `national_id`, `lesion_count` y `total_volume_mm3` (`Decimal`):
   - **Sin DNI**:
     - la sentencia contiene `left join lesion`, `group by` y `order by s.created_at desc, s.study_id desc`;
     - los parámetros son `(limit, offset)`.
@@ -100,7 +100,7 @@ los esquemas de la API. Las tres historias la usan.
   - **Sin nombre ni apellido**: la sentencia no menciona `first_name` ni `last_name`.
   - **DNI inválido** (`"1234567"`, `"123456789"`, `"1234567a"`): lanza `InvalidPatientDataError`, el texto del error no contiene el valor y `connection.calls == []`.
   - **Sin filas**: devuelve `[]`.
-- [ ] T006 Implementar `StudyRepository.list_history(limit: int, offset: int, national_id: str | None = None) -> list[StudyHistoryEntry]` en `src/radvol3d/persistence/repositories/study_repository.py` (research.md R2):
+- [X] T006 Implementar `StudyRepository.list_history(limit: int, offset: int, national_id: str | None = None) -> list[StudyHistoryEntry]` en `src/radvol3d/persistence/repositories/study_repository.py` (research.md R2):
   - **Consulta**: una sola.
     - Selecciona `s.study_code, s.status, s.created_at, o.name as organ_name, p.national_id`, `count(l.lesion_id) as lesion_count` y `coalesce(sum(l.volume_mm3), 0) as total_volume_mm3`.
     - Une `from study s join organ o on o.organ_id = s.organ_id join patient p on p.patient_id = s.patient_id left join lesion l on l.study_id = s.study_id`.
@@ -108,24 +108,24 @@ los esquemas de la API. Las tres historias la usan.
     - Termina con `group by s.study_id, o.name, p.national_id order by s.created_at desc, s.study_id desc limit %s offset %s`.
   - **Validación**: revalida el DNI con `NATIONAL_ID_PATTERN.fullmatch`, importado de `patient_repository.py`, y si no cumple lanza `InvalidPatientDataError("El DNI debe tener exactamente ocho digitos.")` antes de tocar la base.
   - **Ejecución**: usa `execute_translated`.
-- [ ] T007 [P] Agregar a `tests/unit/persistence/test_study_metadata_store.py` las pruebas de `StudyMetadataStore.list_history`, con el doble `world` de `test_list_studies_returns_the_studies_without_nested_data` y una regla para `"left join lesion"`:
+- [X] T007 [P] Agregar a `tests/unit/persistence/test_study_metadata_store.py` las pruebas de `StudyMetadataStore.list_history`, con el doble `world` de `test_list_studies_returns_the_studies_without_nested_data` y una regla para `"left join lesion"`:
   - pide `limit + 1` filas (el parámetro de `limit` en la sentencia es `limit + 1`);
   - con `limit + 1` filas devuelve `has_more=True` y solo `limit` entradas;
   - con `limit` filas o menos devuelve `has_more=False`;
   - `offset` y `limit` vuelven tal como se pidieron;
   - el `national_id` llega al repositorio.
-- [ ] T008 Implementar `StudyMetadataStore.list_history(limit: int, offset: int, national_id: str | None = None) -> StudyHistoryPage` en `src/radvol3d/persistence/study_metadata_store.py`, que abre `self._database.transaction()`, llama a `StudyRepository(connection).list_history(limit + 1, offset, national_id)` y arma la página (research.md R3). `list_studies` y `list_recent` no se tocan.
-- [ ] T009 [P] Agregar a `tests/unit/services/test_study_service.py` las pruebas de `StudyService.list_history`, con `Harness`:
+- [X] T008 Implementar `StudyMetadataStore.list_history(limit: int, offset: int, national_id: str | None = None) -> StudyHistoryPage` en `src/radvol3d/persistence/study_metadata_store.py`, que abre `self._database.transaction()`, llama a `StudyRepository(connection).list_history(limit + 1, offset, national_id)` y arma la página (research.md R3). `list_studies` y `list_recent` no se tocan.
+- [X] T009 [P] Agregar a `tests/unit/services/test_study_service.py` las pruebas de `StudyService.list_history`, con `Harness`:
   - delega en `harness.metadata.list_history` con `(limit, offset, national_id)`;
   - los valores por defecto son `limit=50`, `offset=0` y `national_id=None`;
   - pone `lesion_count=None` y `total_lesion_volume_mm3=None` en las entradas `pending`, `processing` y `failed`, incluso si el almacén trajo `3` y `120.5`;
   - conserva `0` y `0.0` en un `completed` sin lesiones;
   - conserva los valores de un `completed` con lesiones;
   - conserva `national_id`, `offset`, `limit` y `has_more`.
-- [ ] T010 Implementar `StudyService.list_history(limit: int = 50, offset: int = 0, national_id: str | None = None) -> StudyHistoryPage` en `src/radvol3d/services/study_service.py` (research.md R4):
+- [X] T010 Implementar `StudyService.list_history(limit: int = 50, offset: int = 0, national_id: str | None = None) -> StudyHistoryPage` en `src/radvol3d/services/study_service.py` (research.md R4):
   - aplica `dataclasses.replace(entry, lesion_count=None, total_lesion_volume_mm3=None)` a cada entrada cuyo `status is not StudyStatus.COMPLETED`;
   - no tiene condicionales por órgano.
-- [ ] T011 [P] Crear `tests/unit/api/test_history_schema.py`:
+- [X] T011 [P] Crear `tests/unit/api/test_history_schema.py`:
   - **`StudySearchRequest` válida**:
     - acepta `"12345678"`;
     - quita los espacios de `"  12345678 "`;
@@ -134,7 +134,7 @@ los esquemas de la API. Las tres historias la usan.
     - `"1234567"`, `"123456789"`, `"1234567a"`, `""` y la ausencia del campo lanzan `ValidationError`, y `str(error)` no contiene el valor enviado;
     - `limit=0`, `limit=101` y `offset=-1` lanzan `ValidationError`.
   - **Respuesta sin datos personales**: `StudyHistoryItem.model_fields` no tiene `first_name`, `last_name` ni `patient_code`.
-- [ ] T012 Crear `src/radvol3d/api/schemas/history_schema.py` ([data-model.md §5](data-model.md)):
+- [X] T012 Crear `src/radvol3d/api/schemas/history_schema.py` ([data-model.md §5](data-model.md)):
   - **`StudyHistoryItem`**: `study_code: str`, `organ: OrganName`, `status: StudyStatus`, `created_at: datetime | None`, `lesion_count: int | None`, `total_lesion_volume_mm3: float | None` y `national_id: str | None`, cada uno con `Field(description=...)` en español.
   - **`StudyHistoryResponse`**: `items: list[StudyHistoryItem]`, `offset: int`, `limit: int` y `has_more: bool`.
   - **`StudySearchRequest`**:
