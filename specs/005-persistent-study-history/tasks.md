@@ -283,7 +283,7 @@ acceso de uvicorn no tiene el DNI (quickstart.md §3, pasos 5 y 6).
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T026 [P] [US3] Agregar a `tests/unit/api/test_history_router.py` las pruebas de `POST /studies/search`:
+- [X] T026 [P] [US3] Agregar a `tests/unit/api/test_history_router.py` las pruebas de `POST /studies/search`:
   - **Búsqueda válida**:
     - `{"national_id": "12345678"}` responde 200 y llama a `service.list_history.assert_called_once_with(limit=50, offset=0, national_id="12345678")`;
     - `" 12345678 "` llega limpio;
@@ -294,7 +294,7 @@ acceso de uvicorn no tiene el DNI (quickstart.md §3, pasos 5 y 6).
     - `limit=0`, `limit=101` y `offset=-1` responden 422.
   - **DNI en la respuesta**: en `GET /studies`, un item con `national_id="12345678"` sale tal cual y uno sin DNI sale `null`.
   - **Registros** (FR-012): con `caplog.at_level("DEBUG")`, durante un `POST /studies/search` con un DNI válido y otro inválido, `"12345678"` no aparece en `caplog.text`.
-- [ ] T027 [P] [US3] Agregar a `tests/unit/web/test_history_view.js` las pruebas del DNI:
+- [X] T027 [P] [US3] Agregar a `tests/unit/web/test_history_view.js` las pruebas del DNI:
   - **`national_id_text`**:
     - `national_id_text({national_id: "12345678"})` da `"12345678"`;
     - `{national_id: null}` da `"sin DNI"`.
@@ -305,15 +305,15 @@ acceso de uvicorn no tiene el DNI (quickstart.md §3, pasos 5 y 6).
 
 ### Implementation for User Story 3
 
-- [ ] T028 [US3] Agregar a `src/radvol3d/api/routers/history_router.py` la ruta `POST "/search"`:
+- [X] T028 [US3] Agregar a `src/radvol3d/api/routers/history_router.py` la ruta `POST "/search"`:
   - recibe `request: StudySearchRequest`, responde `response_model=StudyHistoryResponse` con 200 y llama a `service.list_history(limit=request.limit, offset=request.offset, national_id=request.national_id)`;
   - no registra nada propio;
   - su docstring explica por qué el DNI va en el cuerpo y no en la URL.
-- [ ] T029 [US3] Agregar a `src/radvol3d/static/js/history_view.js` lo siguiente:
+- [X] T029 [US3] Agregar a `src/radvol3d/static/js/history_view.js` lo siguiente:
   - `national_id_text(entry)` devuelve `entry.national_id` o `"sin DNI"`;
   - `clean_national_id(value)` devuelve `String(value ?? "").replace(/[^0-9]/g, "").slice(0, 8)`;
   - `is_valid_national_id(value)` devuelve `/^[0-9]{8}$/.test(value)`.
-- [ ] T030 [US3] En `src/radvol3d/static/index.html`, la columna y el filtro por DNI:
+- [X] T030 [US3] En `src/radvol3d/static/index.html`, la columna y el filtro por DNI:
   - **Columna**: agregar "DNI" en `.hhead` y `.hrow`, con `national_id_text(entry)` en `class="mono"` y pasado por `escape_html`. Ajustar `grid-template-columns`.
   - **Filtro**: un formulario `#h-filter` sobre la tabla, con:
     - un campo `#h-dni` (`inputmode="numeric"`, `maxlength="8"`, `autocomplete="off"`, `placeholder="DNI (8 dígitos)"`) que aplica `clean_national_id` al escribir, como `#f-patient-dni`;
@@ -325,7 +325,7 @@ acceso de uvicorn no tiene el DNI (quickstart.md §3, pasos 5 y 6).
   - **Sin resultados**: con el filtro activo y ningún resultado, muestra "No hay estudios para ese DNI".
   - **Limpiar**: borra el campo, pone `history_state.national_id = null` y llama a `load_history(true)`.
   - **Privacidad** (FR-012): el DNI nunca se escribe en `location.hash`, `history.replaceState`, `localStorage`, `sessionStorage` ni `console`.
-- [ ] T031 [US3] Agregar a `tests/integration/persistence/test_study_history_integration.py` la prueba del DNI:
+- [X] T031 [US3] Agregar a `tests/integration/persistence/test_study_history_integration.py` la prueba del DNI:
   - **DNIs de prueba**: generar dos DNI de 8 dígitos al azar que no existan en `patient` (comprobarlo con una consulta).
   - **Preparación**:
     - crear dos estudios con `PatientDetails(first_name="Prueba", last_name="Historial", national_id=dni_x)` y uno con `dni_y`, con `create_study`;

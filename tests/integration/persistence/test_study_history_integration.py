@@ -6,11 +6,12 @@ propios codigos (prefijo de la sesion) y, al filtrar, DNI generados al azar. Se 
 no existe .env.test.
 """
 
+import random
 from collections.abc import Callable, Iterable
 
 import pytest
 
-from radvol3d.domain.entities import Lesion, StudyHistoryEntry
+from radvol3d.domain.entities import Lesion, PatientDetails, StudyHistoryEntry
 from radvol3d.domain.enums import OrganName, StudyStatus
 from radvol3d.persistence.connection import Database
 from radvol3d.persistence.object_storage import ObjectStorage
@@ -88,3 +89,50 @@ def test_history_sums_the_volume_of_every_lesion(
     assert entries[with_lesions].total_lesion_volume_mm3 == 42.75
     assert entries[without_lesions].lesion_count == 0
     assert entries[without_lesions].total_lesion_volume_mm3 == 0.0
+
+
+def unused_national_id(database: Database, taken: set[str]) -> str:
+    """Un DNI de ocho digitos al azar que ningun paciente de la base tiene."""
+    while True:
+        candidate = f"{random.randrange(10**8):08d}"
+        if candidate in taken:
+            continue
+        with database.transaction() as connection:
+            row = connection.execute(
+                "select 1 from patient where national_id = %s", (candidate,)
+            ).fetchone()
+        if row is None:
+            taken.add(candidate)
+            return candidate
+
+
+def test_history_filters_by_national_id(
+    metadata: StudyMetadataStore,
+    database: Database,
+    make_study_code: Callable[[], str],
+    created_patient_codes: list[str],
+) -> None:
+    taken: set[str] = set()
+    dni_x, dni_y, dni_none = (unused_national_id(database, taken) for _ in range(3))
+    first_x, other_y, second_x, anonymous = (make_study_code() for _ in range(4))
+    for code, national_id in ((first_x, dni_x), (other_y, dni_y), (second_x, dni_x)):
+        study = metadata.create_study(
+            code,
+            OrganName.LUNG,
+            PatientDetails(first_name="Prueba", last_name="Historial", national_id=national_id),
+        )
+        created_patient_codes.append(study.patient.patient_code)
+    metadata.create_study(anonymous, OrganName.LUNG)
+
+    page = metadata.list_history(50, 0, dni_x)
+
+    assert [entry.study_code for entry in page.entries] == [second_x, first_x]
+    assert all(entry.national_id == dni_x for entry in page.entries)
+    assert page.has_more is False
+
+    [entry] = own_entries(metadata, [anonymous])
+    assert entry.national_id is None
+
+    empty = metadata.list_history(50, 0, dni_none)
+    assert empty.entries == []
+    assert empty.has_more is False
