@@ -189,3 +189,72 @@ def test_model_strategies_leaves_out_the_ones_that_did_not_load() -> None:
     factory.preload()
 
     assert [s.model_name for s in factory.model_strategies()] == ["fake_reconstruction"]
+
+
+# ---------------------------------------------------------------------------
+# Mallas propias de un organo (services/meshing/lung_air_region.py)
+# ---------------------------------------------------------------------------
+
+
+class LungMeshingStrategy(FakeMeshingStrategy):
+    """Otra estrategia de mallas, para distinguirla de la comun."""
+
+
+def factory_with_lung_meshing(lung_builder) -> StrategyFactory:
+    return StrategyFactory(
+        reconstruction_builders={"en1": FakeReconstructionStrategy},
+        segmentation_builders={OrganName.LUNG: FakeSegmentationStrategy},
+        meshing_builder=FakeMeshingStrategy,
+        reconstruction_key="en1",
+        organ_meshing_builders={OrganName.LUNG: lung_builder},
+    )
+
+
+@pytest.mark.unit
+def test_an_organ_with_its_own_meshing_gets_it_and_it_is_built_once() -> None:
+    builder = CountingBuilder(LungMeshingStrategy)
+    factory = factory_with_lung_meshing(builder)
+    factory.preload()
+
+    first = factory.strategies_for(OrganName.LUNG)
+    second = factory.strategies_for("lung")
+
+    assert isinstance(first.meshing, LungMeshingStrategy)
+    assert first.meshing is second.meshing
+    assert builder.calls == 1
+
+
+@pytest.mark.unit
+def test_an_organ_without_its_own_meshing_gets_the_common_one(factory: StrategyFactory) -> None:
+    factory.preload()
+
+    meshing = factory.strategies_for(OrganName.LUNG).meshing
+
+    assert type(meshing) is FakeMeshingStrategy
+
+
+@pytest.mark.unit
+def test_availability_reports_the_meshing_of_each_organ() -> None:
+    factory = factory_with_lung_meshing(LungMeshingStrategy)
+    factory.preload()
+
+    assert factory.availability() == {
+        "reconstruction:en1": True,
+        "segmentation:lung": True,
+        "meshing": True,
+        "meshing:lung": True,
+    }
+
+
+@pytest.mark.unit
+def test_an_organ_meshing_that_fails_leaves_only_that_organ_unavailable(caplog) -> None:
+    factory = factory_with_lung_meshing(failing_builder(ImportError("sin skimage")))
+
+    with caplog.at_level("WARNING"):
+        factory.preload()  # no lanza
+
+    assert factory.availability()["meshing:lung"] is False
+    assert factory.availability()["meshing"] is True
+    with pytest.raises(ModelNotAvailableError) as caught:
+        factory.strategies_for(OrganName.LUNG)
+    assert str(caught.value) == "El modelo meshing:lung no está disponible en este servidor."

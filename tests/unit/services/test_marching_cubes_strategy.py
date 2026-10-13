@@ -13,6 +13,7 @@ import trimesh
 from radvol3d import config
 from radvol3d.services.meshing.marching_cubes_strategy import MarchingCubesStrategy
 from radvol3d.services.meshing.meshing_strategy import MeshSet
+from radvol3d.services.meshing.organ_region import LargestComponentRegion, OrganRegionStrategy
 from radvol3d.services.segmentation.lung_region_summary import summarize_regions
 
 N = 64
@@ -140,7 +141,7 @@ def test_the_organ_mesh_is_coarser_than_the_tumor_mesh(strategy: MarchingCubesSt
 @pytest.mark.unit
 def test_marching_cubes_has_a_name_but_no_model_row(strategy: MarchingCubesStrategy) -> None:
     assert strategy.model_name == "marching_cubes"
-    assert strategy.model_version == "1.2.0"
+    assert strategy.model_version == "1.3.0"
 
 
 # --- Una malla por lesion (funcionalidad 004, research.md R9) ---
@@ -388,14 +389,17 @@ def test_a_thin_sheet_lesion_keeps_most_of_its_volume(strategy: MarchingCubesStr
     assert lesion.volume > 0.7 * mask.sum() * MM**3
 
 
+class SmoothedRegion(LargestComponentRegion):
+    """La region por omision con otro suavizado de su superficie."""
+
+    def __init__(self, sigma: float) -> None:
+        self.smoothing_sigma = sigma
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize("sigma", [1.5, 2.5, 5.0])
-def test_the_organ_smoothing_does_not_change_which_lesions_are_discarded(
-    strategy: MarchingCubesStrategy, monkeypatch: pytest.MonkeyPatch, sigma: float
-) -> None:
-    from radvol3d.services.meshing import marching_cubes_strategy as module
-
-    monkeypatch.setattr(module, "ORGAN_SMOOTHING_SIGMA", sigma)
+def test_the_organ_smoothing_does_not_change_which_lesions_are_discarded(sigma: float) -> None:
+    strategy = MarchingCubesStrategy(organ_region=SmoothedRegion(sigma))
     volume = np.where(sphere((CENTER,) * 3, 14), 0.7, 0.05).astype(np.float32)
     # Junto al borde: dentro de la caja de la region del organo, pero fuera de la caja
     # de su malla en cuanto el suavizado la encoge (con la caja de la malla, sigma 2.5
@@ -406,3 +410,77 @@ def test_the_organ_smoothing_does_not_change_which_lesions_are_discarded(
 
     assert meshes.discarded == ()
     assert len(meshes.lesions) == 1
+
+
+# --- Region del organo inyectada (Strategy; organ_region.py) ---
+
+
+class FixedRegion(OrganRegionStrategy):
+    """Devuelve siempre la misma region y recuerda el volumen que recibio."""
+
+    smoothing_sigma = 1.0
+    laplacian_iterations = 0
+
+    def __init__(self, region: np.ndarray) -> None:
+        self._region = region
+        self.received: np.ndarray | None = None
+
+    def region(self, volume: np.ndarray) -> np.ndarray:
+        self.received = volume
+        return self._region
+
+
+@pytest.mark.unit
+def test_without_an_organ_region_the_default_is_the_largest_bright_component() -> None:
+    volume = np.where(sphere((CENTER,) * 3, 14), 0.8, 0.1).astype(np.float32)
+    mask = np.zeros((N, N, N), dtype=np.uint8)
+
+    default = MarchingCubesStrategy().build_meshes(volume, mask, [])
+    explicit = MarchingCubesStrategy(organ_region=LargestComponentRegion()).build_meshes(
+        volume, mask, []
+    )
+
+    assert default.organ == explicit.organ
+
+
+@pytest.mark.unit
+def test_the_organ_mesh_is_built_from_the_injected_region() -> None:
+    # El volumen tiene una esfera brillante en el centro, pero la region manda: la malla
+    # sale de la esfera corrida que ella devuelve.
+    volume = np.where(sphere((CENTER,) * 3, 14), 0.8, 0.1).astype(np.float32)
+    region = FixedRegion(sphere((20.0, 20.0, 20.0), 8))
+    strategy = MarchingCubesStrategy(organ_region=region)
+
+    meshes = strategy.build_meshes(volume, np.zeros((N, N, N), np.uint8), [])
+
+    assert region.received is not None and region.received.shape == volume.shape
+    low, high = reload(meshes.organ).bounds
+    assert np.allclose((low + high) / 2, [to_mm(20.0)] * 3, atol=MM)
+    assert np.allclose(high - low, 2 * 8 * MM, atol=2 * MM)
+
+
+@pytest.mark.unit
+def test_an_empty_injected_region_gives_a_valid_organ_mesh_without_geometry() -> None:
+    volume = np.where(sphere((CENTER,) * 3, 14), 0.8, 0.1).astype(np.float32)
+    strategy = MarchingCubesStrategy(organ_region=FixedRegion(np.zeros((N, N, N), bool)))
+
+    meshes = strategy.build_meshes(volume, np.zeros((N, N, N), np.uint8), [])
+
+    assert vertex_count(reload(meshes.organ)) == 0
+
+
+@pytest.mark.unit
+def test_the_organ_surface_uses_the_smoothing_of_its_region() -> None:
+    volume = np.full((N, N, N), 0.1, dtype=np.float32)
+    region = sphere((CENTER,) * 3, 20)
+    rough, smooth = FixedRegion(region), FixedRegion(region)
+    rough.smoothing_sigma, rough.laplacian_iterations = 0.5, 0
+    smooth.smoothing_sigma, smooth.laplacian_iterations = 2.5, 10
+
+    def radius_spread(organ_region: OrganRegionStrategy) -> float:
+        meshes = MarchingCubesStrategy(organ_region=organ_region).build_meshes(
+            volume, np.zeros((N, N, N), np.uint8), []
+        )
+        return float(np.linalg.norm(organ_mesh(reload(meshes.organ)).vertices, axis=1).std())
+
+    assert radius_spread(smooth) < radius_spread(rough)

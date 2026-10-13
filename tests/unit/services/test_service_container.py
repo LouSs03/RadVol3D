@@ -13,10 +13,14 @@ from radvol3d.domain.enums import OrganName
 from radvol3d.domain.exceptions import ModelNotAvailableError
 from radvol3d.persistence.object_storage import ObjectStorage
 from radvol3d.persistence.settings import ModelSettings, Settings
+from radvol3d.services.meshing.lung_air_region import LungAirRegion
+from radvol3d.services.meshing.marching_cubes_strategy import MarchingCubesStrategy
+from radvol3d.services.meshing.organ_region import LargestComponentRegion
 from radvol3d.services.service_container import (
     ServiceContainer,
     StrategyBuilders,
     build_service_container,
+    default_strategy_builders,
 )
 from radvol3d.services.study_service import StudyRequest, StudyService
 from tests.fixtures.fake_database import FakeDatabase
@@ -69,6 +73,10 @@ class CountingBuilder:
         return self.strategy_type()
 
 
+class LungMeshingStrategy(FakeMeshingStrategy):
+    """Otra estrategia de mallas, para distinguirla de la comun."""
+
+
 class World:
     def __init__(self, segmentation_error: Exception | None = None) -> None:
         self.database = OpenableDatabase()
@@ -83,7 +91,9 @@ class World:
         self.buckets.append(bucket)
         return ObjectStorage(InMemoryBucket())
 
-    def build(self, model_settings: ModelSettings | None = None) -> ServiceContainer:
+    def build(
+        self, model_settings: ModelSettings | None = None, organ_meshing=None
+    ) -> ServiceContainer:
         return build_service_container(
             SETTINGS,
             model_settings or ModelSettings(_env_file=None),
@@ -93,6 +103,7 @@ class World:
                 reconstruction={"en1": self.builders["reconstruction"]},
                 segmentation={OrganName.LUNG: self.builders["segmentation"]},
                 meshing=self.builders["meshing"],
+                organ_meshing=organ_meshing or {},
             ),
         )
 
@@ -220,3 +231,24 @@ def test_the_container_recovers_interrupted_studies_once_and_logs_only_how_many(
     assert calls == [container.study_service]
     assert "2" in caplog.text
     assert "it_colgado_a" not in caplog.text
+
+
+@pytest.mark.unit
+def test_the_meshing_of_an_organ_reaches_the_factory() -> None:
+    container = World().build(organ_meshing={OrganName.LUNG: LungMeshingStrategy})
+
+    meshing = container.factory.strategies_for(OrganName.LUNG).meshing
+
+    assert isinstance(meshing, LungMeshingStrategy)
+
+
+@pytest.mark.unit
+def test_by_default_the_lung_mesh_comes_from_the_air_inside_the_body() -> None:
+    builders = default_strategy_builders(None, ModelSettings(_env_file=None))
+
+    lung = builders.organ_meshing[OrganName.LUNG]()
+    common = builders.meshing()
+
+    assert isinstance(lung, MarchingCubesStrategy)
+    assert isinstance(lung.organ_region, LungAirRegion)
+    assert isinstance(common.organ_region, LargestComponentRegion)
