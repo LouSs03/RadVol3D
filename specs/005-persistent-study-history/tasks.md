@@ -232,7 +232,7 @@ paso 4), y la prueba de integración de T025 pasa.
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T021 [P] [US2] Agregar a `tests/unit/web/test_history_view.js` las pruebas de volumen:
+- [X] T021 [P] [US2] Agregar a `tests/unit/web/test_history_view.js` las pruebas de volumen:
   - **`format_volume`**:
     - `format_volume(15.6)` da `"15,6 mm³"`;
     - `format_volume(999)` da `"999 mm³"`;
@@ -245,18 +245,18 @@ paso 4), y la prueba de integración de T025 pasa.
 
 ### Implementation for User Story 2
 
-- [ ] T022 [US2] Agregar a `src/radvol3d/static/js/history_view.js` lo siguiente:
+- [X] T022 [US2] Agregar a `src/radvol3d/static/js/history_view.js` lo siguiente:
   - **`format_volume(mm3)`**: se mueve tal cual desde `index.html`. Usa `const number_format = new Intl.NumberFormat("es", { maximumFractionDigits: 1 })` y devuelve `mm3 >= 1000 ? number_format.format(mm3 / 1000) + " cm³" : number_format.format(mm3) + " mm³"`.
   - **`volume_text(entry)`**:
     - si no es `completed` o el volumen es `null`, devuelve `"—"`;
     - si es `0`, devuelve `"Sin lesiones"`;
     - si no, devuelve `format_volume(entry.total_lesion_volume_mm3)`.
-- [ ] T023 [US2] En `src/radvol3d/static/index.html`:
+- [X] T023 [US2] En `src/radvol3d/static/index.html`:
   - **Visor**: borrar la `function format_volume` local e importar `format_volume` y `volume_text` desde `/static/js/history_view.js`. El visor (`#f-vol`) usa la función importada (SC-003).
   - **Historial**: agregar la columna "Volumen" en `.hhead` y en cada `.hrow`, con `volume_text(entry)`.
   - **Estilos**: ajustar `grid-template-columns` de `.hhead` y `.hrow` en el `<style>` para la columna nueva, con la regla de ancho de teléfono existente.
-- [ ] T024 [US2] Revisar que `finding_tag(entry)` de `src/radvol3d/static/index.html` siga funcionando con las entradas de la API: usa `entry.lesion_count`, que ahora es `null` fuera de `completed`. "Sin hallazgo" sale solo con `completed` y `0`.
-- [ ] T025 [US2] Agregar a `tests/integration/persistence/test_study_history_integration.py` la prueba de volumen:
+- [X] T024 [US2] Revisar que `finding_tag(entry)` de `src/radvol3d/static/index.html` siga funcionando con las entradas de la API: usa `entry.lesion_count`, que ahora es `null` fuera de `completed`. "Sin hallazgo" sale solo con `completed` y `0`.
+- [X] T025 [US2] Agregar a `tests/integration/persistence/test_study_history_integration.py` la prueba de volumen:
   - **Preparación**: dentro de `database.transaction()`:
     - registrar lesiones con `LesionRepository(connection).add_many(code, [Lesion("superior", 12.5, 0.9), Lesion("inferior", 30.25, 0.8)])`;
     - pasar el estudio a `completed` con `StudyRepository(connection).update_status(code, StudyStatus.COMPLETED)`.
