@@ -364,7 +364,7 @@
 
   /* ---------- HISTORY ---------- */
   .hrow{
-    display:grid; grid-template-columns:140px minmax(0,1fr) 110px 90px 120px 32px;
+    display:grid; grid-template-columns:140px minmax(0,1fr) 110px 70px 100px 120px 32px;
     gap:12px; padding:14px 18px; align-items:center; font-size:13px;
     border-bottom:1px solid #F1F5F9; cursor:pointer; transition:.12s; text-align:left; width:100%;
   }
@@ -372,7 +372,7 @@
   .hrow:focus-visible{outline:2px solid var(--brand); outline-offset:-2px;}
   .hrow:last-child{border-bottom:0;}
   .hhead{
-    display:grid; grid-template-columns:140px minmax(0,1fr) 110px 90px 120px 32px;
+    display:grid; grid-template-columns:140px minmax(0,1fr) 110px 70px 100px 120px 32px;
     gap:12px; padding:12px 18px; background:#F8FAFC; border-bottom:1px solid var(--line);
     font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:700;
   }
@@ -797,7 +797,7 @@
     </div>
     <div class="card" style="overflow:hidden">
       <div class="hhead">
-        <div>Fecha</div><div>Estudio · Órgano</div><div>Estado</div><div>Lesiones</div><div>Hallazgo</div><div></div>
+        <div>Fecha</div><div>Estudio · Órgano</div><div>Estado</div><div>Lesiones</div><div>Volumen</div><div>Hallazgo</div><div></div>
       </div>
       <div id="hbody"></div>
     </div>
@@ -817,7 +817,9 @@
 // nuevo. El historial sale de la API (GET /studies, funcionalidad 005): lo que muestra
 // vive solo en memoria (history_state).
 
-import { HISTORY_PAGE_SIZE, LEGACY_HISTORY_KEY, lesion_count_text } from '/static/js/history_view.js';
+import {
+  HISTORY_PAGE_SIZE, LEGACY_HISTORY_KEY, format_volume, lesion_count_text, volume_text,
+} from '/static/js/history_view.js';
 
 /* ============================================================
    0. CONFIGURACION
@@ -1857,10 +1859,6 @@ function fill_downloads(result) {
   $('#dl-volume').href = API + result.volume_url;
 }
 
-function format_volume(mm3) {
-  return mm3 >= 1000 ? number_format.format(mm3 / 1000) + ' cm³' : number_format.format(mm3) + ' mm³';
-}
-
 function render_finding() {
   const lesions = viewer.result ? viewer.result.lesions : [];
   const find = $('#find');
@@ -2117,6 +2115,7 @@ function history_row(entry) {
     '<div class="hcode"><b class="mono">' + escape_html(entry.study_code) + '</b> · ' + escape_html(ORGAN_LABELS[entry.organ] || entry.organ || '—') + '</div>' +
     '<div><span class="tag ' + tone + '">' + escape_html(label) + '</span></div>' +
     '<div class="kv" style="font-weight:700">' + escape_html(lesion_count_text(entry)) + '</div>' +
+    '<div class="kv">' + escape_html(volume_text(entry)) + '</div>' +
     '<div>' + finding_tag(entry) + '</div>' +
     '<div><button class="del" type="button" title="Eliminar estudio" aria-label="Eliminar">' + TRASH_ICON + '</button></div>' +
     '</div>';

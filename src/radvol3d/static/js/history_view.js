@@ -11,9 +11,27 @@ export const HISTORY_PAGE_SIZE = 50;
 export const LEGACY_HISTORY_KEY = "radvol3d.history.v1";
 
 const NO_VALUE = "—";
+const number_format = new Intl.NumberFormat("es", { maximumFractionDigits: 1 });
+
+// Volumen en mm3 con el formato del visor: cm3 desde 1 cm3 y mm3 por debajo. El visor y
+// el historial usan esta misma funcion para que muestren el mismo numero (SC-003 de 005).
+export function format_volume(mm3) {
+  return mm3 >= 1000 ? number_format.format(mm3 / 1000) + " cm³" : number_format.format(mm3) + " mm³";
+}
+
+function is_completed(entry) {
+  return entry.status === "completed";
+}
 
 // Numero de lesiones de una fila. Solo un estudio completed tiene resultado.
 export function lesion_count_text(entry) {
-  if (entry.status !== "completed" || typeof entry.lesion_count !== "number") return NO_VALUE;
+  if (!is_completed(entry) || typeof entry.lesion_count !== "number") return NO_VALUE;
   return String(entry.lesion_count);
+}
+
+// Volumen total de lesion de una fila: la suma de todas sus lesiones (FR-006 de 005).
+export function volume_text(entry) {
+  const volume = entry.total_lesion_volume_mm3;
+  if (!is_completed(entry) || typeof volume !== "number") return NO_VALUE;
+  return volume === 0 ? "Sin lesiones" : format_volume(volume);
 }
