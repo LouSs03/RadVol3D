@@ -364,7 +364,7 @@
 
   /* ---------- HISTORY ---------- */
   .hrow{
-    display:grid; grid-template-columns:140px minmax(0,1fr) 110px 70px 100px 120px 32px;
+    display:grid; grid-template-columns:140px minmax(0,1fr) 90px 110px 70px 100px 120px 32px;
     gap:12px; padding:14px 18px; align-items:center; font-size:13px;
     border-bottom:1px solid #F1F5F9; cursor:pointer; transition:.12s; text-align:left; width:100%;
   }
@@ -372,7 +372,7 @@
   .hrow:focus-visible{outline:2px solid var(--brand); outline-offset:-2px;}
   .hrow:last-child{border-bottom:0;}
   .hhead{
-    display:grid; grid-template-columns:140px minmax(0,1fr) 110px 70px 100px 120px 32px;
+    display:grid; grid-template-columns:140px minmax(0,1fr) 90px 110px 70px 100px 120px 32px;
     gap:12px; padding:12px 18px; background:#F8FAFC; border-bottom:1px solid var(--line);
     font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:700;
   }
@@ -383,6 +383,15 @@
   .hrow .del:hover{color:var(--tumor); background:#FFF1F2;}
   .hcode{overflow-wrap:anywhere;}
   .hmore{display:flex; justify-content:center; margin-top:14px;}
+  .hfilter{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px;}
+  .hfilter label{font-size:12.5px; font-weight:600; color:var(--ink2);}
+  .hfilter input{
+    padding:8px 12px; border:1px solid var(--line2); border-radius:9px; font-size:14px;
+    color:var(--ink); background:#fff; width:150px; max-width:100%;
+  }
+  .hfilter input:focus{outline:none; border-color:var(--brand); box-shadow:0 0 0 3px rgba(15,107,92,.15);}
+  .hfilter-msg{flex-basis:100%; font-size:12px; color:var(--tumor);}
+  .hfilter-msg:empty{display:none;}
   @media (max-width:860px){
     .hrow,.hhead{grid-template-columns:1fr 1fr; }
     .hhead{display:none;}
@@ -795,9 +804,16 @@
       </div>
       <button class="btn sm" data-go="new" type="button">Nuevo estudio</button>
     </div>
+    <form class="hfilter" id="h-filter" novalidate>
+      <label for="h-dni">Filtrar por DNI</label>
+      <input id="h-dni" class="mono" inputmode="numeric" maxlength="8" autocomplete="off" spellcheck="false" placeholder="DNI (8 dígitos)">
+      <button class="btn sm" type="submit">Buscar</button>
+      <button class="btn ghost sm" id="h-clear" type="button">Limpiar</button>
+      <small class="hfilter-msg" id="h-filter-msg" role="alert"></small>
+    </form>
     <div class="card" style="overflow:hidden">
       <div class="hhead">
-        <div>Fecha</div><div>Estudio · Órgano</div><div>Estado</div><div>Lesiones</div><div>Volumen</div><div>Hallazgo</div><div></div>
+        <div>Fecha</div><div>Estudio · Órgano</div><div>DNI</div><div>Estado</div><div>Lesiones</div><div>Volumen</div><div>Hallazgo</div><div></div>
       </div>
       <div id="hbody"></div>
     </div>
@@ -818,7 +834,8 @@
 // vive solo en memoria (history_state).
 
 import {
-  HISTORY_PAGE_SIZE, LEGACY_HISTORY_KEY, format_volume, lesion_count_text, volume_text,
+  HISTORY_PAGE_SIZE, LEGACY_HISTORY_KEY, clean_national_id, format_volume, is_valid_national_id,
+  lesion_count_text, national_id_text, volume_text,
 } from '/static/js/history_view.js';
 
 /* ============================================================
@@ -2080,7 +2097,8 @@ function finding_tag(entry) {
 }
 
 // Lo que muestra el historial: la ultima respuesta de la API, solo en memoria.
-const history_state = { entries: [], has_more: false, loading: false, error: null };
+// national_id es el DNI del filtro: nunca va a la URL, al almacenamiento ni a la consola (FR-012).
+const history_state = { entries: [], has_more: false, loading: false, error: null, national_id: null };
 let history_token = 0;
 
 // Pide una pagina. Con reset empieza de cero; si no, agrega la siguiente ("Ver más").
@@ -2090,7 +2108,7 @@ async function load_history(reset) {
   history_state.loading = true;
   if (reset) history_state.error = null;
   render_history();
-  const { ok, body, error } = await api('/studies?offset=' + offset + '&limit=' + HISTORY_PAGE_SIZE);
+  const { ok, body, error } = await fetch_history_page(offset);
   if (token !== history_token) return;
   history_state.loading = false;
   if (!ok || !body || !Array.isArray(body.items)) {
@@ -2104,6 +2122,18 @@ async function load_history(reset) {
   if (current_view === 'history') render_history();
 }
 
+// Sin filtro, GET /studies. Con filtro, POST /studies/search con el DNI en el cuerpo: asi
+// no queda en la URL ni en el registro de acceso del servidor (research.md R1 de 005).
+function fetch_history_page(offset) {
+  const national_id = history_state.national_id;
+  if (national_id === null) return api('/studies?offset=' + offset + '&limit=' + HISTORY_PAGE_SIZE);
+  return api('/studies/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ national_id, offset, limit: HISTORY_PAGE_SIZE }),
+  });
+}
+
 function drop_history_entry(code) {
   history_state.entries = history_state.entries.filter((item) => item.study_code !== code);
 }
@@ -2113,6 +2143,7 @@ function history_row(entry) {
   return '<div class="hrow" role="button" tabindex="0" data-code="' + escape_html(entry.study_code) + '">' +
     '<div style="color:var(--ink2)">' + format_date(entry.created_at) + '</div>' +
     '<div class="hcode"><b class="mono">' + escape_html(entry.study_code) + '</b> · ' + escape_html(ORGAN_LABELS[entry.organ] || entry.organ || '—') + '</div>' +
+    '<div class="mono">' + escape_html(national_id_text(entry)) + '</div>' +
     '<div><span class="tag ' + tone + '">' + escape_html(label) + '</span></div>' +
     '<div class="kv" style="font-weight:700">' + escape_html(lesion_count_text(entry)) + '</div>' +
     '<div class="kv">' + escape_html(volume_text(entry)) + '</div>' +
@@ -2129,6 +2160,10 @@ function render_history() {
   if (error) {
     body.innerHTML = '<div class="empty"><h3>No se pudo cargar el historial.</h3><p>' + escape_html(error) + '</p>' +
       '<button class="btn" id="h-retry" type="button">Reintentar</button></div>';
+    return;
+  }
+  if (!entries.length && !loading && history_state.national_id !== null) {
+    body.innerHTML = '<div class="empty"><h3>No hay estudios para ese DNI</h3><p>Revisa el número o limpia el filtro para ver todos los estudios.</p></div>';
     return;
   }
   if (!entries.length) {
@@ -2157,6 +2192,32 @@ async function open_history_entry(code) {
 }
 
 $('#h-more').addEventListener('click', () => load_history(false));
+
+// El campo del filtro solo admite digitos, como el DNI del formulario de nuevo estudio.
+$('#h-dni').addEventListener('input', (event) => {
+  const digits = clean_national_id(event.target.value);
+  if (digits !== event.target.value) event.target.value = digits;
+});
+
+$('#h-filter').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const value = clean_national_id($('#h-dni').value);
+  if (!is_valid_national_id(value)) {
+    $('#h-filter-msg').textContent = 'El DNI debe tener exactamente 8 dígitos.';
+    return;
+  }
+  $('#h-filter-msg').textContent = '';
+  history_state.national_id = value;
+  load_history(true);
+});
+
+$('#h-clear').addEventListener('click', () => {
+  $('#h-dni').value = '';
+  $('#h-filter-msg').textContent = '';
+  if (history_state.national_id === null) return;
+  history_state.national_id = null;
+  load_history(true);
+});
 
 $('#hbody').addEventListener('click', async (event) => {
   if (event.target.closest('#h-retry')) { load_history(true); return; }

@@ -8,8 +8,11 @@ import assert from "node:assert/strict";
 import {
   HISTORY_PAGE_SIZE,
   LEGACY_HISTORY_KEY,
+  clean_national_id,
   format_volume,
+  is_valid_national_id,
   lesion_count_text,
+  national_id_text,
   volume_text,
 } from "../../../src/radvol3d/static/js/history_view.js";
 
@@ -53,5 +56,23 @@ test("un estudio completed con lesiones muestra su volumen total", () => {
 test("un estudio sin terminar no muestra volumen", () => {
   for (const status of ["pending", "processing", "failed"]) {
     assert.equal(volume_text({ status, lesion_count: null, total_lesion_volume_mm3: null }), "—");
+  }
+});
+
+test("el DNI se muestra completo, o sin DNI si no lo tiene", () => {
+  assert.equal(national_id_text({ national_id: "12345678" }), "12345678");
+  assert.equal(national_id_text({ national_id: null }), "sin DNI");
+});
+
+test("clean_national_id deja solo digitos, como maximo ocho", () => {
+  assert.equal(clean_national_id(" 12a34-5678 "), "12345678");
+  assert.equal(clean_national_id("1234567890"), "12345678");
+  assert.equal(clean_national_id(null), "");
+});
+
+test("is_valid_national_id exige exactamente ocho digitos", () => {
+  assert.equal(is_valid_national_id("12345678"), true);
+  for (const value of ["1234567", "", "1234567a", "123456789"]) {
+    assert.equal(is_valid_national_id(value), false);
   }
 });

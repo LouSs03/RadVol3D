@@ -35,3 +35,17 @@ export function volume_text(entry) {
   if (!is_completed(entry) || typeof volume !== "number") return NO_VALUE;
   return volume === 0 ? "Sin lesiones" : format_volume(volume);
 }
+
+// DNI de una fila: completo, o "sin DNI" si el paciente no lo registro (FR-010 de 005).
+export function national_id_text(entry) {
+  return entry.national_id || "sin DNI";
+}
+
+// Lo que se escribe en el filtro: solo digitos, como maximo ocho.
+export function clean_national_id(value) {
+  return String(value ?? "").replace(/[^0-9]/g, "").slice(0, 8);
+}
+
+export function is_valid_national_id(value) {
+  return /^[0-9]{8}$/.test(value);
+}
