@@ -161,7 +161,7 @@ y la prueba de integración de T020 pasa.
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T013 [P] [US1] Crear `tests/unit/api/test_history_router.py` con las pruebas de `GET /studies`, usando las fixtures `client` y `service` (`client.app.state.services.study_service`):
+- [X] T013 [P] [US1] Crear `tests/unit/api/test_history_router.py` con las pruebas de `GET /studies`, usando las fixtures `client` y `service` (`client.app.state.services.study_service`):
   - **Respuesta básica**: responde 200 con `items`, `offset`, `limit` y `has_more`, y los `items` en el mismo orden que la página del servicio.
   - **Parámetros**:
     - sin parámetros llama a `service.list_history.assert_called_once_with(limit=50, offset=0, national_id=None)`;
@@ -170,7 +170,7 @@ y la prueba de integración de T020 pasa.
   - **Página vacía**: devuelve `items: []`.
   - **Datos personales**: ningún item tiene las claves `first_name` ni `last_name`.
   - **Base caída**: `DatabaseUnavailableError` responde 503.
-- [ ] T014 [P] [US1] Crear `tests/unit/web/test_history_view.js`, con `node:test` y `node:assert/strict` como `test_viewer_state.js`, para lo de US1:
+- [X] T014 [P] [US1] Crear `tests/unit/web/test_history_view.js`, con `node:test` y `node:assert/strict` como `test_viewer_state.js`, para lo de US1:
   - `lesion_count_text({status: "completed", lesion_count: 2})` devuelve `"2"`;
   - `{status: "completed", lesion_count: 0}` da `"0"`;
   - `pending`, `processing` y `failed`, con `lesion_count: null`, dan `"—"`;
@@ -178,17 +178,17 @@ y la prueba de integración de T020 pasa.
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Crear `src/radvol3d/api/routers/history_router.py`:
+- [X] T015 [US1] Crear `src/radvol3d/api/routers/history_router.py`:
   - `router = APIRouter(prefix="/studies", tags=["historial"])`;
   - `GET ""` con `offset: int = Query(0, ge=0)` y `limit: int = Query(HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT)`, que recibe `StudyService` con `Depends(get_study_service)` y devuelve `history_response(service.list_history(limit=limit, offset=offset, national_id=None))`;
   - `response_model=StudyHistoryResponse` y un `summary` en español;
   - el docstring del módulo explica por qué la URL nunca lleva DNI (research.md R1).
-- [ ] T016 [US1] Montar el router en `src/radvol3d/main.py`: importar `history_router` en el bloque de `radvol3d.api.routers` y agregar `app.include_router(history_router.router)` junto a los demás, antes de los `app.mount`.
-- [ ] T017 [US1] Crear `src/radvol3d/static/js/history_view.js`:
+- [X] T016 [US1] Montar el router en `src/radvol3d/main.py`: importar `history_router` en el bloque de `radvol3d.api.routers` y agregar `app.include_router(history_router.router)` junto a los demás, antes de los `app.mount`.
+- [X] T017 [US1] Crear `src/radvol3d/static/js/history_view.js`:
   - es un módulo ES con funciones puras, en snake_case y sin DOM ni `fetch`;
   - exporta `HISTORY_PAGE_SIZE = 50`, `LEGACY_HISTORY_KEY = "radvol3d.history.v1"` y `lesion_count_text(entry)`, que devuelve `String(entry.lesion_count)` si `entry.status === "completed"` y es un número, y `"—"` si no;
   - lleva un comentario de cabecera que remite a research.md R7.
-- [ ] T018 [US1] Reescribir la vista de historial en `src/radvol3d/static/index.html`:
+- [X] T018 [US1] Reescribir la vista de historial en `src/radvol3d/static/index.html`:
   - **Import**: `import { HISTORY_PAGE_SIZE, LEGACY_HISTORY_KEY, lesion_count_text } from '/static/js/history_view.js';` al inicio del `<script type="module">`. La ruta es absoluta para que funcione en `/static` y en `/static/`.
   - **Estado**: un objeto en memoria, `history_state = { entries: [], has_more: false, loading: false, error: null }`.
   - **Carga**: `load_history(reset)` pide `GET /studies?offset=<n>&limit=HISTORY_PAGE_SIZE` con el `api()` existente.
@@ -202,7 +202,7 @@ y la prueba de integración de T020 pasa.
     - el estado vacío dice "Todavía no hay estudios en el sistema";
     - el párrafo de cabecera dice "Todos los estudios guardados, del más reciente al más antiguo.".
   - **Navegación**: `route()` llama a `load_history(true)` al entrar en `history`.
-- [ ] T019 [US1] Quitar el historial local de `src/radvol3d/static/index.html` (research.md R6):
+- [X] T019 [US1] Quitar el historial local de `src/radvol3d/static/index.html` (research.md R6):
   - **Funciones**: borrar `HISTORY_KEY`, `read_history`, `write_history`, `remember` y `forget`, y cada llamada a ellas (hoy en `enter_new` al retomar, en la creación, en el procesamiento, en `load_study` y en el borrado). También el estado `deleted` de `STATUS_TAGS`.
   - **Clave vieja**: al arrancar, `try { localStorage.removeItem(LEGACY_HISTORY_KEY); } catch { /* sin almacenamiento */ }`.
   - **Visor**: `latest_completed_code()` pasa a ser `async`. Pide `GET /studies?limit=HISTORY_PAGE_SIZE` y devuelve el `study_code` del primer item `completed`, o `null`. `enter_viewer` hace `await` antes de decidir si muestra el estado vacío.
@@ -210,7 +210,7 @@ y la prueba de integración de T020 pasa.
     - Si la consulta posterior del estudio responde 404, muestra "Este estudio ya no existe." y llama a `load_history(true)`.
   - **Borrar una fila**: tras un `DELETE` con 204 o 404, quita la entrada de `history_state.entries` y vuelve a dibujar, sin recargar la página.
   - **Comentario de privacidad**: actualizar el de la cabecera del script. El historial viene del servidor y el formulario sigue sin guardar nada en el navegador.
-- [ ] T020 [US1] Crear `tests/integration/persistence/test_study_history_integration.py` (`@pytest.mark.integration`, fixtures `database`, `object_storage`, `make_study_code` y `created_patient_codes` de `tests/integration/conftest.py`). Primera prueba:
+- [X] T020 [US1] Crear `tests/integration/persistence/test_study_history_integration.py` (`@pytest.mark.integration`, fixtures `database`, `object_storage`, `make_study_code` y `created_patient_codes` de `tests/integration/conftest.py`). Primera prueba:
   - **Preparación**: crea 3 estudios con `StudyMetadataStore.create_study` y con códigos de la sesión.
   - **Orden y estado**: recorre `store.list_history(limit=100, offset=n)` hasta encontrar los 3 códigos.
     - La base de prueba es compartida: compara solo el orden relativo de los códigos propios, del más reciente al más antiguo.
