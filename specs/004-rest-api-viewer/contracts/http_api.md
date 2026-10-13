@@ -164,6 +164,15 @@ Un archivo que falta en el bucket → 404.
 
 ---
 
+## Historial (`history_router.py`, funcionalidad 005)
+
+`GET /studies` lista todos los estudios por páginas y `POST /studies/search` filtra por DNI,
+con el DNI en el cuerpo. Son las únicas rutas que devuelven un dato personal
+(`national_id`), como excepción acotada a FR-029. El contrato completo está en
+[specs/005-persistent-study-history/contracts/http_api_history.md](../../005-persistent-study-history/contracts/http_api_history.md).
+
+---
+
 ## Visor (`viewer_router.py`)
 
 ### `GET /viewer/{code}` → 200 (`text/html`)

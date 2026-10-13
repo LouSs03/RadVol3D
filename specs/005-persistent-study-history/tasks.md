@@ -344,11 +344,11 @@ acceso de uvicorn no tiene el DNI (quickstart.md §3, pasos 5 y 6).
 
 **Purpose**: documentación de la excepción a FR-029, verificación final y medición
 
-- [ ] T032 [P] Documentar la excepción a FR-029 (FR-013):
+- [X] T032 [P] Documentar la excepción a FR-029 (FR-013):
   - en `specs/004-rest-api-viewer/spec.md`, agregar a FR-029 la nota "Excepción: `GET /studies` y `POST /studies/search` devuelven `national_id` (ver specs/005-persistent-study-history, FR-009 a FR-013)";
   - en `specs/004-rest-api-viewer/contracts/http_api.md`, agregar una sección "Historial" que remite a `specs/005-persistent-study-history/contracts/http_api_history.md`.
-- [ ] T033 [P] Agregar la fila `history_router.py` | `GET /studies`, `POST /studies/search` (DNI en el cuerpo) a la tabla de routers de `docs/architecture/fastapi_structure.md`.
-- [ ] T034 Correr quickstart.md §1:
+- [X] T033 [P] Agregar la fila `history_router.py` | `GET /studies`, `POST /studies/search` (DNI en el cuerpo) a la tabla de routers de `docs/architecture/fastapi_structure.md`.
+- [X] T034 Correr quickstart.md §1:
   - `ruff check src tests`;
   - `python scripts/check_naming_convention.py`;
   - `pytest -m "unit or architecture"`;
@@ -356,9 +356,15 @@ acceso de uvicorn no tiene el DNI (quickstart.md §3, pasos 5 y 6).
   - `coverage run -m pytest -m unit && coverage report --include="src/radvol3d/api/*" --fail-under=80`.
 
   Corregir lo que falle sin tocar `tests/architecture/`.
-- [ ] T035 Correr quickstart.md §2 (`pytest -m integration -k history`) contra la base de prueba (`.env.test`).
+- [X] T035 Correr quickstart.md §2 (`pytest -m integration -k history`) contra la base de prueba (`.env.test`).
 - [ ] T036 Hacer la validación manual de quickstart.md §3 (pasos 1 a 9) y la medición de §4 (SC-002, 500 estudios), y anotar en este archivo el tiempo medido. Si no se puede medir, dejar `TODO(SC-002)` y no inventar ningún número (Principio V).
-- [ ] T037 Buscar en el repositorio los restos de esta funcionalidad:
+  - Pendiente (2026-10-12): no se corrió en la implementación, porque necesita un navegador y el servicio levantado con `.env`, que apunta a la base real.
+  - Lo que sí se verificó sin navegador:
+    - `node --check` sobre el script del módulo de `index.html`;
+    - `/static/js/history_view.js` se sirve como `text/javascript`;
+    - la consulta real responde en la base de prueba (T020, T025 y T031).
+  - TODO(SC-002): tiempo de la primera página con 500 estudios, sin medir.
+- [X] T037 Buscar en el repositorio los restos de esta funcionalidad:
   - `rg -n "read_history|remember\(|forget\(|HISTORY_KEY" src/radvol3d/static` no devuelve nada, salvo `LEGACY_HISTORY_KEY`;
   - `rg -n "console\.(log|info|debug)" src/radvol3d/static` no imprime ningún DNI.
 
