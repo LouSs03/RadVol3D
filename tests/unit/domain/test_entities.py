@@ -1,5 +1,6 @@
 """Comprueba las entidades nuevas y los campos agregados al dominio."""
 
+from dataclasses import FrozenInstanceError
 from datetime import date
 
 import pytest
@@ -12,6 +13,8 @@ from radvol3d.domain.entities import (
     SegmentationResult,
     StoredResult,
     Study,
+    StudyHistoryEntry,
+    StudyHistoryPage,
 )
 from radvol3d.domain.enums import OrganName, StageNumber, StageStatus, StudyStatus
 
@@ -161,3 +164,49 @@ def test_a_lesion_has_no_organ_until_the_persistence_fills_it() -> None:
 @pytest.mark.unit
 def test_an_empty_result_has_no_volume_path() -> None:
     assert StoredResult("it_a").volume_path is None
+
+
+def history_entry(**overrides) -> StudyHistoryEntry:
+    values = {
+        "study_code": "it_a",
+        "organ": OrganName.LUNG,
+        "status": StudyStatus.COMPLETED,
+        "created_at": None,
+        "lesion_count": 2,
+        "total_lesion_volume_mm3": 42.75,
+        "national_id": NATIONAL_ID,
+    }
+    values.update(overrides)
+    return StudyHistoryEntry(**values)
+
+
+@pytest.mark.unit
+def test_history_entry_representation_hides_the_national_id() -> None:
+    entry = history_entry()
+
+    shown = f"{entry!r} {entry!s}"
+
+    assert "it_a" in shown
+    assert NATIONAL_ID not in shown
+
+
+@pytest.mark.unit
+def test_history_entry_and_page_are_frozen() -> None:
+    entry = history_entry()
+    page = StudyHistoryPage(entries=[entry], offset=0, limit=50, has_more=False)
+
+    with pytest.raises(FrozenInstanceError):
+        entry.status = StudyStatus.FAILED  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        page.has_more = True  # type: ignore[misc]
+
+
+@pytest.mark.unit
+def test_history_page_keeps_its_entries_and_position() -> None:
+    entry = history_entry(national_id=None)
+
+    page = StudyHistoryPage(entries=[entry], offset=50, limit=25, has_more=True)
+
+    assert page.entries == [entry]
+    assert (page.offset, page.limit, page.has_more) == (50, 25, True)
+    assert entry.national_id is None

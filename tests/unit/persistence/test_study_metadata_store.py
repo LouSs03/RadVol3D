@@ -784,3 +784,70 @@ def test_a_study_in_processing_keeps_its_lesion_meshes() -> None:
         world.store.delete_study(CODE)
 
     assert f"{CODE}/meshes/lesion_001.glb" in world.bucket.files
+
+
+# --- Historial (funcionalidad 005, research.md R3) -------------------------------------
+
+
+def history_rows(count: int) -> list[dict]:
+    return [
+        {
+            "study_code": f"it_{number:03d}",
+            "status": "completed",
+            "created_at": CREATED_AT,
+            "organ_name": "lung",
+            "national_id": None,
+            "lesion_count": 0,
+            "total_volume_mm3": 0,
+        }
+        for number in range(count)
+    ]
+
+
+def history_world(count: int) -> World:
+    world = World()
+    world.connection.rules.clear()
+    world.connection.when("left join lesion", history_rows(count))
+    return world
+
+
+@pytest.mark.unit
+def test_list_history_asks_for_one_row_more_than_the_page() -> None:
+    world = history_world(0)
+
+    world.store.list_history(limit=20, offset=40)
+
+    [params] = world.connection.params_of("left join lesion")
+    assert params == (21, 40)
+
+
+@pytest.mark.unit
+def test_list_history_has_more_when_the_extra_row_arrives() -> None:
+    world = history_world(4)
+
+    page = world.store.list_history(limit=3, offset=0)
+
+    assert page.has_more is True
+    assert [entry.study_code for entry in page.entries] == ["it_000", "it_001", "it_002"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("count", [0, 2, 3])
+def test_list_history_has_no_more_without_the_extra_row(count: int) -> None:
+    world = history_world(count)
+
+    page = world.store.list_history(limit=3, offset=6)
+
+    assert page.has_more is False
+    assert len(page.entries) == count
+    assert (page.offset, page.limit) == (6, 3)
+
+
+@pytest.mark.unit
+def test_list_history_passes_the_national_id_to_the_repository() -> None:
+    world = history_world(1)
+
+    world.store.list_history(limit=50, offset=0, national_id="12345678")
+
+    [params] = world.connection.params_of("left join lesion")
+    assert params == ("12345678", 51, 0)

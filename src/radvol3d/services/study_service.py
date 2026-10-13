@@ -17,9 +17,9 @@ Las dos corren la tuberia y cierran el estudio con el mismo codigo (_run_pipelin
 import logging
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
-from radvol3d.domain.entities import PatientDetails, StoredResult, Study
+from radvol3d.domain.entities import PatientDetails, StoredResult, Study, StudyHistoryPage
 from radvol3d.domain.enums import OrganName, ResultFile, StageNumber, StudyStatus
 from radvol3d.domain.exceptions import InvalidStudyStateError, StageFailedError
 from radvol3d.persistence.processing_progress_store import ProcessingProgressStore
@@ -179,6 +179,24 @@ class StudyService:
     def list_studies(self) -> list[Study]:
         """Devuelve los estudios del mas reciente al mas antiguo, sin datos anidados."""
         return self._metadata_store.list_studies()
+
+    def list_history(
+        self, limit: int = 50, offset: int = 0, national_id: str | None = None
+    ) -> StudyHistoryPage:
+        """Una pagina del historial; con national_id, solo los estudios de ese DNI.
+
+        Solo un estudio completed tiene resultado (research.md R4 de 005): en los
+        demas, el numero de lesiones y el volumen quedan en None aunque la base tenga
+        filas de lesion, como las de un estudio que fallo despues de guardarlas.
+        """
+        page = self._metadata_store.list_history(limit, offset, national_id)
+        entries = [
+            entry
+            if entry.status is StudyStatus.COMPLETED
+            else replace(entry, lesion_count=None, total_lesion_volume_mm3=None)
+            for entry in page.entries
+        ]
+        return replace(page, entries=entries)
 
     def _run_pipeline(
         self,

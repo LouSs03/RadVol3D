@@ -5,12 +5,13 @@ No compite con la arquitectura en capas. Es como se organiza por dentro la capa 
 ## APIRouter: un archivo por recurso
 
 `main.py` solo monta los routers. Cada grupo de endpoints vive en su archivo, en
-lugar de crecer sin limite en uno solo. Desde la funcionalidad 004 son cinco:
+lugar de crecer sin limite en uno solo. Desde la funcionalidad 005 son seis:
 
 | Router | Rutas |
 |---|---|
 | `health_router.py` | `GET /health` |
 | `study_router.py` | `POST /studies`, `GET /studies/{code}/status`, `POST /studies/{code}/process`, `DELETE /studies/{code}` |
+| `history_router.py` | `GET /studies` (historial paginado) y `POST /studies/search` (filtro por DNI; el DNI va en el cuerpo, nunca en la URL) |
 | `projection_router.py` | `POST /studies/{code}/projections` (cuatro campos de archivo, `angle_000` a `angle_135`) |
 | `result_router.py` | `GET /studies/{code}/result` y las descargas: `organ.glb`, `tumor.glb`, `volume.npy` y `lesions/{n}.glb` |
 | `viewer_router.py` | `GET /viewer/{code}` |

@@ -333,6 +333,10 @@ borrar uno en `processing` y comprobar el conflicto.
 - **FR-029**: Ninguna respuesta de error ni registro de la capa MUST contener nombre,
   apellido ni DNI del paciente. Las respuestas de estado y de resultado MUST NOT devolver esos
   datos; a lo sumo, el código de paciente.
+  *Excepción (funcionalidad 005)*: `GET /studies` y `POST /studies/search` devuelven
+  `national_id`, el DNI del paciente, y ningún otro dato personal. Ver
+  `specs/005-persistent-study-history/spec.md`, FR-009 a FR-013. El resto de esta regla
+  sigue vigente.
 
 **Pruebas**
 
