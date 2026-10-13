@@ -21,6 +21,7 @@ from radvol3d.persistence.processing_progress_store import ProcessingProgressSto
 from radvol3d.persistence.repositories.model_repository import ModelRepository
 from radvol3d.persistence.result_store import ResultStore
 from radvol3d.persistence.study_metadata_store import StudyMetadataStore
+from radvol3d.services.meshing.lung_air_region import LungAirRegion
 from radvol3d.services.meshing.marching_cubes_strategy import MarchingCubesStrategy
 from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
 from radvol3d.services.pipeline.projection_loader import ProjectionFile, ProjectionLoader
@@ -51,6 +52,11 @@ def test_an_example_study_produces_volume_mask_summary_and_meshes(
         segmentation_builders={OrganName.LUNG: lambda: LungUnetStrategy.from_weights(en2)},
         meshing_builder=MarchingCubesStrategy,
         reconstruction_key="en1",
+        # Como en produccion. El fantoma no tiene aire encerrado: la malla del organo sale
+        # de la region de tejido (LungAirRegion cae a LargestComponentRegion).
+        organ_meshing_builders={
+            OrganName.LUNG: lambda: MarchingCubesStrategy(organ_region=LungAirRegion())
+        },
     )
     factory.preload()
     assert all(factory.availability().values())

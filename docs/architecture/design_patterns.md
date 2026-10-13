@@ -46,6 +46,8 @@ Hay una interfaz por etapa variable: reconstrucción, segmentación y mallas.
 | `services/segmentation/liver_unet_strategy.py` | esqueleto; no hay modelo de hígado todavía |
 | `services/meshing/meshing_strategy.py` | la interfaz |
 | `services/meshing/marching_cubes_strategy.py` | estrategia concreta: marching cubes y `.glb` |
+| `services/meshing/organ_region.py` | interfaz de la región del órgano y la región por omisión (tejido brillante) |
+| `services/meshing/lung_air_region.py` | región del pulmón: el aire que encierra el cuerpo |
 | `services/pipeline/processing_pipeline.py` | el contexto que las usa |
 
 Las estrategias reales envuelven el código migrado de `models/`: las piezas sin torch
@@ -57,6 +59,6 @@ cumplen las mismas interfaces.
 
 | Patron | Donde | Para que |
 |---|---|---|
-| Factory Method | `services/strategy_factory.py` | un solo lugar sabe que estrategia corresponde a cada organo. Recibe constructores y los llama una vez al arrancar (`preload`); un modelo que no carga queda no disponible sin detener el arranque |
+| Factory Method | `services/strategy_factory.py` | un solo lugar sabe que estrategia corresponde a cada organo. Recibe constructores y los llama una vez al arrancar (`preload`); un modelo que no carga queda no disponible sin detener el arranque. Las mallas tienen un constructor comun y, opcionalmente, uno por organo (`organ_meshing_builders`): asi el pulmon usa su propia region del organo sin `if organ ==` |
 | Repository | `persistence/repositories/` | aisla el acceso a datos del resto del sistema |
 | Pipes and Filters | `services/pipeline/` | las cuatro etapas encadenadas (`filters.py`), las mismas de `processing_stage`. La tuberia registra cada etapa por el puerto `PipelineProgress` sin saber si del otro lado hay una base real o un doble |
