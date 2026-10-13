@@ -371,7 +371,6 @@
   .hrow:hover{background:#F8FAFC;}
   .hrow:focus-visible{outline:2px solid var(--brand); outline-offset:-2px;}
   .hrow:last-child{border-bottom:0;}
-  .hrow.gone{cursor:default; opacity:.6;}
   .hhead{
     display:grid; grid-template-columns:140px minmax(0,1fr) 110px 90px 120px 32px;
     gap:12px; padding:12px 18px; background:#F8FAFC; border-bottom:1px solid var(--line);
@@ -383,6 +382,7 @@
   }
   .hrow .del:hover{color:var(--tumor); background:#FFF1F2;}
   .hcode{overflow-wrap:anywhere;}
+  .hmore{display:flex; justify-content:center; margin-top:14px;}
   @media (max-width:860px){
     .hrow,.hhead{grid-template-columns:1fr 1fr; }
     .hhead{display:none;}
@@ -791,7 +791,7 @@
       <div>
         <div class="eyebrow">Registro</div>
         <h1 style="margin-top:5px">Historial de estudios</h1>
-        <p>Estudios creados desde este navegador, del más reciente al más antiguo. El estado se consulta al servidor cada vez que abres esta página.</p>
+        <p>Todos los estudios guardados, del más reciente al más antiguo. La lista se pide al servidor cada vez que abres esta página.</p>
       </div>
       <button class="btn sm" data-go="new" type="button">Nuevo estudio</button>
     </div>
@@ -801,6 +801,7 @@
       </div>
       <div id="hbody"></div>
     </div>
+    <div class="hmore"><button class="btn ghost sm hidden" id="h-more" type="button">Ver más</button></div>
   </div>
 
 </div>
@@ -811,8 +812,12 @@
 // (setSize, traverse, ...) son de la biblioteca y conservan su nombre.
 // Privacidad: nombre, apellido y DNI del paciente se piden en el formulario de nuevo
 // estudio y viajan una vez, en el POST /studies. La pagina los conserva solo en memoria
-// (session_patient) para mostrarlos mientras se sigue ese estudio; nunca van al historial
-// local ni a la consola, y se borran al reiniciar el formulario para un estudio nuevo.
+// (session_patient) para mostrarlos mientras se sigue ese estudio; nunca van al navegador
+// (localStorage) ni a la consola, y se borran al reiniciar el formulario para un estudio
+// nuevo. El historial sale de la API (GET /studies, funcionalidad 005): lo que muestra
+// vive solo en memoria (history_state).
+
+import { HISTORY_PAGE_SIZE, LEGACY_HISTORY_KEY, lesion_count_text } from '/static/js/history_view.js';
 
 /* ============================================================
    0. CONFIGURACION
@@ -832,7 +837,6 @@ const FIELD_OF_VIEW_MM = 320;
 const MAX_PROJECTION_BYTES = 1048576;
 const STUDY_CODE_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
 const NATIONAL_ID_REGEX = /^[0-9]{8}$/;
-const HISTORY_KEY = 'radvol3d.history.v1';
 const ORGAN_LABELS = { lung: 'Pulmón', liver: 'Hígado' };
 const STAGE_LABELS = {
   preprocessing: 'preprocesamiento', reconstruction: 'reconstrucción',
@@ -883,38 +887,12 @@ async function api(path, options = {}) {
 }
 
 /* ============================================================
-   2. HISTORIAL LOCAL
-   La API no lista estudios: el historial vive en este navegador.
-   Cada entrada guarda solo study_code, organ, created_at, status y lesion_count.
+   2. HISTORIAL
+   El historial sale de la API (GET /studies), no del navegador: es el mismo en
+   cualquier equipo. La clave que guardaba la version anterior se borra una vez
+   (research.md R6 de 005).
    ============================================================ */
-function read_history() {
-  try {
-    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
-}
-
-function write_history(list) {
-  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch { /* sin almacenamiento */ }
-}
-
-function remember(entry) {
-  const list = read_history();
-  const index = list.findIndex((item) => item.study_code === entry.study_code);
-  const clean = {};
-  for (const key of ['study_code', 'organ', 'created_at', 'status', 'lesion_count']) {
-    if (entry[key] !== undefined) clean[key] = entry[key];
-  }
-  if (index >= 0) list[index] = { ...list[index], ...clean };
-  else list.unshift(clean);
-  write_history(list);
-}
-
-function forget(code) {
-  write_history(read_history().filter((item) => item.study_code !== code));
-}
+try { localStorage.removeItem(LEGACY_HISTORY_KEY); } catch { /* sin almacenamiento */ }
 
 /* ============================================================
    3. LECTURA DE .npy (proyecciones y volumen)
@@ -1123,7 +1101,7 @@ function route() {
   if (view === 'new') enter_new(code);
   if (view === 'run') enter_run(code);
   if (view === 'viewer') enter_viewer(code);
-  if (view === 'history') render_history(true);
+  if (view === 'history') load_history(true);
 }
 
 document.addEventListener('click', (event) => {
@@ -1211,7 +1189,6 @@ async function enter_new(code) {
   const { http_status, body, error } = await api(study_path(code, '/status'));
   if (http_status === 404) { show_new_error('El estudio ' + code + ' no existe.'); return; }
   if (!body) { show_new_error(error); return; }
-  remember({ study_code: code, organ: body.organ, created_at: body.created_at, status: body.status });
   if (body.status !== 'pending') { go(body.status === 'completed' ? 'viewer' : 'run', code); return; }
   new_state = fresh_new_state();
   Object.assign(new_state, { code, organ: body.organ, created: true });
@@ -1327,7 +1304,6 @@ $('#study-card').addEventListener('submit', async (event) => {
   }
   Object.assign(new_state, { code: body.study_code, created: true });
   session_patient = { study_code: body.study_code, ...patient };
-  remember({ study_code: body.study_code, organ: body.organ, created_at: body.created_at, status: body.status });
   render_new();
   window.history.replaceState(null, '', '#/new/' + encodeURIComponent(body.study_code));
 });
@@ -1453,7 +1429,6 @@ $('#btn-process').addEventListener('click', async () => {
   const { ok, error } = await api(study_path(s.code, '/process'), { method: 'POST' });
   s.busy = false;
   if (!ok) { show_new_error(error); render_new(); return; }
-  remember({ study_code: s.code, status: 'processing' });
   // El formulario queda como esta, con el paciente, hasta que se empiece otro estudio.
   s.processed = true;
   render_new();
@@ -1536,7 +1511,6 @@ async function poll_status(token) {
     return;
   }
   show_run_error('');
-  remember({ study_code: run.code, organ: body.organ, created_at: body.created_at, status: body.status });
   for (const stage of body.stages || []) {
     const n = stage.stage_number;
     if (stage.status === 'running') {
@@ -1593,13 +1567,20 @@ function viewer_message(text, is_error = false, busy = false) {
   box.innerHTML = text ? (busy ? '<span class="spin"></span>' : '') + '<span>' + escape_html(text) + '</span>' : '';
 }
 
-function latest_completed_code() {
-  const entry = read_history().find((item) => item.status === 'completed');
+// El ultimo estudio terminado, para abrir el visor sin codigo. Sale de la API.
+async function latest_completed_code() {
+  const { body } = await api('/studies?limit=' + HISTORY_PAGE_SIZE);
+  const items = body && Array.isArray(body.items) ? body.items : [];
+  const entry = items.find((item) => item.status === 'completed');
   return entry ? entry.study_code : null;
 }
 
 async function enter_viewer(code) {
-  code = code || viewer.code || latest_completed_code();
+  code = code || viewer.code;
+  if (!code) {
+    code = await latest_completed_code();
+    if (current_view !== 'viewer') return;
+  }
   $('#vw-empty').classList.toggle('hidden', !!code);
   $('#vw-main').classList.toggle('hidden', !code);
   if (!code) return;
@@ -1647,7 +1628,6 @@ async function load_study(code) {
   }
   if (!status.body) { viewer_message(status.error, true); return; }
   const study = status.body;
-  remember({ study_code: code, organ: study.organ, created_at: study.created_at, status: study.status });
   const organ_label = ORGAN_LABELS[study.organ] || study.organ;
   $('#vw-title').textContent = 'Reconstrucción volumétrica · ' + organ_label;
   $('#ov-organ').textContent = organ_label;
@@ -1666,8 +1646,7 @@ async function load_study(code) {
   viewer.selected = 0;
   fill_downloads(result.body);
   render_finding();
-  $('#ov-organ-sub').textContent = 'Malla del órgano · ' + lesion_count_text(result.body.lesions.length);
-  remember({ study_code: code, lesion_count: result.body.lesions.length });
+  $('#ov-organ-sub').textContent = 'Malla del órgano · ' + lesion_summary_text(result.body.lesions.length);
   load_volume(result.body.volume_url, token);
 
   viewer_message('Cargando el visor 3D…', false, true);
@@ -1702,7 +1681,7 @@ async function load_study(code) {
   if (current_view === 'viewer') resume_viewer();
 }
 
-function lesion_count_text(count) {
+function lesion_summary_text(count) {
   return count === 0 ? 'sin lesiones' : count === 1 ? '1 lesión' : count + ' lesiones';
 }
 
@@ -1955,7 +1934,7 @@ $('#btn-delete').addEventListener('click', async () => {
   if (!code || !window.confirm('¿Eliminar el estudio ' + code + ' con todos sus archivos? No se puede deshacer.')) return;
   const { ok, http_status, error } = await api(study_path(code), { method: 'DELETE' });
   if (!ok && http_status !== 404) { window.alert(error); return; }
-  forget(code);
+  drop_history_entry(code);
   viewer.token++;
   viewer.code = null;
   viewer.loaded = false;
@@ -2084,7 +2063,7 @@ $('#mbody').innerHTML = METRICS.map((m) =>
    ============================================================ */
 const STATUS_TAGS = {
   pending: ['grey', 'pendiente'], processing: ['warn', 'procesando'], completed: ['brand', 'completado'],
-  failed: ['tumor', 'falló'], deleted: ['grey', 'eliminado'],
+  failed: ['tumor', 'falló'],
 };
 const TRASH_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></svg>';
 
@@ -2102,61 +2081,97 @@ function finding_tag(entry) {
   return '<span class="tag tumor">' + (entry.lesion_count === 1 ? 'Lesión única' : entry.lesion_count + ' lesiones') + '</span>';
 }
 
+// Lo que muestra el historial: la ultima respuesta de la API, solo en memoria.
+const history_state = { entries: [], has_more: false, loading: false, error: null };
 let history_token = 0;
-async function render_history(refresh) {
-  const list = read_history();
+
+// Pide una pagina. Con reset empieza de cero; si no, agrega la siguiente ("Ver más").
+async function load_history(reset) {
+  const token = ++history_token;
+  const offset = reset ? 0 : history_state.entries.length;
+  history_state.loading = true;
+  if (reset) history_state.error = null;
+  render_history();
+  const { ok, body, error } = await api('/studies?offset=' + offset + '&limit=' + HISTORY_PAGE_SIZE);
+  if (token !== history_token) return;
+  history_state.loading = false;
+  if (!ok || !body || !Array.isArray(body.items)) {
+    // Sin filas de una consulta anterior que parezcan actuales (FR-014).
+    Object.assign(history_state, { entries: [], has_more: false, error: error || 'El servidor respondió algo inesperado.' });
+  } else {
+    history_state.entries = reset ? body.items : history_state.entries.concat(body.items);
+    history_state.has_more = body.has_more === true;
+    history_state.error = null;
+  }
+  if (current_view === 'history') render_history();
+}
+
+function drop_history_entry(code) {
+  history_state.entries = history_state.entries.filter((item) => item.study_code !== code);
+}
+
+function history_row(entry) {
+  const [tone, label] = STATUS_TAGS[entry.status] || ['grey', entry.status || '—'];
+  return '<div class="hrow" role="button" tabindex="0" data-code="' + escape_html(entry.study_code) + '">' +
+    '<div style="color:var(--ink2)">' + format_date(entry.created_at) + '</div>' +
+    '<div class="hcode"><b class="mono">' + escape_html(entry.study_code) + '</b> · ' + escape_html(ORGAN_LABELS[entry.organ] || entry.organ || '—') + '</div>' +
+    '<div><span class="tag ' + tone + '">' + escape_html(label) + '</span></div>' +
+    '<div class="kv" style="font-weight:700">' + escape_html(lesion_count_text(entry)) + '</div>' +
+    '<div>' + finding_tag(entry) + '</div>' +
+    '<div><button class="del" type="button" title="Eliminar estudio" aria-label="Eliminar">' + TRASH_ICON + '</button></div>' +
+    '</div>';
+}
+
+function render_history() {
   const body = $('#hbody');
-  if (!list.length) {
-    body.innerHTML = '<div class="empty"><h3>Todavía no hay estudios</h3><p>Los estudios que crees desde este navegador aparecerán aquí.</p>' +
-      '<button class="btn" data-go="new" type="button">Nuevo estudio</button></div>';
+  const { entries, has_more, loading, error } = history_state;
+  $('#h-more').classList.toggle('hidden', !has_more || !!error);
+  $('#h-more').disabled = loading;
+  if (error) {
+    body.innerHTML = '<div class="empty"><h3>No se pudo cargar el historial.</h3><p>' + escape_html(error) + '</p>' +
+      '<button class="btn" id="h-retry" type="button">Reintentar</button></div>';
     return;
   }
-  body.innerHTML = list.map((entry) => {
-    const [tone, label] = STATUS_TAGS[entry.status] || ['grey', entry.status || '—'];
-    const gone = entry.status === 'deleted';
-    return '<div class="hrow' + (gone ? ' gone' : '') + '" role="button" tabindex="0" data-code="' + escape_html(entry.study_code) + '">' +
-      '<div style="color:var(--ink2)">' + format_date(entry.created_at) + '</div>' +
-      '<div class="hcode"><b class="mono">' + escape_html(entry.study_code) + '</b> · ' + escape_html(ORGAN_LABELS[entry.organ] || entry.organ || '—') + '</div>' +
-      '<div><span class="tag ' + tone + '">' + escape_html(label) + '</span></div>' +
-      '<div class="kv" style="font-weight:700">' + (entry.status === 'completed' && typeof entry.lesion_count === 'number' ? entry.lesion_count : '—') + '</div>' +
-      '<div>' + finding_tag(entry) + '</div>' +
-      '<div><button class="del" type="button" title="' + (gone ? 'Quitar de la lista' : 'Eliminar estudio') + '" aria-label="Eliminar">' + TRASH_ICON + '</button></div>' +
-      '</div>';
-  }).join('');
-  if (!refresh) return;
-  // Actualiza el estado de cada estudio contra el servidor y vuelve a dibujar una vez.
-  const token = ++history_token;
-  await Promise.all(list.map(async (entry) => {
-    const { http_status, body: study } = await api(study_path(entry.study_code, '/status'));
-    if (http_status === 404) remember({ study_code: entry.study_code, status: 'deleted' });
-    else if (study) remember({ study_code: entry.study_code, organ: study.organ, created_at: study.created_at, status: study.status });
-  }));
-  if (token === history_token && current_view === 'history') render_history(false);
+  if (!entries.length) {
+    body.innerHTML = loading
+      ? '<div class="empty"><p>Cargando el historial…</p></div>'
+      : '<div class="empty"><h3>Todavía no hay estudios en el sistema</h3><p>Los estudios que se creen desde cualquier navegador aparecerán aquí.</p>' +
+        '<button class="btn" data-go="new" type="button">Nuevo estudio</button></div>';
+    return;
+  }
+  body.innerHTML = entries.map(history_row).join('');
 }
 
-function open_history_entry(code) {
-  const entry = read_history().find((item) => item.study_code === code);
-  if (!entry) return;
-  if (entry.status === 'completed') go('viewer', code);
-  else if (entry.status === 'pending') go('new', code);
-  else if (entry.status !== 'deleted') go('run', code);
+// Antes de abrir se consulta el estado: pudo cambiar, o el estudio pudo borrarse en otro equipo.
+async function open_history_entry(code) {
+  if (!history_state.entries.some((item) => item.study_code === code)) return;
+  const { http_status, body, error } = await api(study_path(code, '/status'));
+  if (http_status === 404) {
+    window.alert('Este estudio ya no existe.');
+    load_history(true);
+    return;
+  }
+  if (!body) { window.alert(error); return; }
+  if (body.status === 'completed') go('viewer', code);
+  else if (body.status === 'pending') go('new', code);
+  else go('run', code);
 }
+
+$('#h-more').addEventListener('click', () => load_history(false));
 
 $('#hbody').addEventListener('click', async (event) => {
+  if (event.target.closest('#h-retry')) { load_history(true); return; }
   const row = event.target.closest('.hrow');
   if (!row) return;
   const code = row.dataset.code;
   if (event.target.closest('.del')) {
     event.stopPropagation();
-    const entry = read_history().find((item) => item.study_code === code);
-    if (entry && entry.status !== 'deleted') {
-      if (!window.confirm('¿Eliminar el estudio ' + code + ' con todos sus archivos? No se puede deshacer.')) return;
-      const { ok, http_status, error } = await api(study_path(code), { method: 'DELETE' });
-      if (!ok && http_status !== 404) { window.alert(error); return; }
-    }
-    forget(code);
+    if (!window.confirm('¿Eliminar el estudio ' + code + ' con todos sus archivos? No se puede deshacer.')) return;
+    const { ok, http_status, error } = await api(study_path(code), { method: 'DELETE' });
+    if (!ok && http_status !== 404) { window.alert(error); return; }
+    drop_history_entry(code);
     if (viewer.code === code) { viewer.token++; viewer.code = null; viewer.loaded = false; clear_scene(); }
-    render_history(false);
+    render_history();
     return;
   }
   open_history_entry(code);
