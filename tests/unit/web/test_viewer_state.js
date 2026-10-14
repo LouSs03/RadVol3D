@@ -6,10 +6,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  CONFIDENCE_LEGEND_TICKS,
   LESION_PALETTE,
   ORGAN_COLOR,
   ORGAN_OPACITY,
   REFRESH_MS,
+  confidence_color_hex,
   lesion_color,
   lesion_rows,
   status_view,
@@ -147,4 +149,26 @@ test("el codigo del estudio sale de la ruta del visor", () => {
   assert.equal(study_code_from_path("/viewer/lung_028/"), "lung_028");
   assert.equal(study_code_from_path("/viewer/con%20espacio"), "con espacio");
   assert.equal(study_code_from_path("/otra/cosa"), null);
+});
+
+// Tests para HU-3.2 (Mapa de confianza)
+test("la escala de confianza devuelve colores continuos de azul a rojo", () => {
+  assert.equal(confidence_color_hex(0.0), "#0000FF");
+  assert.equal(confidence_color_hex(0.25), "#00FFFF");
+  assert.equal(confidence_color_hex(0.50), "#00FF00");
+  assert.equal(confidence_color_hex(0.75), "#FFFF00");
+  assert.equal(confidence_color_hex(1.0), "#FF0000");
+});
+
+test("la escala de confianza limita valores fuera de rango [0, 1]", () => {
+  assert.equal(confidence_color_hex(-0.5), "#0000FF");
+  assert.equal(confidence_color_hex(1.5), "#FF0000");
+  assert.equal(confidence_color_hex(null), "#0000FF");
+});
+
+test("las marcas de la leyenda de confianza tienen dos decimales", () => {
+  assert.deepEqual(CONFIDENCE_LEGEND_TICKS, ["0.00", "0.25", "0.50", "0.75", "1.00"]);
+  for (const tick of CONFIDENCE_LEGEND_TICKS) {
+    assert.match(tick, /^\d+\.\d{2}$/);
+  }
 });

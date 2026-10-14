@@ -30,6 +30,20 @@
       <div id="viewer_canvas" class="viewer_canvas"></div>
       <p id="status_message" class="status_message" role="status"></p>
       <button id="reset_view" class="reset_view hidden" type="button">Vista inicial</button>
+      <button id="toggle_confidence" class="toggle_confidence hidden" type="button" aria-pressed="false">Mapa de confianza</button>
+      <div id="conf_legend" class="conf_legend hidden" aria-label="Escala de confianza">
+        <span class="cl_title">Mapa de confianza</span>
+        <div class="cl_bar"></div>
+        <div class="cl_ticks">
+          <span>0.00</span>
+          <span>0.25</span>
+          <span>0.50</span>
+          <span>0.75</span>
+          <span>1.00</span>
+        </div>
+      </div>
+      <div id="point_tooltip" class="point_tooltip hidden" role="tooltip"></div>
+      <div id="orientation_cube" class="orientation_cube" aria-label="Orientación anatómica"></div>
     </section>
 
     <aside class="lesion_panel" aria-label="Lesiones detectadas">

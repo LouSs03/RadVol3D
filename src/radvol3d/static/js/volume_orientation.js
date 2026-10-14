@@ -14,9 +14,9 @@
 // la camara. Como en toda vista de frente, la derecha del paciente queda a la izquierda
 // de la pantalla. Es una rotacion pura (sin espejo): ningun organo se invierte.
 export const VOLUME_AXES_IN_SCENE = [
-  [-1, 0, 0], // eje 0 (derecha del paciente) -> izquierda de la pantalla
-  [0, 0, 1], //  eje 1 (adelante) -> hacia la camara
-  [0, 1, 0], //  eje 2 (cabeza) -> arriba
+  [1, 0, 0],
+  [0, 0, -1],
+  [0, 1, 0],
 ];
 
 // La camara empieza de frente al paciente.
