@@ -152,6 +152,23 @@ class ResultStore:
         }
         return self._storage.download_bytes(paths[ResultFile(file)](study_code))
 
+    def replace_organ_mesh(self, study_code: str, organ_mesh: bytes) -> None:
+        """Reemplaza solo la malla del organo de un estudio que ya tiene resultado.
+
+        La usa la regeneracion de mallas (scripts/regenerate_organ_meshes.py) cuando
+        cambia la region del organo. No toca el tumor, las lesiones, sus filas ni el
+        resumen: el resultado guardado sigue alineado. Lanza PersistenceError si los
+        bytes no son un .glb o si el estudio no tiene resultado.
+        """
+        validate_study_code(study_code)
+        if not organ_mesh.startswith(b"glTF"):
+            raise PersistenceError("La malla del organo debe ser un archivo .glb.")
+        if self.get_result(study_code).organ_mesh_path is None:
+            raise PersistenceError(
+                f"El estudio '{study_code}' no tiene resultado: no hay malla que reemplazar."
+            )
+        self._storage.upload_bytes(organ_mesh_path(study_code), organ_mesh, CONTENT_TYPE_MESH)
+
     def read_lesion_mesh(self, study_code: str, lesion_number: int) -> bytes:
         """Baja la malla de la lesion numero lesion_number (desde 1, en orden de guardado).
 
