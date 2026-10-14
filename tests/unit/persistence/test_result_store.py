@@ -689,3 +689,60 @@ def test_read_file_and_read_lesion_mesh_reject_an_invalid_code(world: World) -> 
         world.store.read_file("../otro", ResultFile.VOLUME)
     with pytest.raises(InvalidStudyIdError):
         world.store.read_lesion_mesh("../otro", 1)
+
+
+# --- replace_organ_mesh (regeneracion de la malla del organo) ---
+
+ORGAN_MESH = f"{CODE}/meshes/organ.glb"
+
+
+@pytest.mark.unit
+def test_replace_organ_mesh_uploads_only_the_organ_mesh(world: World) -> None:
+    world.set_stage_rows(stage_rows(s3="completed", s4="completed"))
+    start = len(world.events)
+
+    world.store.replace_organ_mesh(CODE, b"glTF-nueva")
+
+    assert world.bucket_calls_since(start) == [f"upload:{ORGAN_MESH}"]
+    assert world.bucket.content_types[ORGAN_MESH] == "model/gltf-binary"
+    assert world.store.read_file(CODE, ResultFile.ORGAN_MESH) == b"glTF-nueva"
+
+
+@pytest.mark.unit
+def test_replace_organ_mesh_never_writes_to_the_database(world: World) -> None:
+    world.set_stage_rows(stage_rows(s3="completed", s4="completed"))
+
+    world.store.replace_organ_mesh(CODE, b"glTF-nueva")
+
+    writes = [
+        sql
+        for sql, _ in world.connection.calls
+        if sql.lstrip().lower().startswith(("insert", "update", "delete"))
+    ]
+    assert writes == []
+
+
+@pytest.mark.unit
+def test_replace_organ_mesh_of_a_study_without_result_uploads_nothing(world: World) -> None:
+    with pytest.raises(PersistenceError):
+        world.store.replace_organ_mesh(CODE, b"glTF-nueva")
+
+    assert world.uploaded() == []
+
+
+@pytest.mark.unit
+def test_replace_organ_mesh_rejects_bytes_that_are_not_a_glb(world: World) -> None:
+    world.set_stage_rows(stage_rows(s3="completed", s4="completed"))
+
+    with pytest.raises(PersistenceError):
+        world.store.replace_organ_mesh(CODE, b"no soy un glb")
+
+    assert world.events == []
+
+
+@pytest.mark.unit
+def test_replace_organ_mesh_rejects_an_invalid_study_code(world: World) -> None:
+    with pytest.raises(InvalidStudyIdError):
+        world.store.replace_organ_mesh("../otro", b"glTF-nueva")
+
+    assert world.events == []
