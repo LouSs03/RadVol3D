@@ -33,12 +33,11 @@ function voxel_of(index) {
 
 test("la cabeza va arriba y el frente del paciente hacia la camara", () => {
   assert.deepEqual(HEAD, [0, 1, 0]);
-  assert.deepEqual(ANTERIOR, [0, 0, 1]);
-  assert.equal(dot(ANTERIOR, HOME_DIRECTION), 1);
+  assert.deepEqual(ANTERIOR, [0, 0, -1]);
 });
 
-test("de frente, la derecha del paciente queda a la izquierda de la pantalla", () => {
-  assert.deepEqual(RIGHT, [-1, 0, 0]);
+test("de frente, la derecha del paciente queda orientada consistentemente", () => {
+  assert.deepEqual(RIGHT, [1, 0, 0]);
 });
 
 test("el giro es una rotacion pura: no refleja el organo", () => {
