@@ -296,6 +296,10 @@ async function build_scene(modules, result, rows) {
   const controls = new OrbitControls(camera, renderer.domElement);
   const loader = new GLTFLoader();
 
+  const root = new three.Group();
+  root.rotation.x = -Math.PI / 2;
+  scene.add(root);
+
   let organ;
   try {
     organ = (await loader.loadAsync(result.organ_mesh_url)).scene;
@@ -304,7 +308,7 @@ async function build_scene(modules, result, rows) {
       const object = lesions[index].scene;
       paint(three, object, { color: row.color });
       object.renderOrder = 1;
-      scene.add(object);
+      root.add(object);
       lesion_meshes.set(row.lesion_number, { object, color: row.color, confidence: row.confidence });
     });
   } catch {
@@ -319,7 +323,7 @@ async function build_scene(modules, result, rows) {
     depthWrite: false,
   });
   organ.renderOrder = 2;
-  scene.add(organ);
+  root.add(organ);
 
   const initial_view = frame_view(three, camera, controls, organ, scene);
   reset_button.addEventListener("click", () => {

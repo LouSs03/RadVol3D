@@ -1978,6 +1978,7 @@ function build_scene(organ_object, lesion_objects) {
   const three = viewer.three;
   clear_scene();
   const root = new three.Group();
+  root.rotation.x = -Math.PI / 2;
   lesion_objects.forEach((object, index) => {
     const material = new three.MeshStandardMaterial({
       color: TUMOR_COLOR, emissive: TUMOR_COLOR, emissiveIntensity: 0.1,
@@ -2011,7 +2012,7 @@ function frame_camera() {
   const center = box.isEmpty() ? new three.Vector3() : box.getCenter(new three.Vector3());
   const radius = box.isEmpty() ? 50 : Math.max(box.getSize(new three.Vector3()).length() / 2, 1e-3);
   const distance = radius / Math.sin((camera.fov * Math.PI / 180) / 2);
-  camera.position.copy(center).addScaledVector(new three.Vector3(0.45, 0.25, 1).normalize(), distance * 1.02);
+  camera.position.copy(center).addScaledVector(new three.Vector3(0, 0, 1), distance * 1.05);
   camera.near = distance / 100;
   camera.far = distance * 10;
   camera.updateProjectionMatrix();
