@@ -98,13 +98,18 @@ class StrategyFactory:
         segmentation = self._loaded(
             f"segmentation:{organ_name.value}", self._segmentation.get(organ_name)
         )
+        return StrategySet(reconstruction, segmentation, self.meshing_for(organ_name))
+
+    def meshing_for(self, organ: OrganName | str) -> MeshingStrategy:
+        """La estrategia de mallas del organo: la propia si la tiene, si no la comun.
+
+        No necesita los modelos de reconstruccion ni de segmentacion: la regeneracion de
+        mallas la usa sin cargar torch.
+        """
+        organ_name = OrganName(organ)
         if organ_name in self._organ_meshing_builders:
-            meshing = self._loaded(
-                f"meshing:{organ_name.value}", self._organ_meshing.get(organ_name)
-            )
-        else:
-            meshing = self._loaded("meshing", self._meshing)
-        return StrategySet(reconstruction, segmentation, meshing)
+            return self._loaded(f"meshing:{organ_name.value}", self._organ_meshing.get(organ_name))
+        return self._loaded("meshing", self._meshing)
 
     def availability(self) -> dict[str, bool]:
         """Que estrategias quedaron cargadas, para informarlo al arrancar."""

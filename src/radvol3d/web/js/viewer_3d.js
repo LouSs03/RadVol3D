@@ -13,6 +13,7 @@ import {
   status_view,
   study_code_from_path,
 } from "/js/viewer_state.js";
+import { VOLUME_AXES_IN_SCENE } from "/static/js/volume_orientation.js";
 
 const DIMMED_OPACITY = 0.25;
 const HIGHLIGHT_INTENSITY = 0.6;
@@ -295,9 +296,12 @@ async function build_scene(modules, result, rows) {
   );
   const controls = new OrbitControls(camera, renderer.domElement);
   const loader = new GLTFLoader();
-
+  // El paciente de pie y de frente: la cabeza arriba y el frente hacia la camara
+  // (volume_orientation.js). Organo y lesiones giran juntos, dentro del mismo grupo.
   const root = new three.Group();
-  root.rotation.x = -Math.PI / 2;
+  root.quaternion.setFromRotationMatrix(
+    new three.Matrix4().makeBasis(...VOLUME_AXES_IN_SCENE.map((axis) => new three.Vector3(...axis))),
+  );
   scene.add(root);
 
   let organ;
@@ -324,6 +328,7 @@ async function build_scene(modules, result, rows) {
   });
   organ.renderOrder = 2;
   root.add(organ);
+  root.updateMatrixWorld(true);
 
   const initial_view = frame_view(three, camera, controls, organ, scene);
   reset_button.addEventListener("click", () => {

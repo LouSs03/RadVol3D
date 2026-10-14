@@ -258,3 +258,19 @@ def test_an_organ_meshing_that_fails_leaves_only_that_organ_unavailable(caplog) 
     with pytest.raises(ModelNotAvailableError) as caught:
         factory.strategies_for(OrganName.LUNG)
     assert str(caught.value) == "El modelo meshing:lung no está disponible en este servidor."
+
+
+@pytest.mark.unit
+def test_meshing_for_works_without_reconstruction_or_segmentation_models() -> None:
+    # Asi la regeneracion de mallas no carga torch ni pesos.
+    factory = StrategyFactory(
+        reconstruction_builders={},
+        segmentation_builders={},
+        meshing_builder=FakeMeshingStrategy,
+        reconstruction_key="en1",
+        organ_meshing_builders={OrganName.LUNG: LungMeshingStrategy},
+    )
+    factory.preload()
+
+    assert isinstance(factory.meshing_for(OrganName.LUNG), LungMeshingStrategy)
+    assert type(factory.meshing_for("liver")) is FakeMeshingStrategy
