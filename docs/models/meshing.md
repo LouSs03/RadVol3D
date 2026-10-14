@@ -140,8 +140,24 @@ reconstrucción: si el volumen sale borroso, la superficie también.
 
 ### Estudios procesados antes de este cambio
 
-Guardan la malla vieja. El volumen está guardado (`volume.npy`), así que se puede regenerar
-solo la malla, sin volver a correr EN-1 ni EN-2. Todavía no hay un script para hacerlo.
+Guardan la malla vieja. Como el volumen está guardado (`volume.npy`),
+`scripts/regenerate_organ_meshes.py` rehace solo `organ.glb` con la estrategia de hoy, sin
+volver a correr EN-1 ni EN-2 y sin cargar torch:
+
+```text
+python scripts/regenerate_organ_meshes.py                 # simulación: no escribe nada
+python scripts/regenerate_organ_meshes.py --apply         # respalda y reemplaza
+python scripts/regenerate_organ_meshes.py --restore .cache/organ_mesh_backup/<carpeta>
+```
+
+- Sin `--apply` solo muestra el volumen de la malla vieja y el de la nueva.
+- Con `--apply`, antes de reemplazar guarda cada malla vieja en
+  `.cache/organ_mesh_backup/<fecha-hora>/`, y `--restore` las vuelve a subir.
+- El tumor, las lesiones, sus filas y el resumen no cambian. Las lesiones descartadas al
+  procesar no se vuelven a decidir: cambiarlas desalinearía el resultado con la base.
+
+`tests/integration/services/test_organ_mesh_regeneration_integration.py` lo comprueba
+contra la base de prueba.
 
 ## Coordenadas
 
