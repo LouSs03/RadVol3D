@@ -8,6 +8,7 @@
 import {
   ORGAN_COLOR,
   ORGAN_OPACITY,
+  confidence_color_hex,
   lesion_rows,
   status_view,
   study_code_from_path,
@@ -22,10 +23,14 @@ const study_code = study_code_from_path(window.location.pathname);
 const canvas_box = document.getElementById("viewer_canvas");
 const status_box = document.getElementById("status_message");
 const reset_button = document.getElementById("reset_view");
+const toggle_confidence_button = document.getElementById("toggle_confidence");
+const conf_legend = document.getElementById("conf_legend");
+const point_tooltip = document.getElementById("point_tooltip");
 
 // Mallas de las lesiones por numero, para resaltarlas desde la lista.
 const lesion_meshes = new Map();
 let selected_lesion = null;
+let show_confidence = false;
 
 function show_message(text) {
   status_box.textContent = text;
@@ -300,7 +305,7 @@ async function build_scene(modules, result, rows) {
       paint(three, object, { color: row.color });
       object.renderOrder = 1;
       scene.add(object);
-      lesion_meshes.set(row.lesion_number, { object, color: row.color });
+      lesion_meshes.set(row.lesion_number, { object, color: row.color, confidence: row.confidence });
     });
   } catch {
     show_message("No se pudieron cargar las mallas. Puedes descargarlas.");
@@ -323,6 +328,86 @@ async function build_scene(modules, result, rows) {
     controls.update();
   });
   reset_button.classList.remove("hidden");
+
+  function apply_confidence_colors(enabled) {
+    show_confidence = enabled;
+    for (const [number, item] of lesion_meshes) {
+      const color = enabled && typeof item.confidence === "number"
+        ? confidence_color_hex(item.confidence)
+        : item.color;
+      for (const material of materials_of(item.object)) {
+        material.color.set(color);
+        if (selected_lesion === number) {
+          material.emissive?.set(color);
+        }
+        material.needsUpdate = true;
+      }
+    }
+    if (conf_legend) conf_legend.classList.toggle("hidden", !enabled);
+    if (toggle_confidence_button) {
+      toggle_confidence_button.classList.toggle("on", enabled);
+      toggle_confidence_button.setAttribute("aria-pressed", String(enabled));
+    }
+  }
+
+  if (toggle_confidence_button) {
+    toggle_confidence_button.addEventListener("click", () => {
+      apply_confidence_colors(!show_confidence);
+    });
+    toggle_confidence_button.classList.remove("hidden");
+  }
+
+  // Raycaster para consultar la confianza de un punto seleccionado en el volumen (HU-3.2)
+  const raycaster = new three.Raycaster();
+  const pointer = new three.Vector2();
+  let pointer_down_pos = { x: 0, y: 0 };
+
+  renderer.domElement.addEventListener("pointerdown", (e) => {
+    pointer_down_pos = { x: e.clientX, y: e.clientY };
+  });
+
+  renderer.domElement.addEventListener("pointerup", (e) => {
+    const dist = Math.hypot(e.clientX - pointer_down_pos.x, e.clientY - pointer_down_pos.y);
+    if (dist > 5) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+
+    const lesion_roots = Array.from(lesion_meshes.values()).map((l) => l.object);
+    const hits = raycaster.intersectObjects(lesion_roots, true);
+
+    if (hits.length > 0) {
+      const hit = hits[0];
+      for (const [number, item] of lesion_meshes) {
+        let curr = hit.object;
+        let match = false;
+        while (curr) {
+          if (curr === item.object) { match = true; break; }
+          curr = curr.parent;
+        }
+        if (match) {
+          toggle_highlight(number);
+          if (point_tooltip) {
+            const conf_num = Number(item.confidence).toFixed(2);
+            const conf_pct = (item.confidence * 100).toFixed(1);
+            point_tooltip.innerHTML = `<strong>Lesión ${number}</strong><br>Confianza: <strong>${conf_num}</strong> (${conf_pct}%)`;
+            point_tooltip.style.left = `${e.clientX - rect.left}px`;
+            point_tooltip.style.top = `${e.clientY - rect.top}px`;
+            point_tooltip.classList.remove("hidden");
+          }
+          break;
+        }
+      }
+    } else if (point_tooltip) {
+      point_tooltip.classList.add("hidden");
+    }
+  });
+
+  controls.addEventListener("start", () => {
+    if (point_tooltip) point_tooltip.classList.add("hidden");
+  });
 
   // Cubo de orientacion anatomica (HU-3.1): se crea una vez y se sincroniza cada frame.
   const orientation = setup_orientation(three);
@@ -362,12 +447,15 @@ function frame_view(three, camera, controls, organ, scene) {
 // Elegir una fila resalta su malla y baja la opacidad de las demas; otro clic lo deshace.
 function toggle_highlight(lesion_number) {
   selected_lesion = selected_lesion === lesion_number ? null : lesion_number;
-  for (const [number, { object, color }] of lesion_meshes) {
+  for (const [number, item] of lesion_meshes) {
     const chosen = selected_lesion === null || number === selected_lesion;
-    for (const material of materials_of(object)) {
+    const base_color = show_confidence && typeof item.confidence === "number"
+      ? confidence_color_hex(item.confidence)
+      : item.color;
+    for (const material of materials_of(item.object)) {
       material.transparent = !chosen;
       material.opacity = chosen ? 1 : DIMMED_OPACITY;
-      material.emissive?.set(number === selected_lesion ? color : "#000000");
+      material.emissive?.set(number === selected_lesion ? base_color : "#000000");
       material.emissiveIntensity = number === selected_lesion ? HIGHLIGHT_INTENSITY : 0;
       material.needsUpdate = true;
     }

@@ -276,6 +276,29 @@
     pointer-events:none; z-index:5;
   }
   .orientation_cube canvas{display:block;}
+  /* HU-3.2: Leyenda de escala de confianza (valores con 2 decimales) y tooltip de punto */
+  .conf_legend{
+    position:absolute; bottom:60px; left:14px;
+    background:rgba(15,23,42,.88); border:1px solid #1E293B;
+    border-radius:10px; padding:9px 12px; backdrop-filter:blur(4px);
+    z-index:6; font-size:11px; color:#CBD5E1;
+  }
+  .cl_title{font-weight:700; color:#F8FAFC; display:block; margin-bottom:5px; font-size:11px; letter-spacing:.02em;}
+  .cl_bar{
+    width:160px; height:10px; border-radius:4px; margin-bottom:4px;
+    background:linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000);
+    border:1px solid rgba(255,255,255,.15);
+  }
+  .cl_ticks{
+    display:flex; justify-content:space-between; font-family:monospace; font-size:9.5px; color:#94A3B8;
+  }
+  .point_tooltip{
+    position:absolute; pointer-events:none; z-index:15;
+    background:rgba(15,23,42,.94); border:1px solid #38BDF8;
+    color:#F8FAFC; padding:7px 11px; border-radius:8px; font-size:12px;
+    backdrop-filter:blur(4px); box-shadow:0 4px 14px rgba(0,0,0,.45);
+    transform:translate(-50%, -125%); transition:opacity .15s ease;
+  }
   .ov b{color:#F8FAFC; font-size:12.5px; display:block;}
   .ov .dim{color:#64748B;}
   .vmsg{
@@ -676,6 +699,7 @@
           <div class="vtools">
             <button data-mode="tissue" class="on" type="button">Tejido</button>
             <button data-mode="tumor" type="button">Solo tumor</button>
+            <button id="btn-conf-toggle" type="button" aria-pressed="false">Confianza</button>
             <button id="btn-home-view" type="button">Vista inicial</button>
           </div>
           <div class="ov tl">
@@ -695,6 +719,18 @@
             <b id="ov-fps" class="mono">— FPS</b>
           </div>
           <div id="orientation_cube" class="orientation_cube" aria-label="Orientación anatómica"></div>
+          <div id="conf_legend" class="conf_legend hidden" aria-label="Escala de confianza">
+            <span class="cl_title">Mapa de confianza</span>
+            <div class="cl_bar"></div>
+            <div class="cl_ticks">
+              <span>0.00</span>
+              <span>0.25</span>
+              <span>0.50</span>
+              <span>0.75</span>
+              <span>1.00</span>
+            </div>
+          </div>
+          <div id="point_tooltip" class="point_tooltip hidden" role="tooltip"></div>
         </div>
 
         <div>
@@ -734,6 +770,10 @@
             <div class="sw">
               <span>Ejes del volumen</span>
               <button class="toggle" id="t-axes" aria-pressed="false" aria-label="Ejes del volumen" type="button"></button>
+            </div>
+            <div class="sw">
+              <span>Mapa de confianza</span>
+              <button class="toggle" id="t-conf" aria-pressed="false" aria-label="Mapa de confianza" type="button"></button>
             </div>
           </div>
 
@@ -1582,7 +1622,7 @@ const viewer = {
   three: null, GLTFLoader: null, renderer: null, scene: null, camera: null, controls: null,
   root: null, organ: null, organ_material: null, lesions: [], axes: null, home: null,
   result: null, selected: 0, mode: 'tissue', opacity: ORGAN_OPACITY,
-  show_tumor: true, spin: true, show_axes: false, volume: null,
+  show_tumor: true, spin: true, show_axes: false, show_confidence: false, volume: null,
   fps_frames: 0, fps_since: 0,
 };
 
@@ -1776,6 +1816,43 @@ function sync_orientation(three, orientation, main_camera, controls) {
   orientation.renderer.render(orientation.scene, orientation.camera);
 }
 
+// ---- Mapa de confianza de la lesion (HU-3.2) ----
+// Escala continua: 0.00 -> Azul, 0.25 -> Cian, 0.50 -> Verde, 0.75 -> Amarillo, 1.00 -> Rojo
+function confidence_color(three, val) {
+  const v = Math.max(0, Math.min(1, Number(val) || 0));
+  const color = new three.Color();
+  if (v < 0.25) {
+    const t = v / 0.25;
+    color.setRGB(0, t, 1);
+  } else if (v < 0.5) {
+    const t = (v - 0.25) / 0.25;
+    color.setRGB(0, 1, 1 - t);
+  } else if (v < 0.75) {
+    const t = (v - 0.5) / 0.25;
+    color.setRGB(t, 1, 0);
+  } else {
+    const t = (v - 0.75) / 0.25;
+    color.setRGB(1, 1 - t, 0);
+  }
+  return color;
+}
+
+function show_point_tooltip(x, y, info) {
+  const tip = $('#point_tooltip');
+  if (!tip || !info) return;
+  const conf_num = Number(info.confidence).toFixed(2);
+  const conf_pct = (info.confidence * 100).toFixed(1);
+  tip.innerHTML = `<strong>Lesión ${info.lesion_number}</strong><br>Confianza: <strong>${conf_num}</strong> (${conf_pct}%)`;
+  tip.style.left = `${x}px`;
+  tip.style.top = `${y}px`;
+  tip.classList.remove('hidden');
+}
+
+function hide_point_tooltip() {
+  const tip = $('#point_tooltip');
+  if (tip) tip.classList.add('hidden');
+}
+
 async function ensure_three() {
   if (viewer.three) return;
   const [three, gltf_module, orbit_module] = await Promise.all([
@@ -1805,6 +1882,50 @@ async function ensure_three() {
   controls.enableDamping = true;
   controls.autoRotate = viewer.spin;
   controls.autoRotateSpeed = 1.4;
+  controls.addEventListener('start', hide_point_tooltip);
+
+  // Raycaster para consultar la confianza de un punto seleccionado en el volumen (HU-3.2)
+  const raycaster = new three.Raycaster();
+  const pointer = new three.Vector2();
+  let pointer_down_pos = { x: 0, y: 0 };
+
+  canvas.addEventListener('pointerdown', (e) => {
+    pointer_down_pos = { x: e.clientX, y: e.clientY };
+  });
+
+  canvas.addEventListener('pointerup', (e) => {
+    const dist = Math.hypot(e.clientX - pointer_down_pos.x, e.clientY - pointer_down_pos.y);
+    if (dist > 5) return; // Arrastre para rotacion, ignorar
+
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+
+    const lesion_roots = viewer.lesions.map((l) => l.object);
+    const hits = raycaster.intersectObjects(lesion_roots, true);
+
+    if (hits.length > 0) {
+      const hit = hits[0];
+      const lesion_idx = viewer.lesions.findIndex((l) => {
+        let curr = hit.object;
+        while (curr) {
+          if (curr === l.object) return true;
+          curr = curr.parent;
+        }
+        return false;
+      });
+      if (lesion_idx !== -1) {
+        viewer.selected = lesion_idx;
+        render_finding();
+        apply_view_state();
+        show_point_tooltip(e.clientX - rect.left, e.clientY - rect.top, viewer.lesions[lesion_idx].info);
+      }
+    } else {
+      hide_point_tooltip();
+    }
+  });
+
   const orientation = setup_orientation(three);
   Object.assign(viewer, { three, GLTFLoader: gltf_module.GLTFLoader, renderer, scene, camera, controls, orientation });
   new ResizeObserver(resize_viewer).observe(canvas);
@@ -1830,6 +1951,7 @@ function dispose_object(object) {
 }
 
 function clear_scene() {
+  hide_point_tooltip();
   if (!viewer.scene) return;
   for (const key of ['root', 'axes']) {
     if (viewer[key]) {
@@ -1905,13 +2027,35 @@ function apply_view_state() {
   if (viewer.organ_material) {
     viewer.organ_material.opacity = viewer.mode === 'tumor' ? GHOST_OPACITY : viewer.opacity;
   }
-  viewer.lesions.forEach(({ object, material }, index) => {
+  viewer.lesions.forEach(({ object, material, info }, index) => {
     object.visible = viewer.show_tumor;
     const chosen = viewer.lesions.length > 1 && index === viewer.selected;
     material.emissiveIntensity = chosen ? 0.6 : 0.1;
+    if (viewer.show_confidence && info && typeof info.confidence === 'number') {
+      const conf_color = confidence_color(viewer.three, info.confidence);
+      material.color.copy(conf_color);
+      material.emissive.copy(conf_color);
+    } else {
+      material.color.set(TUMOR_COLOR);
+      material.emissive.set(TUMOR_COLOR);
+    }
   });
   if (viewer.axes) viewer.axes.visible = viewer.show_axes;
   if (viewer.controls) viewer.controls.autoRotate = viewer.spin;
+
+  // Actualizar UI del mapa de confianza (HU-3.2)
+  const legend = $('#conf_legend');
+  if (legend) legend.classList.toggle('hidden', !viewer.show_confidence);
+  const btn_conf = $('#btn-conf-toggle');
+  if (btn_conf) {
+    btn_conf.classList.toggle('on', !!viewer.show_confidence);
+    btn_conf.setAttribute('aria-pressed', String(!!viewer.show_confidence));
+  }
+  const t_conf = $('#t-conf');
+  if (t_conf) {
+    t_conf.classList.toggle('on', !!viewer.show_confidence);
+    t_conf.setAttribute('aria-pressed', String(!!viewer.show_confidence));
+  }
 }
 
 function render_frame(time) {
@@ -2017,6 +2161,11 @@ function bind_toggle(selector, apply) {
 bind_toggle('#t-tumor', (on) => { viewer.show_tumor = on; });
 bind_toggle('#t-spin', (on) => { viewer.spin = on; });
 bind_toggle('#t-axes', (on) => { viewer.show_axes = on; });
+bind_toggle('#t-conf', (on) => { viewer.show_confidence = on; });
+$('#btn-conf-toggle').addEventListener('click', () => {
+  viewer.show_confidence = !viewer.show_confidence;
+  apply_view_state();
+});
 
 $('#btn-delete').addEventListener('click', async () => {
   const code = viewer.code;

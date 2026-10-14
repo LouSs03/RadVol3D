@@ -85,6 +85,69 @@ main.viewer_layout {
   left: 1rem;
 }
 
+.toggle_confidence {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 5;
+}
+
+.toggle_confidence.on {
+  background: #2563EB;
+  color: #FFFFFF;
+}
+
+.conf_legend {
+  position: absolute;
+  bottom: 3.5rem;
+  left: 1rem;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 12px;
+  z-index: 6;
+  font-size: 11px;
+  color: #E2E8F0;
+}
+
+.cl_title {
+  font-weight: 700;
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.cl_bar {
+  width: 160px;
+  height: 10px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  background: linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.cl_ticks {
+  display: flex;
+  justify-content: space-between;
+  font-family: monospace;
+  font-size: 10px;
+  color: #94A3B8;
+}
+
+.point_tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 15;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid #38BDF8;
+  color: #F8FAFC;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  transform: translate(-50%, -125%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
 .orientation_cube {
   position: absolute;
   bottom: 1rem;

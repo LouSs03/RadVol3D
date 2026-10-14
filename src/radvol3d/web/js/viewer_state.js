@@ -81,3 +81,34 @@ export function study_code_from_path(pathname) {
   const match = /^\/viewer\/([^/]+)\/?$/.exec(pathname);
   return match ? decodeURIComponent(match[1]) : null;
 }
+
+// Escala continua de confianza en [0, 1] (HU-3.2):
+// 0.00 -> Azul, 0.25 -> Cian, 0.50 -> Verde, 0.75 -> Amarillo, 1.00 -> Rojo.
+export const CONFIDENCE_LEGEND_TICKS = ["0.00", "0.25", "0.50", "0.75", "1.00"];
+
+export function confidence_color_hex(value) {
+  const v = Math.max(0, Math.min(1, Number(value) || 0));
+  let r = 0, g = 0, b = 0;
+  if (v < 0.25) {
+    const t = v / 0.25;
+    r = 0;
+    g = Math.round(t * 255);
+    b = 255;
+  } else if (v < 0.5) {
+    const t = (v - 0.25) / 0.25;
+    r = 0;
+    g = 255;
+    b = Math.round((1 - t) * 255);
+  } else if (v < 0.75) {
+    const t = (v - 0.5) / 0.25;
+    r = Math.round(t * 255);
+    g = 255;
+    b = 0;
+  } else {
+    const t = (v - 0.75) / 0.25;
+    r = 255;
+    g = Math.round((1 - t) * 255);
+    b = 0;
+  }
+  return `#${[r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+}
