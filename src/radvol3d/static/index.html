@@ -837,6 +837,7 @@ import {
   HISTORY_PAGE_SIZE, LEGACY_HISTORY_KEY, clean_national_id, format_volume, is_valid_national_id,
   lesion_count_text, national_id_text, volume_text,
 } from '/static/js/history_view.js';
+import { HOME_DIRECTION, VOLUME_AXES_IN_SCENE, slice_layout } from '/static/js/volume_orientation.js';
 
 /* ============================================================
    0. CONFIGURACION
@@ -1782,7 +1783,12 @@ function paint(object, material) {
 function build_scene(organ_object, lesion_objects) {
   const three = viewer.three;
   clear_scene();
+  // El paciente de pie y de frente: la cabeza arriba y el frente hacia la camara
+  // (volume_orientation.js). Organo y lesiones giran juntos, dentro del mismo grupo.
   const root = new three.Group();
+  root.quaternion.setFromRotationMatrix(
+    new three.Matrix4().makeBasis(...VOLUME_AXES_IN_SCENE.map((axis) => new three.Vector3(...axis))),
+  );
   lesion_objects.forEach((object, index) => {
     const material = new three.MeshStandardMaterial({
       color: TUMOR_COLOR, emissive: TUMOR_COLOR, emissiveIntensity: 0.1,
@@ -1804,6 +1810,7 @@ function build_scene(organ_object, lesion_objects) {
   viewer.root = root;
   viewer.organ = organ_object;
   viewer.scene.add(root);
+  root.updateMatrixWorld(true);
   frame_camera();
   apply_view_state();
 }
@@ -1816,16 +1823,18 @@ function frame_camera() {
   const center = box.isEmpty() ? new three.Vector3() : box.getCenter(new three.Vector3());
   const radius = box.isEmpty() ? 50 : Math.max(box.getSize(new three.Vector3()).length() / 2, 1e-3);
   const distance = radius / Math.sin((camera.fov * Math.PI / 180) / 2);
-  camera.position.copy(center).addScaledVector(new three.Vector3(0.45, 0.25, 1).normalize(), distance * 1.02);
+  camera.position.copy(center).addScaledVector(new three.Vector3(...HOME_DIRECTION).normalize(), distance * 1.02);
   camera.near = distance / 100;
   camera.far = distance * 10;
   camera.updateProjectionMatrix();
   controls.target.copy(center);
   controls.update();
   viewer.home = { position: camera.position.clone(), target: center.clone() };
+  // Los ejes del volumen giran con el: rojo = derecha del paciente, verde = adelante,
+  // azul = cabeza.
   viewer.axes = new three.AxesHelper(radius * 1.1);
-  viewer.axes.position.copy(center);
-  viewer.scene.add(viewer.axes);
+  viewer.axes.position.copy(viewer.root.worldToLocal(center.clone()));
+  viewer.root.add(viewer.axes);
 }
 
 function apply_view_state() {
@@ -1961,7 +1970,7 @@ $('#btn-delete').addEventListener('click', async () => {
 /* ============================================================
    9. CORTES ORTOGONALES (desde volume.npy)
    ============================================================ */
-const SLICE_CANVASES = { ax: '#sl-ax', co: '#sl-co', sa: '#sl-sa' };
+const SLICE_CANVASES = { axial: '#sl-ax', coronal: '#sl-co', sagittal: '#sl-sa' };
 
 function draw_slice_placeholders(text) {
   for (const selector of Object.values(SLICE_CANVASES)) {
@@ -1997,19 +2006,10 @@ async function load_volume(url, token) {
   draw_slices();
 }
 
+// Cada corte con la convencion de radiologia y sus bordes rotulados (volume_orientation.js).
 function draw_slice(canvas, plane, fraction) {
-  const { shape: [a, b, c], data, min, max } = viewer.volume;
-  let rows, cols, index_of;
-  if (plane === 'ax') {
-    const i = Math.round(fraction * (a - 1));
-    rows = b; cols = c; index_of = (r, k) => (i * b + r) * c + k;
-  } else if (plane === 'co') {
-    const j = Math.round(fraction * (b - 1));
-    rows = a; cols = c; index_of = (r, k) => (r * b + j) * c + k;
-  } else {
-    const k0 = Math.round(fraction * (c - 1));
-    rows = a; cols = b; index_of = (r, k) => (r * b + k) * c + k0;
-  }
+  const { shape, data, min, max } = viewer.volume;
+  const { rows, cols, index_of, labels } = slice_layout(plane, shape, fraction);
   const source = document.createElement('canvas');
   source.width = cols; source.height = rows;
   const source_ctx = source.getContext('2d');
@@ -2035,6 +2035,18 @@ function draw_slice(canvas, plane, fraction) {
   ctx.moveTo(canvas.width / 2, 0); ctx.lineTo(canvas.width / 2, canvas.height);
   ctx.moveTo(0, canvas.height / 2); ctx.lineTo(canvas.width, canvas.height / 2);
   ctx.stroke();
+  ctx.fillStyle = 'rgba(203,213,225,0.85)';
+  ctx.font = '600 9px "Segoe UI",system-ui,sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(labels.top, canvas.width / 2, 2);
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(labels.bottom, canvas.width / 2, canvas.height - 2);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText(labels.left, 2, canvas.height / 2);
+  ctx.textAlign = 'right';
+  ctx.fillText(labels.right, canvas.width - 2, canvas.height / 2);
 }
 
 function draw_slices() {
