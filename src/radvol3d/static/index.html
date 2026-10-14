@@ -271,6 +271,11 @@
   .ov.tr{top:12px; right:14px; text-align:right;}
   .ov.bl{bottom:12px; left:14px;}
   .ov.br{bottom:12px; right:14px; text-align:right;}
+  .orientation_cube{
+    position:absolute; bottom:36px; right:14px; width:90px; height:90px;
+    pointer-events:none; z-index:5;
+  }
+  .orientation_cube canvas{display:block;}
   .ov b{color:#F8FAFC; font-size:12.5px; display:block;}
   .ov .dim{color:#64748B;}
   .vmsg{
@@ -689,6 +694,7 @@
             <span class="dim">Render</span>
             <b id="ov-fps" class="mono">— FPS</b>
           </div>
+          <div id="orientation_cube" class="orientation_cube" aria-label="Orientación anatómica"></div>
         </div>
 
         <div>
@@ -1704,6 +1710,72 @@ function lesion_summary_text(count) {
   return count === 0 ? 'sin lesiones' : count === 1 ? '1 lesión' : count + ' lesiones';
 }
 
+// ---- Cubo de orientacion anatomica (HU-3.1) ----
+const ORIENTATION_CUBE_SIZE = 90;
+const ORIENTATION_FACES = [
+  { label: "R", color: "#0072B2" },   // +X: Right (Derecha)
+  { label: "L", color: "#56B4E9" },   // -X: Left (Izquierda)
+  { label: "S", color: "#009E73" },   // +Y: Superior
+  { label: "I", color: "#D55E00" },   // -Y: Inferior
+  { label: "A", color: "#E69F00" },   // +Z: Anterior
+  { label: "P", color: "#CC79A7" },   // -Z: Posterior
+];
+
+function face_texture(three, label, bg_color) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = bg_color;
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2, 2, 124, 124);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 64px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, 64, 68);
+  const texture = new three.CanvasTexture(canvas);
+  texture.colorSpace = three.SRGBColorSpace;
+  return texture;
+}
+
+function setup_orientation(three) {
+  const container = document.getElementById("orientation_cube");
+  if (!container) return null;
+  if (container.querySelector("canvas")) return viewer.orientation;
+  const renderer = new three.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(ORIENTATION_CUBE_SIZE, ORIENTATION_CUBE_SIZE);
+  container.replaceChildren(renderer.domElement);
+
+  const scene = new three.Scene();
+  scene.add(new three.AmbientLight(0xffffff, 0.7));
+  const light = new three.DirectionalLight(0xffffff, 0.6);
+  light.position.set(1, 1, 1);
+  scene.add(light);
+
+  const camera = new three.OrthographicCamera(-1.4, 1.4, 1.4, -1.4, 0.1, 100);
+  const materials = ORIENTATION_FACES.map(({ label, color }) =>
+    new three.MeshBasicMaterial({ map: face_texture(three, label, color) })
+  );
+  const cube = new three.Mesh(new three.BoxGeometry(1, 1, 1), materials);
+  scene.add(cube);
+  return { renderer, scene, camera };
+}
+
+function sync_orientation(three, orientation, main_camera, controls) {
+  if (!orientation || !main_camera || !controls) return;
+  const direction = new three.Vector3()
+    .subVectors(main_camera.position, controls.target)
+    .normalize()
+    .multiplyScalar(3);
+  orientation.camera.position.copy(direction);
+  orientation.camera.lookAt(0, 0, 0);
+  orientation.renderer.render(orientation.scene, orientation.camera);
+}
+
 async function ensure_three() {
   if (viewer.three) return;
   const [three, gltf_module, orbit_module] = await Promise.all([
@@ -1733,7 +1805,8 @@ async function ensure_three() {
   controls.enableDamping = true;
   controls.autoRotate = viewer.spin;
   controls.autoRotateSpeed = 1.4;
-  Object.assign(viewer, { three, GLTFLoader: gltf_module.GLTFLoader, renderer, scene, camera, controls });
+  const orientation = setup_orientation(three);
+  Object.assign(viewer, { three, GLTFLoader: gltf_module.GLTFLoader, renderer, scene, camera, controls, orientation });
   new ResizeObserver(resize_viewer).observe(canvas);
   resize_viewer();
 }
@@ -1842,9 +1915,10 @@ function apply_view_state() {
 }
 
 function render_frame(time) {
-  const { controls, renderer, scene, camera } = viewer;
+  const { controls, renderer, scene, camera, three, orientation } = viewer;
   controls.update();
   renderer.render(scene, camera);
+  sync_orientation(three, orientation, camera, controls);
   viewer.fps_frames++;
   if (!viewer.fps_since) viewer.fps_since = time;
   if (time - viewer.fps_since >= 500) {

@@ -183,6 +183,92 @@ function paint(three, object, options) {
   });
 }
 
+// ---- Cubo de orientacion anatomica (HU-3.1) ----
+// Un cubo en miniatura en la esquina inferior derecha que rota con la escena.
+// Cada cara lleva la inicial de una direccion anatomica:
+//   R (Right/Derecha), L (Left/Izquierda),
+//   S (Superior), I (Inferior),
+//   A (Anterior), P (Posterior).
+// Convencion del volumen: +X = derecha, +Y = superior, +Z = anterior (hacia el
+// observador en la vista inicial). Las etiquetas usan el ingles clinico (R, L, A,
+// P, S, I) porque son universales en radiologia.
+
+const ORIENTATION_CUBE_SIZE = 120;
+
+// Colores por cara, accesibles con daltonismo (inspirados en Okabe-Ito).
+const ORIENTATION_FACES = [
+  { label: "R", color: "#0072B2" },   // +X: Right (Derecha)
+  { label: "L", color: "#56B4E9" },   // -X: Left (Izquierda)
+  { label: "S", color: "#009E73" },   // +Y: Superior
+  { label: "I", color: "#D55E00" },   // -Y: Inferior
+  { label: "A", color: "#E69F00" },   // +Z: Anterior
+  { label: "P", color: "#CC79A7" },   // -Z: Posterior
+];
+
+function face_texture(three, label, bg_color) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  // Fondo de color con borde fino.
+  ctx.fillStyle = bg_color;
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2, 2, 124, 124);
+  // Letra blanca centrada.
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 64px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, 64, 68);
+  const texture = new three.CanvasTexture(canvas);
+  texture.colorSpace = three.SRGBColorSpace;
+  return texture;
+}
+
+function setup_orientation(three) {
+  const container = document.getElementById("orientation_cube");
+  if (!container) {
+    return null;
+  }
+  const renderer = new three.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(ORIENTATION_CUBE_SIZE, ORIENTATION_CUBE_SIZE);
+  container.append(renderer.domElement);
+
+  const scene = new three.Scene();
+  scene.add(new three.AmbientLight(0xffffff, 0.7));
+  const light = new three.DirectionalLight(0xffffff, 0.6);
+  light.position.set(1, 1, 1);
+  scene.add(light);
+
+  // Camara ortografica: el cubo se ve siempre del mismo tamano.
+  const camera = new three.OrthographicCamera(-1.4, 1.4, 1.4, -1.4, 0.1, 100);
+
+  const materials = ORIENTATION_FACES.map(({ label, color }) =>
+    new three.MeshBasicMaterial({ map: face_texture(three, label, color) }),
+  );
+  const cube = new three.Mesh(new three.BoxGeometry(1, 1, 1), materials);
+  scene.add(cube);
+
+  return { renderer, scene, camera };
+}
+
+function sync_orientation(three, orientation, main_camera, controls) {
+  if (!orientation) {
+    return;
+  }
+  // El cubo copia solo la direccion de la camara principal (sin posicion ni zoom).
+  const direction = new three.Vector3()
+    .subVectors(main_camera.position, controls.target)
+    .normalize()
+    .multiplyScalar(3);
+  orientation.camera.position.copy(direction);
+  orientation.camera.lookAt(0, 0, 0);
+  orientation.renderer.render(orientation.scene, orientation.camera);
+}
+
 async function build_scene(modules, result, rows) {
   const { three, GLTFLoader, OrbitControls } = modules;
   const renderer = new three.WebGLRenderer({ antialias: true });
@@ -238,6 +324,9 @@ async function build_scene(modules, result, rows) {
   });
   reset_button.classList.remove("hidden");
 
+  // Cubo de orientacion anatomica (HU-3.1): se crea una vez y se sincroniza cada frame.
+  const orientation = setup_orientation(three);
+
   window.addEventListener("resize", () => {
     camera.aspect = canvas_box.clientWidth / canvas_box.clientHeight;
     camera.updateProjectionMatrix();
@@ -246,6 +335,7 @@ async function build_scene(modules, result, rows) {
   renderer.setAnimationLoop(() => {
     controls.update();
     renderer.render(scene, camera);
+    sync_orientation(three, orientation, camera, controls);
   });
   show_message("");
 }
