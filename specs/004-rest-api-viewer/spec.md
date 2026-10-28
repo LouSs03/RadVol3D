@@ -101,8 +101,9 @@ contenga nombre, apellido ni DNI.
    **Then** se rechaza con conflicto y el primero no cambia.
 2. **Given** un código con caracteres no permitidos o un órgano fuera del alcance, **When**
    se crea el estudio, **Then** se rechaza como entrada inválida y no se crea nada.
-3. **Given** el órgano `liver`, **When** se crea el estudio, **Then** se rechaza con un
-   mensaje que dice que no hay modelo de hígado y no se crea nada.
+3. **Given** el órgano `liver`, **When** se crea el estudio, **Then** se registra en
+   `pending` con su órgano (HU-2.2); al mandarlo a procesar se rechaza con un mensaje que
+   dice que no hay modelo de hígado y el estudio sigue `pending`.
 4. **Given** una subida con tres archivos, un ángulo repetido, un PNG, un `.npy` de forma
    distinta de 128 × 128 o con valores no finitos, **When** se suben las proyecciones,
    **Then** se rechaza como entrada inválida con un mensaje que nombra el ángulo afectado, y
