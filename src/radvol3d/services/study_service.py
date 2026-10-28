@@ -90,10 +90,10 @@ class StudyService:
     ) -> Study:
         """Crea el estudio en pending, sin proyecciones.
 
-        Antes comprueba que haya modelo para el organo: un estudio de un organo que no
-        se puede procesar no se crea (ModelNotAvailableError).
+        No pide modelo para el organo: un estudio de higado se registra aunque todavia
+        no se pueda procesar (HU-2.2). El modelo se comprueba en start_processing, que
+        deja el estudio en pending si no lo hay.
         """
-        self._factory.strategies_for(organ)
         return self._metadata_store.create_study(study_code, organ, patient)
 
     def add_projections(self, study_code: str, files: Sequence[ProjectionFile]) -> Study:
