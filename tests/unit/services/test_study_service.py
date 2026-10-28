@@ -296,7 +296,7 @@ def stored_projections() -> dict[int, np.ndarray]:
 
 
 @pytest.mark.unit
-def test_create_study_checks_the_model_before_creating(harness: Harness) -> None:
+def test_create_study_registers_the_study_in_pending(harness: Harness) -> None:
     harness.metadata.create_study.return_value = pending_study()
 
     study = harness.service.create_study(CODE, OrganName.LUNG, PATIENT)
@@ -306,11 +306,14 @@ def test_create_study_checks_the_model_before_creating(harness: Harness) -> None
 
 
 @pytest.mark.unit
-def test_create_study_for_an_organ_without_model_creates_nothing(harness: Harness) -> None:
-    with pytest.raises(ModelNotAvailableError):
-        harness.service.create_study(CODE, OrganName.LIVER)
+def test_create_study_for_an_organ_without_model_still_registers_it(harness: Harness) -> None:
+    harness.metadata.create_study.return_value = pending_study(OrganName.LIVER)
 
-    harness.metadata.create_study.assert_not_called()
+    study = harness.service.create_study(CODE, OrganName.LIVER)
+
+    assert study.organ is OrganName.LIVER
+    assert study.status is StudyStatus.PENDING
+    harness.metadata.create_study.assert_called_once_with(CODE, OrganName.LIVER, None)
 
 
 @pytest.mark.unit

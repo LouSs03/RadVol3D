@@ -73,11 +73,11 @@ def test_an_organ_outside_the_scope_is_invalid_input(client, service) -> None:
 
 
 @pytest.mark.unit
-def test_liver_is_unavailable_with_the_message_of_the_service(client, service) -> None:
+def test_processing_liver_is_unavailable_with_the_message_of_the_service(client, service) -> None:
     message = "No hay modelo de segmentacion de higado (liver) todavia."
-    service.create_study.side_effect = ModelNotAvailableError(message)
+    service.start_processing.side_effect = ModelNotAvailableError(message)
 
-    response = client.post("/studies", json={"study_code": CODE, "organ": "liver"})
+    response = client.post(f"/studies/{CODE}/process")
 
     assert response.status_code == 503
     assert response.json() == {"detail": message}
