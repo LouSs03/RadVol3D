@@ -51,7 +51,8 @@ Respuesta, `StudyResponse`:
 | código ya usado | 409 |
 | código con formato inválido en el cuerpo | 422 (validación del esquema; en la ruta, un código inválido da 400) |
 | órgano fuera de `lung`/`liver`, o datos del paciente inválidos | 422 |
-| órgano sin modelo disponible (`liver`, o pesos ausentes) | 503 |
+
+Un órgano sin modelo (`liver`, o pesos ausentes) se registra igual: el 503 sale al procesar.
 
 ### `GET /studies/{code}/status` → 200
 
