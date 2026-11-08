@@ -1,19 +1,28 @@
-"""Los cuatro filtros de la tuberia (Pipes and Filters).
+"""Los filtros de la tuberia (Pipes and Filters).
 
 Cada filtro hace una sola etapa: recibe un PipelineData, llena su campo y devuelve
 una copia nueva. No guarda estado entre corridas, asi que la misma instancia sirve
 para varios estudios a la vez.
+
+El modo de una radiografia cambia solo las dos primeras etapas
+(RadiographPreprocessingFilter y RadiographReconstructionFilter); la segmentacion y
+las mallas son los mismos filtros de siempre.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
 from radvol3d.domain.entities import SegmentationResult
-from radvol3d.domain.enums import StageNumber
+from radvol3d.domain.enums import RemoteJobState, StageNumber
 from radvol3d.services.meshing.meshing_strategy import MeshingStrategy
 from radvol3d.services.pipeline.pipeline_data import PipelineData
 from radvol3d.services.pipeline.projection_loader import ProjectionLoader
+from radvol3d.services.pipeline.radiograph_check import validate_radiograph
+from radvol3d.services.pipeline.remote_job_board import RemoteJobBoard
+from radvol3d.services.reconstruction.radiograph_reconstruction_strategy import (
+    RadiographReconstructionStrategy,
+)
 from radvol3d.services.reconstruction.reconstruction_strategy import ReconstructionStrategy
 from radvol3d.services.segmentation.segmentation_strategy import SegmentationStrategy
 
@@ -45,6 +54,59 @@ class ReconstructionFilter:
 
     def apply(self, data: PipelineData) -> PipelineData:
         return replace(data, volume=self._strategy.reconstruct(data.projections))
+
+
+class RadiographPreprocessingFilter:
+    """Etapa 1 del modo de una radiografia: vuelve a validar el DICOM guardado.
+
+    La conversion que el modelo necesita (invertir si es MONOCHROME1, llevar a
+    1024 x 1024, orientar) la hace el servicio externo: aqui no se toca la imagen.
+    """
+
+    stage_number = StageNumber.PREPROCESSING
+    model: tuple[str, str] | None = None
+
+    def apply(self, data: PipelineData) -> PipelineData:
+        return replace(data, radiograph=validate_radiograph(data.radiograph or b""))
+
+
+class RadiographReconstructionFilter:
+    """Etapa 2 del modo de una radiografia: reconstruye con el servicio externo.
+
+    Va avisando en la pizarra si el trabajo esta en cola o reconstruyendose, y la
+    limpia al terminar, bien o mal.
+    """
+
+    stage_number = StageNumber.RECONSTRUCTION
+
+    def __init__(
+        self, strategy: RadiographReconstructionStrategy, board: RemoteJobBoard | None = None
+    ) -> None:
+        self._strategy = strategy
+        self._board = board
+
+    @property
+    def model(self) -> tuple[str, str]:
+        return self._strategy.model_name, self._strategy.model_version
+
+    def apply(self, data: PipelineData) -> PipelineData:
+        try:
+            volume = self._strategy.reconstruct(data.radiograph, self._reporter(data.study_code))
+        finally:
+            if self._board is not None:
+                self._board.clear(data.study_code)
+        return replace(data, volume=volume)
+
+    def _reporter(self, study_code: str) -> Callable[[RemoteJobState], None] | None:
+        """La funcion que anota el estado del trabajo del estudio en la pizarra."""
+        board = self._board
+        if board is None:
+            return None
+
+        def report(state: RemoteJobState) -> None:
+            board.update(study_code, state)
+
+        return report
 
 
 class SegmentationFilter:

@@ -5,7 +5,14 @@ from datetime import UTC, datetime
 import pytest
 
 from radvol3d.domain.entities import Patient, PatientDetails, ProcessingStage, Study
-from radvol3d.domain.enums import OrganName, StageNumber, StageStatus, StudyStatus
+from radvol3d.domain.enums import (
+    InputMode,
+    OrganName,
+    RemoteJobState,
+    StageNumber,
+    StageStatus,
+    StudyStatus,
+)
 from radvol3d.domain.exceptions import InvalidStudyStateError
 
 CODE = "lung_028"
@@ -68,6 +75,7 @@ def test_creating_a_study_answers_201_with_its_location(client, service) -> None
         "status": "pending",
         "created_at": "2026-10-09T15:04:05Z",
         "patient_code": "PAC000001",
+        "input_mode": "projections",
     }
     service.create_study.assert_called_once_with(
         CODE,
@@ -178,3 +186,59 @@ def test_deleting_an_unknown_study_is_not_found(client, service) -> None:
     response = client.delete(f"/studies/{CODE}")
 
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Modo de una radiografia
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_creating_a_radiograph_study_passes_the_input_mode(client, service) -> None:
+    service.create_study.return_value = study(input_mode=InputMode.RADIOGRAPH)
+
+    response = client.post(
+        "/studies", json={"study_code": CODE, "organ": "lung", "input_mode": "radiograph"}
+    )
+
+    assert response.status_code == 201
+    assert response.json()["input_mode"] == "radiograph"
+    service.create_study.assert_called_once_with(
+        CODE, OrganName.LUNG, None, input_mode=InputMode.RADIOGRAPH
+    )
+
+
+@pytest.mark.unit
+def test_an_unknown_input_mode_is_a_validation_error(client, service) -> None:
+    response = client.post(
+        "/studies", json={"study_code": CODE, "organ": "lung", "input_mode": "pdf"}
+    )
+
+    assert response.status_code == 422
+    service.create_study.assert_not_called()
+
+
+@pytest.mark.unit
+def test_the_status_of_a_radiograph_study_says_whether_it_is_queued(client, service) -> None:
+    service.get_study.return_value = study(
+        StudyStatus.PROCESSING, input_mode=InputMode.RADIOGRAPH
+    )
+    service.remote_state.return_value = RemoteJobState.QUEUED
+
+    body = client.get(f"/studies/{CODE}/status").json()
+
+    assert body["input_mode"] == "radiograph"
+    assert body["remote_state"] == "queued"
+    service.remote_state.assert_called_once_with(CODE)
+
+
+@pytest.mark.unit
+def test_the_status_of_a_projections_study_does_not_ask_for_a_remote_state(
+    client, service
+) -> None:
+    service.get_study.return_value = study(StudyStatus.PROCESSING)
+
+    body = client.get(f"/studies/{CODE}/status").json()
+
+    assert body["remote_state"] is None
+    service.remote_state.assert_not_called()

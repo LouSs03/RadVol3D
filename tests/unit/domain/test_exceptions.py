@@ -84,3 +84,24 @@ def test_study_in_progress_error_carries_a_spanish_message() -> None:
 @pytest.mark.unit
 def test_an_invalid_study_state_is_a_domain_error() -> None:
     assert issubclass(exceptions.InvalidStudyStateError, RadVol3DError)
+
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "name",
+    [
+        "InvalidRadiographError",
+        "RadiographTooLargeError",
+        "ReconstructionServiceUnavailableError",
+        "RemoteReconstructionError",
+        "TooManyActiveStudiesError",
+    ],
+)
+def test_the_radiograph_mode_errors_inherit_from_the_root_error(name: str) -> None:
+    assert issubclass(getattr(exceptions, name), RadVol3DError)
+
+
+@pytest.mark.unit
+def test_a_radiograph_too_large_is_also_an_invalid_radiograph() -> None:
+    assert issubclass(exceptions.RadiographTooLargeError, exceptions.InvalidRadiographError)

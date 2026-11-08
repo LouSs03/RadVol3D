@@ -21,14 +21,20 @@ Flujo en tres pasos de la funcionalidad 004 (research.md R2 y R3):
 
 register_study es create_study + add_projections en una sola transaccion.
 
+Modo de una radiografia (migracion 003): create_study con input_mode radiograph deja
+el estudio marcado; add_radiograph sube el DICOM y registra su ruta, con las mismas
+reglas que add_projections (pending y sin radiografia previa); claim_for_processing
+exige la radiografia en lugar de las cuatro proyecciones y, dentro del bloqueo, que
+no haya ya demasiados estudios de una radiografia en processing.
+
 Orden de delete_study (research.md R8 de la funcionalidad 002): todo dentro de una
 transaccion. Se bloquea la fila del estudio, se comprueba que no se este procesando,
 se borra la fila (lo demas cae en cascada) y despues se borran sus archivos del
-bucket: las diez rutas fijas mas las mallas de lesion (lesion_<NNN>.glb) que haya en
-<study_code>/meshes. Esas se listan en el bucket y no se leen de las filas de lesion,
-para limpiar tambien las de un guardado que fallo antes de insertarlas (research.md
-R12 de 004). Si el bucket falla, la transaccion se revierte: el estudio sigue en pie
-y el borrado se puede reintentar.
+bucket: las once rutas fijas (con la radiografia) mas las mallas de lesion
+(lesion_<NNN>.glb) que haya en <study_code>/meshes. Esas se listan en el bucket y no
+se leen de las filas de lesion, para limpiar tambien las de un guardado que fallo
+antes de insertarlas (research.md R12 de 004). Si el bucket falla, la transaccion se
+revierte: el estudio sigue en pie y el borrado se puede reintentar.
 """
 
 import re
@@ -40,14 +46,16 @@ import numpy as np
 
 from radvol3d import config
 from radvol3d.domain.entities import PatientDetails, Projection, Study, StudyHistoryPage
-from radvol3d.domain.enums import OrganName, StudyStatus
+from radvol3d.domain.enums import InputMode, OrganName, StudyStatus
 from radvol3d.domain.exceptions import (
     InvalidProjectionError,
+    InvalidRadiographError,
     InvalidStudyStateError,
     StudyInProgressError,
+    TooManyActiveStudiesError,
 )
 from radvol3d.persistence.connection import Database
-from radvol3d.persistence.object_storage import ObjectStorage
+from radvol3d.persistence.object_storage import CONTENT_TYPE_DICOM, ObjectStorage
 from radvol3d.persistence.repositories.lesion_repository import LesionRepository
 from radvol3d.persistence.repositories.organ_repository import parse_organ_name
 from radvol3d.persistence.repositories.patient_repository import PatientRepository
@@ -64,6 +72,7 @@ from radvol3d.persistence.storage_layout import (
     organ_mesh_path,
     probability_path,
     projection_path,
+    radiograph_path,
     summary_path,
     tumor_mesh_path,
     validate_projection_angle,
@@ -118,17 +127,59 @@ class StudyMetadataStore:
         study_code: str,
         organ: OrganName | str,
         patient: PatientDetails | None = None,
+        input_mode: InputMode | str = InputMode.PROJECTIONS,
     ) -> Study:
-        """Registra un estudio en pending con sus cuatro etapas, todavia sin proyecciones.
+        """Registra un estudio en pending con sus cuatro etapas, todavia sin archivos.
 
         No sube nada al bucket. Valida el codigo y el organo antes de tocar la base.
+        Un estudio de una radiografia queda marcado con input_mode radiograph.
         """
         validate_study_code(study_code)
         organ_name = parse_organ_name(organ)
+        mode = InputMode(input_mode)
         with self._database.transaction() as connection:
             self._insert_study(connection, study_code, organ_name, patient)
+            if mode is InputMode.RADIOGRAPH:
+                StudyRepository(connection).set_input_mode(study_code, mode)
             ProcessingStageRepository(connection).prepare_stages(study_code)
             return self._load(connection, study_code)
+
+    def add_radiograph(self, study_code: str, data: bytes) -> Study:
+        """Sube el DICOM de un estudio de una radiografia en pending y registra su ruta.
+
+        Lanza InvalidStudyStateError, sin subir nada, si el estudio no esta en pending,
+        si no es de una radiografia o si ya tiene una. El contenido lo valida antes el
+        servicio; aqui solo se exige que no este vacio.
+        """
+        validate_study_code(study_code)
+        if not data:
+            raise InvalidRadiographError("La radiografia esta vacia.")
+        path = radiograph_path(study_code)
+        with self._database.transaction() as connection:
+            studies = StudyRepository(connection)
+            details = studies.lock_claim_details(study_code)
+            if details.input_mode is not InputMode.RADIOGRAPH:
+                raise InvalidStudyStateError(
+                    f"El estudio '{study_code}' es de cuatro proyecciones: no recibe una "
+                    "radiografia."
+                )
+            if details.status is not StudyStatus.PENDING:
+                raise InvalidStudyStateError(
+                    f"El estudio '{study_code}' esta en {details.status.value}: solo se sube "
+                    "la radiografia a un estudio en pending."
+                )
+            if details.has_radiograph:
+                raise InvalidStudyStateError(
+                    f"El estudio '{study_code}' ya tiene su radiografia. Para cambiarla, "
+                    "borra el estudio y crealo de nuevo."
+                )
+            self._storage.upload_bytes(path, data, CONTENT_TYPE_DICOM)
+            studies.set_radiograph_path(study_code, path)
+            return self._load(connection, study_code)
+
+    def load_radiograph(self, study_code: str) -> bytes:
+        """Baja del bucket el DICOM del estudio."""
+        return self._storage.download_bytes(radiograph_path(study_code))
 
     def add_projections(self, study_code: str, projections: list[ProjectionUpload]) -> Study:
         """Sube y registra las cuatro proyecciones de un estudio en pending que no tiene.
@@ -139,7 +190,12 @@ class StudyMetadataStore:
         validate_study_code(study_code)
         uploads = self._validated_uploads(study_code, projections)
         with self._database.transaction() as connection:
-            status = StudyRepository(connection).lock_status(study_code)
+            details = StudyRepository(connection).lock_claim_details(study_code)
+            status = details.status
+            if details.input_mode is InputMode.RADIOGRAPH:
+                raise InvalidStudyStateError(
+                    f"El estudio '{study_code}' es de una radiografia: no recibe proyecciones."
+                )
             if status is not StudyStatus.PENDING:
                 raise InvalidStudyStateError(
                     f"El estudio '{study_code}' esta en {status.value}: solo se suben "
@@ -156,9 +212,10 @@ class StudyMetadataStore:
     def claim_for_processing(
         self,
         study_code: str,
-        check_organ: Callable[[OrganName], object] | None = None,
+        check_organ: Callable[..., object] | None = None,
     ) -> None:
-        """Pasa a processing un estudio en pending con sus cuatro proyecciones.
+        """Pasa a processing un estudio en pending con sus cuatro proyecciones (o su
+        radiografia, en el modo de una radiografia).
 
         Lanza InvalidStudyStateError si no cumple. El bloqueo de la fila hace que, de
         dos pedidos simultaneos, solo uno reclame el estudio.
@@ -166,27 +223,57 @@ class StudyMetadataStore:
         check_organ recibe el organo del estudio dentro de la transaccion, antes de
         cambiar el estado: si lanza (por ejemplo, ModelNotAvailableError), la
         transaccion se revierte y el estudio sigue en pending. Asi la comprobacion del
-        modelo no cuesta una lectura aparte del estudio.
+        modelo no cuesta una lectura aparte del estudio. En un estudio de una
+        radiografia se llama con el organo e InputMode.RADIOGRAPH.
         """
         validate_study_code(study_code)
         with self._database.transaction() as connection:
             studies = StudyRepository(connection)
-            status, organ = studies.lock_for_claim(study_code)
+            details = studies.lock_claim_details(study_code)
+            status, organ = details.status, details.organ
             if status is not StudyStatus.PENDING:
                 raise InvalidStudyStateError(
                     f"El estudio '{study_code}' esta en {status.value}: solo se procesa un "
                     "estudio en pending."
                 )
-            count = ProjectionRepository(connection).count_by_study(study_code)
-            expected = len(config.PROJECTION_ANGLES)
-            if count != expected:
-                raise InvalidStudyStateError(
-                    f"El estudio '{study_code}' tiene {count} de {expected} proyecciones: "
-                    "sube las cuatro antes de procesarlo."
-                )
+            if details.input_mode is InputMode.RADIOGRAPH:
+                self._check_radiograph_claim(studies, study_code, details.has_radiograph)
+            else:
+                count = ProjectionRepository(connection).count_by_study(study_code)
+                expected = len(config.PROJECTION_ANGLES)
+                if count != expected:
+                    raise InvalidStudyStateError(
+                        f"El estudio '{study_code}' tiene {count} de {expected} proyecciones: "
+                        "sube las cuatro antes de procesarlo."
+                    )
             if check_organ is not None:
-                check_organ(organ)
+                if details.input_mode is InputMode.RADIOGRAPH:
+                    # El servicio decide que revisar en este modo (el servicio externo).
+                    check_organ(organ, InputMode.RADIOGRAPH)
+                else:
+                    check_organ(organ)
             studies.update_status(study_code, StudyStatus.PROCESSING)
+
+    @staticmethod
+    def _check_radiograph_claim(
+        studies: StudyRepository, study_code: str, has_radiograph: bool
+    ) -> None:
+        """Exige la radiografia y que no haya demasiados estudios de una radiografia activos.
+
+        El conteo corre con la fila del estudio bloqueada: dos pedidos del MISMO estudio
+        no pueden pasar juntos; dos de estudios distintos si, asi que el limite es
+        aproximado por uno. Para este volumen de uso basta.
+        """
+        if not has_radiograph:
+            raise InvalidStudyStateError(
+                f"El estudio '{study_code}' no tiene su radiografia: subela antes de procesarlo."
+            )
+        active = studies.count_processing_radiographs()
+        if active >= config.MAX_ACTIVE_RADIOGRAPH_STUDIES:
+            raise TooManyActiveStudiesError(
+                f"Ya hay {active} radiografias en proceso. Espera a que termine alguna y "
+                "vuelve a intentarlo."
+            )
 
     def load_projections(self, study_code: str) -> dict[int, np.ndarray]:
         """Baja del bucket las cuatro proyecciones del estudio, por angulo."""
@@ -308,8 +395,12 @@ class StudyMetadataStore:
 
     @staticmethod
     def _study_files(study_code: str) -> list[str]:
-        """Las diez rutas fijas que puede tener un estudio en el bucket."""
+        """Las once rutas fijas que puede tener un estudio en el bucket.
+
+        La radiografia se incluye siempre: borrar una ruta que no existe no falla.
+        """
         return [projection_path(study_code, a) for a in config.PROJECTION_ANGLES] + [
+            radiograph_path(study_code),
             volume_path(study_code),
             mask_path(study_code),
             probability_path(study_code),

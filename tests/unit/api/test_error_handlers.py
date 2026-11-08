@@ -112,3 +112,24 @@ def test_an_unexpected_error_is_a_generic_server_error_without_its_text(caplog) 
     assert "Traceback" not in response.text
     assert "RuntimeError" in caplog.text
     assert "una-clave" not in caplog.text
+
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("name", "status_code"),
+    [
+        ("InvalidRadiographError", 422),
+        ("RadiographTooLargeError", 413),
+        ("ReconstructionServiceUnavailableError", 503),
+        ("TooManyActiveStudiesError", 429),
+        ("RemoteReconstructionError", 502),
+    ],
+)
+def test_the_radiograph_mode_errors_have_their_codes(name: str, status_code: int) -> None:
+    client = app_raising(getattr(domain_errors, name)("Mensaje en espanol"))
+
+    response = client.get("/falla")
+
+    assert response.status_code == status_code
+    assert response.json() == {"detail": "Mensaje en espanol"}

@@ -8,6 +8,10 @@ registra cada modelo cargado en la tabla model.
 Un modelo que no carga (falta PyTorch, faltan sus variables o sus pesos) no detiene
 el arranque: queda no disponible y los estudios que lo necesiten fallan con
 ModelNotAvailableError (FR-019). La base, en cambio, es obligatoria.
+
+El modo de una radiografia sigue la misma regla: sin AXON_URL o AXON_API_KEY queda no
+disponible y el modo de cuatro proyecciones funciona igual. Armar su estrategia no toca
+la red: si el servicio externo esta apagado se sabe al usarlo, no al arrancar.
 """
 
 import logging
@@ -21,17 +25,30 @@ from radvol3d.persistence.connection import Database
 from radvol3d.persistence.model_weights_store import ModelWeightsStore
 from radvol3d.persistence.object_storage import ObjectStorage
 from radvol3d.persistence.processing_progress_store import ProcessingProgressStore
+from radvol3d.persistence.reconstruction_service_client import ReconstructionServiceClient
 from radvol3d.persistence.result_store import ResultStore
-from radvol3d.persistence.settings import ModelSettings, Settings
+from radvol3d.persistence.settings import (
+    ModelSettings,
+    ReconstructionServiceSettings,
+    Settings,
+)
 from radvol3d.persistence.study_metadata_store import StudyMetadataStore
 from radvol3d.services.meshing.lung_air_region import LungAirRegion
 from radvol3d.services.meshing.marching_cubes_strategy import MarchingCubesStrategy
 from radvol3d.services.meshing.meshing_strategy import MeshingStrategy
 from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
 from radvol3d.services.pipeline.projection_loader import ProjectionLoader
+from radvol3d.services.pipeline.remote_job_board import RemoteJobBoard
 from radvol3d.services.reconstruction.neural_en1_strategy import NeuralEn1Strategy
+from radvol3d.services.reconstruction.radiograph_reconstruction_strategy import (
+    RadiographReconstructionStrategy,
+)
 from radvol3d.services.reconstruction.reconstruction_strategy import ReconstructionStrategy
+from radvol3d.services.reconstruction.remote_axon_strategy import RemoteAxonStrategy
 from radvol3d.services.segmentation.lung_unet_strategy import LungUnetStrategy
+from radvol3d.services.segmentation.pending_segmentation_strategy import (
+    PendingSegmentationStrategy,
+)
 from radvol3d.services.segmentation.segmentation_strategy import SegmentationStrategy
 from radvol3d.services.strategy_factory import StrategyFactory
 from radvol3d.services.study_service import StudyService
@@ -42,6 +59,9 @@ logger = logging.getLogger(__name__)
 MODEL_DESCRIPTIONS: dict[str, str] = {
     "reconstruction_en1": "Retroproyector de TA-2, filtro rampa y U-Net 3D residual EN-1",
     "segmentation_lung": "U-Net 3D residual con supervision profunda EN-2",
+    "reconstruction_axon_coarsediff": (
+        "AXON CoarseDiff: volumen desde una radiografia real, servicio externo con GPU"
+    ),
 }
 
 
@@ -54,6 +74,13 @@ class StrategyBuilders:
     meshing: Callable[[], MeshingStrategy]
     # Mallas propias de un organo; el resto usa meshing.
     organ_meshing: Mapping[OrganName, Callable[[], MeshingStrategy]] = field(
+        default_factory=dict
+    )
+    # Modo de una radiografia. None: el modo no esta configurado.
+    radiograph_reconstruction: Callable[[], RadiographReconstructionStrategy] | None = None
+    # Segmentacion de los volumenes de una radiografia, por organo (requisito 8 de la
+    # guia: hoy el gancho PendingSegmentationStrategy).
+    radiograph_segmentation: Mapping[OrganName, Callable[[], SegmentationStrategy]] = field(
         default_factory=dict
     )
 
@@ -80,8 +107,30 @@ class ServiceContainer:
             self._database.close()
 
 
+def radiograph_reconstruction_builder(
+    service_settings: ReconstructionServiceSettings | None,
+) -> Callable[[], RadiographReconstructionStrategy] | None:
+    """El constructor de la estrategia remota, o None si falta AXON_URL o AXON_API_KEY."""
+    if service_settings is None or not service_settings.configured:
+        return None
+
+    def build() -> RadiographReconstructionStrategy:
+        client = ReconstructionServiceClient.from_settings(service_settings)
+        if client is None:
+            raise ModelNotAvailableError("Falta configurar AXON_URL o AXON_API_KEY.")
+        return RemoteAxonStrategy(
+            client,
+            poll_seconds=service_settings.axon_poll_seconds,
+            max_wait_seconds=service_settings.axon_max_wait_seconds,
+        )
+
+    return build
+
+
 def default_strategy_builders(
-    weights_store: ModelWeightsStore | None, model_settings: ModelSettings
+    weights_store: ModelWeightsStore | None,
+    model_settings: ModelSettings,
+    service_settings: ReconstructionServiceSettings | None = None,
 ) -> StrategyBuilders:
     """Las estrategias reales. Cada una baja sus pesos solo cuando se construye."""
 
@@ -106,6 +155,11 @@ def default_strategy_builders(
             # El pulmon es aire: su malla sale del aire que encierra el cuerpo.
             OrganName.LUNG: lambda: MarchingCubesStrategy(organ_region=LungAirRegion()),
         },
+        radiograph_reconstruction=radiograph_reconstruction_builder(service_settings),
+        radiograph_segmentation={
+            # Gancho: aqui se registra el segmentador que entrene Lourdes.
+            OrganName.LUNG: PendingSegmentationStrategy,
+        },
     )
 
 
@@ -116,6 +170,7 @@ def build_service_container(
     database_factory: Callable[[Settings], Database] = Database.from_settings,
     storage_factory: Callable[..., ObjectStorage] = ObjectStorage.from_settings,
     strategy_builders: StrategyBuilders | None = None,
+    service_settings: ReconstructionServiceSettings | None = None,
 ) -> ServiceContainer:
     """Arma todos los servicios. Lanza solo si la base no se puede abrir."""
     database = database_factory(settings)
@@ -127,13 +182,17 @@ def build_service_container(
         model_storage = storage_factory(settings, bucket=model_settings.model_bucket)
         weights_store = ModelWeightsStore(model_storage, model_settings.model_cache_dir)
 
-    builders = strategy_builders or default_strategy_builders(weights_store, model_settings)
+    builders = strategy_builders or default_strategy_builders(
+        weights_store, model_settings, service_settings
+    )
     factory = StrategyFactory(
         reconstruction_builders=builders.reconstruction,
         segmentation_builders=builders.segmentation,
         meshing_builder=builders.meshing,
         reconstruction_key=model_settings.reconstruction_strategy,
         organ_meshing_builders=builders.organ_meshing,
+        radiograph_reconstruction_builder=builders.radiograph_reconstruction,
+        radiograph_segmentation_builders=builders.radiograph_segmentation,
     )
     factory.preload()
 
@@ -151,13 +210,15 @@ def build_service_container(
         )
 
     loader = ProjectionLoader()
+    board = RemoteJobBoard()
     study_service = StudyService(
         metadata_store=StudyMetadataStore(database, storage),
         result_store=ResultStore(database, storage),
         progress_store=progress_store,
         factory=factory,
-        pipeline=ProcessingPipeline(loader),
+        pipeline=ProcessingPipeline(loader, board),
         loader=loader,
+        board=board,
     )
     # La tarea que procesaba un estudio en processing murio con el proceso anterior:
     # sin esto quedaria colgado y no se podria borrar (research.md R5 de 004).

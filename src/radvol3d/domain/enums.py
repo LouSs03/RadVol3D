@@ -14,6 +14,28 @@ class OrganName(StrEnum):
     LIVER = "liver"
 
 
+class InputMode(StrEnum):
+    """Como entra un estudio al sistema.
+
+    - projections: las cuatro proyecciones sinteticas (.npy) de siempre.
+    - radiograph: una sola radiografia de torax real (DICOM), reconstruida por el
+      servicio externo AXON (guia del modo de una radiografia).
+    """
+
+    PROJECTIONS = "projections"
+    RADIOGRAPH = "radiograph"
+
+
+class RemoteJobState(StrEnum):
+    """Estado de un trabajo en el servicio externo de reconstruccion, mientras dura.
+
+    Solo se muestra al usuario ("en cola", "reconstruyendo"); no se guarda en la base.
+    """
+
+    QUEUED = "queued"
+    RUNNING = "running"
+
+
 class StudyStatus(StrEnum):
     """Estado de un estudio a lo largo de su procesamiento."""
 

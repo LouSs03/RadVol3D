@@ -31,6 +31,7 @@ from radvol3d.persistence.settings import Settings
 CONTENT_TYPE_ARRAY = "application/octet-stream"
 CONTENT_TYPE_JSON = "application/json"
 CONTENT_TYPE_MESH = "model/gltf-binary"
+CONTENT_TYPE_DICOM = "application/dicom"
 
 _STORAGE_ERRORS = (StorageException, httpx.HTTPError)
 

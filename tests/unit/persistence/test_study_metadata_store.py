@@ -11,7 +11,7 @@ import pytest
 from storage3.utils import StorageException
 
 from radvol3d.domain.entities import Lesion, Patient, PatientDetails, Projection
-from radvol3d.domain.enums import OrganName, StageNumber, StageStatus, StudyStatus
+from radvol3d.domain.enums import InputMode, OrganName, StageNumber, StageStatus, StudyStatus
 from radvol3d.domain.exceptions import (
     DuplicateStudyError,
     InvalidProjectionError,
@@ -19,6 +19,7 @@ from radvol3d.domain.exceptions import (
     InvalidStudyStateError,
     StorageError,
     StudyNotFoundError,
+    TooManyActiveStudiesError,
     UnknownOrganError,
 )
 from radvol3d.persistence.object_storage import ObjectStorage
@@ -460,6 +461,7 @@ STUDY_FILES = [
     f"{CODE}/projections/angle_045.npy",
     f"{CODE}/projections/angle_090.npy",
     f"{CODE}/projections/angle_135.npy",
+    f"{CODE}/input/radiograph.dcm",
     f"{CODE}/volume.npy",
     f"{CODE}/segmentation/mask.npy",
     f"{CODE}/segmentation/probability.npy",
@@ -500,7 +502,7 @@ def test_delete_locks_checks_deletes_removes_the_files_and_then_commits() -> Non
 
 
 @pytest.mark.unit
-def test_delete_removes_exactly_the_ten_files_of_the_study() -> None:
+def test_delete_removes_exactly_the_eleven_files_of_the_study() -> None:
     world = DeleteWorld()
 
     world.store.delete_study(CODE)
@@ -851,3 +853,145 @@ def test_list_history_passes_the_national_id_to_the_repository() -> None:
 
     [params] = world.connection.params_of("left join lesion")
     assert params == ("12345678", 51, 0)
+
+
+
+# ---------------------------------------------------------------------------
+# Modo de una radiografia (migracion 003)
+# ---------------------------------------------------------------------------
+
+
+def radiograph_lock_returns(
+    world: World, status: str, has_radiograph: bool = False, mode: str = "radiograph"
+) -> None:
+    world.connection.rules.insert(
+        0,
+        (
+            "for update",
+            [
+                {
+                    "status": status,
+                    "organ_name": "lung",
+                    "input_mode": mode,
+                    "radiograph_path": f"{CODE}/input/radiograph.dcm" if has_radiograph else None,
+                }
+            ],
+            False,
+        ),
+    )
+
+
+def active_radiographs_are(world: World, count: int) -> None:
+    world.connection.when("as active from study", [{"active": count}])
+
+
+DICOM = b"\x00" * 128 + b"DICM" + b"\x01" * 64
+
+
+@pytest.mark.unit
+def test_create_study_marks_a_radiograph_study_inside_the_same_transaction(world: World) -> None:
+    world.store.create_study(CODE, OrganName.LUNG, input_mode=InputMode.RADIOGRAPH)
+
+    assert world.connection.params_of("update study set input_mode") == [("radiograph", CODE)]
+    assert index_of(world.events, "insert into study") < index_of(
+        world.events, "update study set input_mode"
+    )
+    assert world.uploaded() == []
+    assert world.database.committed == 1
+
+
+@pytest.mark.unit
+def test_create_study_of_projections_does_not_touch_the_input_mode(world: World) -> None:
+    world.store.create_study(CODE, OrganName.LUNG)
+
+    assert world.connection.params_of("update study set input_mode") == []
+
+
+@pytest.mark.unit
+def test_add_radiograph_uploads_the_file_and_records_its_path(world: World) -> None:
+    radiograph_lock_returns(world, "pending")
+
+    world.store.add_radiograph(CODE, DICOM)
+
+    path = f"{CODE}/input/radiograph.dcm"
+    assert world.uploaded() == [path]
+    assert world.bucket.files[path] == DICOM
+    assert world.connection.params_of("update study set radiograph_path") == [(path, CODE)]
+    assert index_of(world.events, "for update") < index_of(world.events, "upload:")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("status", "has_radiograph", "mode", "message"),
+    [
+        ("processing", False, "radiograph", "processing"),
+        ("pending", True, "radiograph", "ya tiene"),
+        ("pending", False, "projections", "cuatro proyecciones"),
+    ],
+)
+def test_add_radiograph_rejects_what_does_not_fit_and_uploads_nothing(
+    world: World, status: str, has_radiograph: bool, mode: str, message: str
+) -> None:
+    radiograph_lock_returns(world, status, has_radiograph, mode)
+
+    with pytest.raises(InvalidStudyStateError, match=message):
+        world.store.add_radiograph(CODE, DICOM)
+
+    assert world.uploaded() == []
+    assert world.database.rolled_back == 1
+
+
+@pytest.mark.unit
+def test_add_projections_rejects_a_radiograph_study(world: World) -> None:
+    radiograph_lock_returns(world, "pending")
+
+    with pytest.raises(InvalidStudyStateError, match="una radiografia"):
+        world.store.add_projections(CODE, four_uploads())
+
+    assert world.uploaded() == []
+
+
+@pytest.mark.unit
+def test_claim_of_a_radiograph_study_checks_the_service_and_moves_it_to_processing(
+    world: World,
+) -> None:
+    radiograph_lock_returns(world, "pending", has_radiograph=True)
+    active_radiographs_are(world, 0)
+    seen: list = []
+
+    world.store.claim_for_processing(CODE, lambda *args: seen.append(args))
+
+    assert seen == [(OrganName.LUNG, InputMode.RADIOGRAPH)]
+    assert world.connection.params_of("projection_count") == []
+    assert world.connection.params_of("update study set status") == [("processing", CODE)]
+
+
+@pytest.mark.unit
+def test_claim_of_a_radiograph_study_without_its_file_is_rejected(world: World) -> None:
+    radiograph_lock_returns(world, "pending", has_radiograph=False)
+
+    with pytest.raises(InvalidStudyStateError, match="no tiene su radiografia"):
+        world.store.claim_for_processing(CODE)
+
+    assert world.connection.params_of("update study set status") == []
+
+
+@pytest.mark.unit
+def test_claim_is_refused_when_too_many_radiographs_are_processing(world: World) -> None:
+    from radvol3d import config
+
+    radiograph_lock_returns(world, "pending", has_radiograph=True)
+    active_radiographs_are(world, config.MAX_ACTIVE_RADIOGRAPH_STUDIES)
+
+    with pytest.raises(TooManyActiveStudiesError):
+        world.store.claim_for_processing(CODE)
+
+    assert world.connection.params_of("update study set status") == []
+    assert world.database.rolled_back == 1
+
+
+@pytest.mark.unit
+def test_load_radiograph_downloads_the_stored_file(world: World) -> None:
+    world.bucket.files[f"{CODE}/input/radiograph.dcm"] = DICOM
+
+    assert world.store.load_radiograph(CODE) == DICOM

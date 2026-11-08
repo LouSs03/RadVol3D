@@ -1,6 +1,7 @@
 -- RadVol3D: esquema completo para un proyecto de Supabase nuevo.
 --
--- Junta 001_create_tables.sql y 002_add_lesion_organ.sql en un solo script y
+-- Junta 001_create_tables.sql, 002_add_lesion_organ.sql y 003_add_radiograph_input.sql
+-- en un solo script y
 -- agrega los dos buckets de Storage. Se pega entero en el editor SQL de Supabase.
 --
 -- No borra nada: usa "if not exists" y "on conflict do nothing", asi que se
@@ -89,6 +90,8 @@ create table if not exists study (
     grid_size      smallint,
     total_time_sec numeric(9, 3),
     created_at     timestamptz  not null default now(),
+    input_mode     varchar(16)  not null default 'projections',
+    radiograph_path text,
 
     constraint study_code_format
         check (study_code ~ '^[A-Za-z0-9_-]{1,64}$'),
@@ -97,7 +100,13 @@ create table if not exists study (
         check (status in ('pending', 'processing', 'completed', 'failed')),
 
     constraint study_total_time_positive
-        check (total_time_sec is null or total_time_sec >= 0)
+        check (total_time_sec is null or total_time_sec >= 0),
+
+    constraint study_input_mode_allowed
+        check (input_mode in ('projections', 'radiograph')),
+
+    constraint study_radiograph_only_in_radiograph_mode
+        check (radiograph_path is null or input_mode = 'radiograph')
 );
 
 comment on table  study                is 'Un estudio: un organo de un paciente, procesado una vez.';
@@ -106,6 +115,8 @@ comment on column study.model_id       is 'Modelo de reconstruccion usado. Nulo 
 comment on column study.status         is 'pending, processing, completed o failed.';
 comment on column study.grid_size      is 'Lado del volumen reconstruido, en voxeles.';
 comment on column study.total_time_sec is 'Tiempo total del procesamiento, en segundos.';
+comment on column study.input_mode     is 'projections (cuatro .npy) o radiograph (un DICOM, migracion 003).';
+comment on column study.radiograph_path is 'Ruta del DICOM en el bucket. Solo en estudios radiograph.';
 
 
 -- ---------------------------------------------------------------------------

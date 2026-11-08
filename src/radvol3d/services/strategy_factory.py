@@ -24,6 +24,9 @@ from dataclasses import dataclass
 from radvol3d.domain.enums import OrganName
 from radvol3d.domain.exceptions import ModelNotAvailableError
 from radvol3d.services.meshing.meshing_strategy import MeshingStrategy
+from radvol3d.services.reconstruction.radiograph_reconstruction_strategy import (
+    RadiographReconstructionStrategy,
+)
 from radvol3d.services.reconstruction.reconstruction_strategy import ReconstructionStrategy
 from radvol3d.services.segmentation.segmentation_strategy import SegmentationStrategy
 
@@ -45,6 +48,18 @@ class StrategySet:
     meshing: MeshingStrategy
 
 
+@dataclass(frozen=True)
+class RadiographStrategySet:
+    """Las tres estrategias con que se procesa un estudio de una radiografia."""
+
+    reconstruction: RadiographReconstructionStrategy
+    segmentation: SegmentationStrategy
+    meshing: MeshingStrategy
+
+
+RADIOGRAPH_UNAVAILABLE = "El modo de una radiografía no está disponible en este momento."
+
+
 class StrategyFactory:
     """Construye cada estrategia una vez y entrega las que corresponden a cada organo."""
 
@@ -55,6 +70,10 @@ class StrategyFactory:
         meshing_builder: Callable[[], MeshingStrategy],
         reconstruction_key: str,
         organ_meshing_builders: Mapping[OrganName, Callable[[], MeshingStrategy]] | None = None,
+        radiograph_reconstruction_builder: Callable[[], RadiographReconstructionStrategy]
+        | None = None,
+        radiograph_segmentation_builders: Mapping[OrganName, Callable[[], SegmentationStrategy]]
+        | None = None,
     ) -> None:
         self._reconstruction_builders = dict(reconstruction_builders)
         self._segmentation_builders = {
@@ -65,6 +84,13 @@ class StrategyFactory:
             OrganName(organ): builder for organ, builder in (organ_meshing_builders or {}).items()
         }
         self._reconstruction_key = reconstruction_key
+        self._radiograph_reconstruction_builder = radiograph_reconstruction_builder
+        self._radiograph_segmentation_builders = {
+            OrganName(organ): builder
+            for organ, builder in (radiograph_segmentation_builders or {}).items()
+        }
+        self._radiograph_reconstruction: RadiographReconstructionStrategy | None = None
+        self._radiograph_segmentation: dict[OrganName, SegmentationStrategy] = {}
         self._reconstruction: dict[str, ReconstructionStrategy] = {}
         self._segmentation: dict[OrganName, SegmentationStrategy] = {}
         self._meshing: MeshingStrategy | None = None
@@ -79,6 +105,14 @@ class StrategyFactory:
         self._meshing = self._build("meshing", self._meshing_builder)
         for organ, builder in self._organ_meshing_builders.items():
             self._organ_meshing[organ] = self._build(f"meshing:{organ.value}", builder)
+        if self._radiograph_reconstruction_builder is not None:
+            self._radiograph_reconstruction = self._build(
+                "radiograph:reconstruction", self._radiograph_reconstruction_builder
+            )
+        for organ, builder in self._radiograph_segmentation_builders.items():
+            self._radiograph_segmentation[organ] = self._build(
+                f"radiograph:segmentation:{organ.value}", builder
+            )
 
     def strategies_for(self, organ: OrganName | str) -> StrategySet:
         """Devuelve las estrategias ya construidas para el organo pedido."""
@@ -99,6 +133,29 @@ class StrategyFactory:
             f"segmentation:{organ_name.value}", self._segmentation.get(organ_name)
         )
         return StrategySet(reconstruction, segmentation, self.meshing_for(organ_name))
+
+    def radiograph_strategies_for(self, organ: OrganName | str) -> RadiographStrategySet:
+        """Las estrategias del modo de una radiografia para el organo pedido.
+
+        Lanza ModelNotAvailableError si el modo no esta configurado (falta AXON_URL o
+        AXON_API_KEY) o si no hay segmentacion registrada para ese organo. No comprueba
+        que el servicio externo responda: eso lo hace StudyService antes de reclamar.
+        """
+        organ_name = OrganName(organ)
+        if self._radiograph_reconstruction is None:
+            raise ModelNotAvailableError(RADIOGRAPH_UNAVAILABLE)
+        segmentation = self._radiograph_segmentation.get(organ_name)
+        if segmentation is None:
+            raise ModelNotAvailableError(
+                f"El modo de una radiografía no admite {_ORGAN_LABELS[organ_name]}."
+            )
+        return RadiographStrategySet(
+            self._radiograph_reconstruction, segmentation, self.meshing_for(organ_name)
+        )
+
+    def radiograph_mode_configured(self) -> bool:
+        """Si el modo de una radiografia quedo armado al arrancar (no si responde)."""
+        return self._radiograph_reconstruction is not None
 
     def meshing_for(self, organ: OrganName | str) -> MeshingStrategy:
         """La estrategia de mallas del organo: la propia si la tiene, si no la comun.
@@ -123,6 +180,8 @@ class StrategyFactory:
                 for organ in self._segmentation_builders
             }
         )
+        if self._radiograph_reconstruction_builder is not None:
+            status["radiograph:reconstruction"] = self._radiograph_reconstruction is not None
         status["meshing"] = self._meshing is not None
         status.update(
             {
