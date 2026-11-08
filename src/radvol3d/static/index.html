@@ -750,7 +750,7 @@
           </div>
           <div class="ov tr">
             <b id="ov-case">—</b>
-            <span class="dim">4 proyecciones · 0/45/90/135°</span>
+            <span class="dim" id="ov-input">4 proyecciones · 0/45/90/135°</span>
           </div>
           <div class="ov bl">
             <span class="dim">Rotación</span>
@@ -1910,6 +1910,7 @@ function reset_viewer_panels(code) {
   $('#vw-title').textContent = 'Reconstrucción volumétrica · ' + code;
   $('#vw-sub').textContent = 'Arrastra para rotar, rueda para acercar. Las lesiones detectadas aparecen en rojo.';
   $('#ov-case').textContent = 'Estudio ' + code;
+  $('#ov-input').textContent = '4 proyecciones · 0/45/90/135°';
   $('#ov-organ').textContent = '—';
   $('#ov-organ-sub').textContent = 'Malla del órgano';
   $('#ov-fps').textContent = '— FPS';
@@ -1947,6 +1948,7 @@ async function load_study(code) {
   viewer.input_mode = study.input_mode || 'projections';
   if (viewer.input_mode === 'radiograph') {
     $('#vw-sub').textContent = 'Volumen reconstruido desde una sola radiografía. Simulación académica: no es una herramienta de diagnóstico y este modo todavía no detecta tumores.';
+    $('#ov-input').textContent = '1 radiografía · DICOM';
   }
   const organ_label = ORGAN_LABELS[study.organ] || study.organ;
   $('#vw-title').textContent = 'Reconstrucción volumétrica · ' + organ_label;
