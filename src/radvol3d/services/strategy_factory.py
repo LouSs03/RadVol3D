@@ -80,20 +80,25 @@ class StrategyFactory:
         for organ, builder in self._organ_meshing_builders.items():
             self._organ_meshing[organ] = self._build(f"meshing:{organ.value}", builder)
 
-    def strategies_for(self, organ: OrganName | str) -> StrategySet:
-        """Devuelve las estrategias ya construidas para el organo pedido."""
+    def strategies_for(
+        self, organ: OrganName | str, reconstruction_key: str | None = None
+    ) -> StrategySet:
+        """Choose a loaded reconstruction for this study without changing the default."""
         organ_name = OrganName(organ)
+        key = self._reconstruction_key if reconstruction_key is None else reconstruction_key
         if organ_name not in self._segmentation_builders:
             raise ModelNotAvailableError(
                 f"No hay modelo de segmentación de {_ORGAN_LABELS[organ_name]} todavía."
             )
-        if self._reconstruction_key not in self._reconstruction_builders:
+        if key not in self._reconstruction_builders:
             raise ModelNotAvailableError(
-                f"No hay estrategia de reconstrucción '{self._reconstruction_key}'."
+                f"No hay estrategia de reconstrucción '{key}'."
             )
+        if key == "en1_luna16" and organ_name is not OrganName.LUNG:
+            raise ModelNotAvailableError("La reconstrucción LUNA16 solo admite pulmón.")
         reconstruction = self._loaded(
-            f"reconstruction:{self._reconstruction_key}",
-            self._reconstruction.get(self._reconstruction_key),
+            f"reconstruction:{key}",
+            self._reconstruction.get(key),
         )
         segmentation = self._loaded(
             f"segmentation:{organ_name.value}", self._segmentation.get(organ_name)

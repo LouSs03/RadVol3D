@@ -113,6 +113,7 @@ def no_model_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "MODEL_BUCKET",
         "EN1_WEIGHTS_OBJECT",
+        "EN1_V2_WEIGHTS_OBJECT",
         "EN2_WEIGHTS_OBJECT",
         "MODEL_CACHE_DIR",
         "RECONSTRUCTION_STRATEGY",

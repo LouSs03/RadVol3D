@@ -87,6 +87,7 @@ class ModelSettings(BaseSettings):
 
     model_bucket: str | None = None
     en1_weights_object: str | None = None
+    en1_v2_weights_object: str | None = None
     en2_weights_object: str | None = None
     model_cache_dir: Path = Path(".cache/models")
     reconstruction_strategy: str = "en1"

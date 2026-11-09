@@ -18,6 +18,7 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import partial
 
 from radvol3d.domain.entities import PatientDetails, StoredResult, Study, StudyHistoryPage
 from radvol3d.domain.enums import OrganName, ResultFile, StageNumber, StudyStatus
@@ -105,7 +106,7 @@ class StudyService:
         by_angle = self._loader.parse(files)
         return self._metadata_store.add_projections(study_code, self._uploads(files, by_angle))
 
-    def start_processing(self, study_code: str) -> None:
+    def start_processing(self, study_code: str, reconstruction_key: str | None = None) -> None:
         """Reclama el estudio para procesarlo: pasa de pending a processing.
 
         Dentro de la misma transaccion comprueba que haya modelo para su organo; si no,
@@ -115,9 +116,10 @@ class StudyService:
         Corre dentro de POST /process, que debe responder en menos de un segundo
         (SC-002): por eso no lee el estudio aparte ni lo vuelve a leer al final.
         """
-        self._metadata_store.claim_for_processing(study_code, self._factory.strategies_for)
+        check = partial(self._factory.strategies_for, reconstruction_key=reconstruction_key)
+        self._metadata_store.claim_for_processing(study_code, check)
 
-    def run_processing(self, study_code: str) -> None:
+    def run_processing(self, study_code: str, reconstruction_key: str | None = None) -> None:
         """Corre la tuberia de un estudio ya reclamado. Nunca lanza.
 
         Es la tarea en segundo plano de la API: nadie espera su resultado, asi que
@@ -133,7 +135,7 @@ class StudyService:
         failed_stage = StageNumber.PREPROCESSING
         try:
             study = self._metadata_store.get_study(study_code)
-            strategies = self._factory.strategies_for(study.organ)
+            strategies = self._factory.strategies_for(study.organ, reconstruction_key)
             by_angle = self._metadata_store.load_projections(study_code)
             failed_stage = StageNumber.MESHING
             self._run_pipeline(study_code, by_angle, strategies, started)

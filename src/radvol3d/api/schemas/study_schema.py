@@ -16,6 +16,7 @@ from radvol3d.domain.enums import OrganName, StageStatus, StudyStatus
 STUDY_CODE_REGEX = r"^[A-Za-z0-9_-]{1,64}$"
 
 StageName = Literal["preprocessing", "reconstruction", "segmentation", "meshing"]
+ReconstructionOption = Literal["en1", "en1_luna16"]
 
 
 class PatientInput(BaseModel):
@@ -81,6 +82,7 @@ class StudyStatusResponse(StudyResponse):
     """Estado del estudio y de sus cuatro etapas, en orden."""
 
     total_time_sec: float | None = Field(default=None, description="Tiempo total")
+    reconstruction_model: str | None = None
     stages: list[StageStatusResponse] = Field(description="Las cuatro etapas")
 
 

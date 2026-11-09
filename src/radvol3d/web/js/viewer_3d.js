@@ -69,6 +69,9 @@ async function check_status() {
   if (view.action === "refresh") {
     window.setTimeout(check_status, view.refresh_ms);
   } else if (view.action === "load") {
+    if (body.reconstruction_model === "reconstruction_en1_luna16") {
+      reveal("experimental_geometry");
+    }
     await load_result();
   }
 }

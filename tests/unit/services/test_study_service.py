@@ -39,6 +39,11 @@ CODE = "it_a"
 PATIENT = PatientDetails(first_name="Ana", last_name="Pérez", national_id="12345678")
 
 
+class FakeLuna16Reconstruction(FakeReconstructionStrategy):
+    model_name = "reconstruction_en1_luna16"
+    model_version = "2.0.0"
+
+
 class Harness:
     """Servicio armado con almacenes falsos que anotan sus llamadas en un solo registro."""
 
@@ -53,7 +58,10 @@ class Harness:
         self.finished_study = Study(CODE, OrganName.LUNG, StudyStatus.COMPLETED)
         self.metadata.get_study.return_value = self.finished_study
         self.factory = StrategyFactory(
-            reconstruction_builders={"en1": FakeReconstructionStrategy},
+            reconstruction_builders={
+                "en1": FakeReconstructionStrategy,
+                "en1_luna16": FakeLuna16Reconstruction,
+            },
             segmentation_builders={OrganName.LUNG: segmentation_type},
             meshing_builder=FakeMeshingStrategy,
             reconstruction_key="en1",
@@ -375,6 +383,22 @@ def test_run_processing_runs_the_pipeline_and_completes_the_study(harness: Harne
     assert names.index("metadata.save_volume") < names.index("results.save_result")
     harness.progress.complete_study.assert_called_once()
     harness.progress.start_processing.assert_not_called()
+
+
+@pytest.mark.unit
+def test_selected_reconstruction_is_checked_and_recorded_per_study(harness: Harness) -> None:
+    harness.metadata.get_study.return_value = pending_study()
+    harness.metadata.load_projections.return_value = stored_projections()
+    harness.service.start_processing(CODE, "en1_luna16")
+    check = harness.metadata.claim_for_processing.call_args.args[1]
+    assert isinstance(check(OrganName.LUNG).reconstruction, FakeLuna16Reconstruction)
+
+    harness.service.run_processing(CODE, "en1_luna16")
+    harness.service.run_processing("next-study")
+
+    calls = [call.args for call in harness.progress.complete_stage.call_args_list]
+    assert (CODE, StageNumber.RECONSTRUCTION, "reconstruction_en1_luna16", "2.0.0") in calls
+    assert ("next-study", StageNumber.RECONSTRUCTION, "fake_reconstruction", "0.0.0") in calls
 
 
 @pytest.mark.unit

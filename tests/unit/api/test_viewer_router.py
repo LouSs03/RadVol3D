@@ -26,7 +26,7 @@ def test_an_existing_study_gets_the_viewer_page(client, service) -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert response.text == VIEWER_HTML.read_text(encoding="utf-8")
+    assert response.content == VIEWER_HTML.read_bytes()
     service.get_study.assert_called_once_with(CODE)
 
 
@@ -38,7 +38,7 @@ def test_an_unknown_study_gets_the_same_page_with_not_found(client, service) -> 
 
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("text/html")
-    assert response.text == VIEWER_HTML.read_text(encoding="utf-8")
+    assert response.content == VIEWER_HTML.read_bytes()
 
 
 @pytest.mark.unit
