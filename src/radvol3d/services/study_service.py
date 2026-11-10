@@ -12,6 +12,12 @@ Hay dos formas de procesar un estudio:
   tarea en segundo plano, despues de responder.
 
 Las dos corren la tuberia y cierran el estudio con el mismo codigo (_run_pipeline).
+
+Modo de una radiografia (guia de Lourdes, 7 de noviembre de 2026): el mismo flujo en
+tres pasos, con add_radiograph en lugar de add_projections. start_processing revisa
+antes que el servicio externo responda (si no, el estudio sigue en pending y el modo
+se informa como no disponible) y run_processing corre la tuberia de una radiografia.
+El modo de cuatro proyecciones no cambia.
 """
 
 import logging
@@ -21,15 +27,39 @@ from dataclasses import dataclass, field, replace
 from functools import partial
 
 from radvol3d.domain.entities import PatientDetails, StoredResult, Study, StudyHistoryPage
-from radvol3d.domain.enums import OrganName, ResultFile, StageNumber, StudyStatus
-from radvol3d.domain.exceptions import InvalidStudyStateError, StageFailedError
+from radvol3d.domain.enums import (
+    InputMode,
+    OrganName,
+    RemoteJobState,
+    ResultFile,
+    StageNumber,
+    StudyStatus,
+)
+from radvol3d.domain.exceptions import (
+    InvalidRadiographError,
+    InvalidStudyStateError,
+    ModelNotAvailableError,
+    ReconstructionServiceUnavailableError,
+    StageFailedError,
+)
 from radvol3d.persistence.processing_progress_store import ProcessingProgressStore
 from radvol3d.persistence.result_store import ResultStore
 from radvol3d.persistence.study_metadata_store import ProjectionUpload, StudyMetadataStore
 from radvol3d.services.pipeline.persistence_progress import PersistenceProgress
 from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
 from radvol3d.services.pipeline.projection_loader import ProjectionFile, ProjectionLoader
-from radvol3d.services.strategy_factory import StrategyFactory, StrategySet
+from radvol3d.services.pipeline.radiograph_check import validate_radiograph
+from radvol3d.services.pipeline.remote_job_board import RemoteJobBoard
+from radvol3d.services.strategy_factory import (
+    RADIOGRAPH_UNAVAILABLE,
+    RadiographStrategySet,
+    StrategyFactory,
+    StrategySet,
+)
+
+# Los organos que admite el modo de una radiografia: el modelo AXON se entreno con
+# radiografias de torax frontales (PA).
+RADIOGRAPH_ORGANS = frozenset({OrganName.LUNG})
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +85,7 @@ class StudyService:
         factory: StrategyFactory,
         pipeline: ProcessingPipeline,
         loader: ProjectionLoader,
+        board: RemoteJobBoard | None = None,
     ) -> None:
         self._metadata_store = metadata_store
         self._result_store = result_store
@@ -62,6 +93,7 @@ class StudyService:
         self._factory = factory
         self._pipeline = pipeline
         self._loader = loader
+        self._board = board or RemoteJobBoard()
 
     def process_study(self, request: StudyRequest) -> Study:
         """Registra el estudio, lo pasa por las cuatro etapas y lo devuelve terminado.
@@ -88,14 +120,59 @@ class StudyService:
         study_code: str,
         organ: OrganName,
         patient: PatientDetails | None = None,
+        input_mode: InputMode = InputMode.PROJECTIONS,
     ) -> Study:
-        """Crea el estudio en pending, sin proyecciones.
+        """Crea el estudio en pending, sin proyecciones ni radiografia.
 
         No pide modelo para el organo: un estudio de higado se registra aunque todavia
         no se pueda procesar (HU-2.2). El modelo se comprueba en start_processing, que
         deja el estudio en pending si no lo hay.
+
+        El modo de una radiografia solo admite pulmon (InvalidRadiographError si no).
+        Se crea aunque el servicio externo este apagado: eso se revisa al procesar.
         """
-        return self._metadata_store.create_study(study_code, organ, patient)
+        mode = InputMode(input_mode)
+        if mode is InputMode.RADIOGRAPH and OrganName(organ) not in RADIOGRAPH_ORGANS:
+            raise InvalidRadiographError(
+                "El modo de una radiografía solo admite pulmón (radiografía de tórax)."
+            )
+        if mode is InputMode.PROJECTIONS:
+            # La misma llamada de siempre: el modo de cuatro proyecciones no cambia.
+            return self._metadata_store.create_study(study_code, organ, patient)
+        return self._metadata_store.create_study(study_code, organ, patient, input_mode=mode)
+
+    def add_radiograph(
+        self, study_code: str, content: bytes, filename: str | None = None
+    ) -> Study:
+        """Valida el DICOM y lo guarda en un estudio de una radiografia en pending.
+
+        Si el archivo no es un DICOM aceptable, lanza InvalidRadiographError (o
+        RadiographTooLargeError) y no guarda nada. El nombre del archivo solo sirve para
+        revisar la extension: no se guarda.
+        """
+        data = validate_radiograph(content, filename)
+        return self._metadata_store.add_radiograph(study_code, data)
+
+    def radiograph_mode_available(self) -> bool:
+        """True si el modo de una radiografia esta configurado y el servicio responde.
+
+        Revisa /health con el tiempo de espera corto del cliente (5 s). Nunca lanza.
+        """
+        try:
+            strategies = self._factory.radiograph_strategies_for(OrganName.LUNG)
+        except ModelNotAvailableError:
+            return False
+        try:
+            return bool(strategies.reconstruction.is_available())
+        except Exception as error:  # noqa: BLE001 - la consulta nunca tumba la pagina
+            logger.warning(
+                "No se pudo consultar el servicio de reconstruccion (%s)", type(error).__name__
+            )
+            return False
+
+    def remote_state(self, study_code: str) -> RemoteJobState | None:
+        """En que paso va el trabajo externo del estudio (en cola, reconstruyendo)."""
+        return self._board.get(study_code)
 
     def add_projections(self, study_code: str, files: Sequence[ProjectionFile]) -> Study:
         """Valida las cuatro proyecciones y las guarda en un estudio en pending.
@@ -115,9 +192,31 @@ class StudyService:
 
         Corre dentro de POST /process, que debe responder en menos de un segundo
         (SC-002): por eso no lee el estudio aparte ni lo vuelve a leer al final.
+
+        En el modo de una radiografia, check_organ revisa ademas que el servicio externo
+        responda (/health, 5 s como maximo); si no, lanza
+        ReconstructionServiceUnavailableError y el estudio sigue en pending.
         """
-        check = partial(self._factory.strategies_for, reconstruction_key=reconstruction_key)
+        check = partial(self._check_strategies, reconstruction_key=reconstruction_key)
         self._metadata_store.claim_for_processing(study_code, check)
+
+    def _check_strategies(
+        self,
+        organ: OrganName,
+        input_mode: InputMode | None = None,
+        reconstruction_key: str | None = None,
+    ) -> StrategySet | None:
+        """Lo que check_organ comprueba antes de reclamar el estudio.
+
+        reconstruction_key elige el modelo de un estudio de 4 proyecciones; el modo de
+        una radiografia siempre usa el servicio externo, asi que ahi no se usa.
+        """
+        if input_mode is not InputMode.RADIOGRAPH:
+            return self._factory.strategies_for(organ, reconstruction_key)
+        strategies = self._factory.radiograph_strategies_for(organ)
+        if not strategies.reconstruction.is_available():
+            raise ReconstructionServiceUnavailableError(RADIOGRAPH_UNAVAILABLE)
+        return None
 
     def run_processing(self, study_code: str, reconstruction_key: str | None = None) -> None:
         """Corre la tuberia de un estudio ya reclamado. Nunca lanza.
@@ -135,6 +234,14 @@ class StudyService:
         failed_stage = StageNumber.PREPROCESSING
         try:
             study = self._metadata_store.get_study(study_code)
+            if study.input_mode is InputMode.RADIOGRAPH:
+                radiograph_strategies = self._factory.radiograph_strategies_for(study.organ)
+                radiograph = self._metadata_store.load_radiograph(study_code)
+                failed_stage = StageNumber.MESHING
+                self._run_radiograph_pipeline(
+                    study_code, radiograph, radiograph_strategies, started
+                )
+                return
             strategies = self._factory.strategies_for(study.organ, reconstruction_key)
             by_angle = self._metadata_store.load_projections(study_code)
             failed_stage = StageNumber.MESHING
@@ -218,6 +325,31 @@ class StudyService:
             study_code,
             segmentation.model_name,
             segmentation.model_version,
+            int(data.volume.shape[0]),
+            time.perf_counter() - started,
+        )
+
+    def _run_radiograph_pipeline(
+        self,
+        study_code: str,
+        radiograph: bytes,
+        strategies: RadiographStrategySet,
+        started: float,
+    ) -> None:
+        """Corre las cuatro etapas de una radiografia y cierra el estudio en completed.
+
+        El estudio queda enlazado al modelo de reconstruccion (AXON): la segmentacion
+        todavia es el gancho pendiente y no es un modelo de verdad.
+        """
+        progress = PersistenceProgress(
+            self._progress_store, self._metadata_store, self._result_store
+        )
+        data = self._pipeline.run_radiograph(study_code, radiograph, strategies, progress)
+        reconstruction = strategies.reconstruction
+        self._progress_store.complete_study(
+            study_code,
+            reconstruction.model_name,
+            reconstruction.model_version,
             int(data.volume.shape[0]),
             time.perf_counter() - started,
         )

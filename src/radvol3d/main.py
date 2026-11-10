@@ -20,11 +20,16 @@ from radvol3d.api.routers import (
     health_router,
     history_router,
     projection_router,
+    radiograph_router,
     result_router,
     study_router,
     viewer_router,
 )
-from radvol3d.persistence.settings import get_model_settings, get_settings
+from radvol3d.persistence.settings import (
+    get_model_settings,
+    get_reconstruction_service_settings,
+    get_settings,
+)
 from radvol3d.services.service_container import build_service_container
 
 WEB_DIRECTORY = Path(__file__).parent / "web"
@@ -35,7 +40,28 @@ logger = logging.getLogger(__name__)
 
 def build_default_container() -> Any:
     """Arma los servicios reales con la configuracion de .env."""
-    return build_service_container(get_settings(), get_model_settings())
+    return build_service_container(
+        get_settings(),
+        get_model_settings(),
+        service_settings=_reconstruction_service_settings(),
+    )
+
+
+def _reconstruction_service_settings() -> Any:
+    """La configuracion del servicio externo, o None si no es valida.
+
+    Un valor mal escrito (por ejemplo AXON_POLL_SECONDS=abc) deja el modo de una
+    radiografia no disponible, pero no detiene el arranque. Solo se registra el tipo
+    del error: el texto de pydantic podria incluir la clave.
+    """
+    try:
+        return get_reconstruction_service_settings()
+    except Exception as error:  # noqa: BLE001 - este modo es opcional
+        logger.warning(
+            "La configuracion del servicio de reconstruccion no es valida (%s)",
+            type(error).__name__,
+        )
+        return None
 
 
 def make_lifespan(container_builder: Callable[[], Any]) -> Callable[..., Any]:
@@ -81,6 +107,7 @@ def create_app(container_builder: Callable[[], Any] | None = None) -> FastAPI:
     app.include_router(study_router.router)
     app.include_router(history_router.router)
     app.include_router(projection_router.router)
+    app.include_router(radiograph_router.router)
     app.include_router(result_router.router)
     app.include_router(viewer_router.router)
 

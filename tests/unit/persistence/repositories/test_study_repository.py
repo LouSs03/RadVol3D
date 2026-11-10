@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 
 from radvol3d.domain.entities import Model, Patient
-from radvol3d.domain.enums import OrganName, StudyStatus
+from radvol3d.domain.enums import InputMode, OrganName, StudyStatus
 from radvol3d.domain.exceptions import (
     DuplicateStudyError,
     InvalidPatientDataError,
@@ -15,7 +15,11 @@ from radvol3d.domain.exceptions import (
     StudyNotFoundError,
     UnknownOrganError,
 )
-from radvol3d.persistence.repositories.study_repository import StudyRepository, find_study_id
+from radvol3d.persistence.repositories.study_repository import (
+    ClaimDetails,
+    StudyRepository,
+    find_study_id,
+)
 from tests.fixtures.fake_database import (
     FakeCheckViolation,
     FakeConnection,
@@ -505,3 +509,88 @@ def test_list_history_rejects_an_invalid_national_id_without_echoing_it(national
 @pytest.mark.unit
 def test_list_history_returns_an_empty_list_when_there_are_no_studies() -> None:
     assert StudyRepository(FakeConnection([[]])).list_history(limit=50, offset=0) == []
+
+
+# ---------------------------------------------------------------------------
+# Modo de una radiografia (migracion 003)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_a_row_without_the_new_columns_is_a_projections_study() -> None:
+    connection = FakeConnection([[study_row()]])
+
+    study = StudyRepository(connection).get_by_code("it_a")
+
+    assert study.input_mode is InputMode.PROJECTIONS
+    assert study.has_radiograph is False
+
+
+@pytest.mark.unit
+def test_a_radiograph_row_keeps_its_mode_and_says_it_has_the_file() -> None:
+    row = study_row(input_mode="radiograph", radiograph_path="it_a/input/radiograph.dcm")
+    connection = FakeConnection([[row]])
+
+    study = StudyRepository(connection).get_by_code("it_a")
+
+    assert study.input_mode is InputMode.RADIOGRAPH
+    assert study.has_radiograph is True
+
+
+@pytest.mark.unit
+def test_lock_claim_details_reads_status_organ_and_input_in_one_query() -> None:
+    row = {
+        "status": "pending",
+        "organ_name": "lung",
+        "input_mode": "radiograph",
+        "radiograph_path": None,
+    }
+    connection = FakeConnection([[row]])
+
+    details = StudyRepository(connection).lock_claim_details("it_a")
+
+    assert details == ClaimDetails(
+        StudyStatus.PENDING, OrganName.LUNG, InputMode.RADIOGRAPH, has_radiograph=False
+    )
+    assert len(connection.calls) == 1
+    assert "for update of s" in connection.statements()[0]
+
+
+@pytest.mark.unit
+def test_lock_for_claim_still_returns_status_and_organ() -> None:
+    connection = FakeConnection([[{"status": "pending", "organ_name": "liver"}]])
+
+    assert StudyRepository(connection).lock_for_claim("it_a") == (
+        StudyStatus.PENDING,
+        OrganName.LIVER,
+    )
+
+
+@pytest.mark.unit
+def test_set_input_mode_and_radiograph_path_update_the_study() -> None:
+    connection = FakeConnection()
+    repository = StudyRepository(connection)
+
+    repository.set_input_mode("it_a", "radiograph")
+    repository.set_radiograph_path("it_a", "it_a/input/radiograph.dcm")
+
+    assert connection.params_of("update study set input_mode") == [("radiograph", "it_a")]
+    assert connection.params_of("update study set radiograph_path") == [
+        ("it_a/input/radiograph.dcm", "it_a")
+    ]
+
+
+@pytest.mark.unit
+def test_set_input_mode_of_an_unknown_study_is_not_found() -> None:
+    connection = FakeConnection(default_rowcount=0)
+
+    with pytest.raises(StudyNotFoundError):
+        StudyRepository(connection).set_input_mode("it_a", "radiograph")
+
+
+@pytest.mark.unit
+def test_count_processing_radiographs_counts_only_that_mode_in_processing() -> None:
+    connection = FakeConnection([[{"active": 2}]])
+
+    assert StudyRepository(connection).count_processing_radiographs() == 2
+    assert connection.params_of("as active from study") == [("processing", "radiograph")]

@@ -182,6 +182,13 @@
 
   .row-end{display:flex; align-items:center; justify-content:flex-end; gap:10px; flex-wrap:wrap;}
   .card.locked{opacity:.5; pointer-events:none;}
+  .opt .ic.rx{background:var(--brand-l); color:var(--brand-d);}
+  .mode-status{font-size:12.5px; color:var(--muted); margin:-8px 0 16px;}
+  .mode-status.err{color:#9F1239;}
+  .mode-status button{background:none; border:0; padding:0; color:var(--brand-d); font:inherit; text-decoration:underline; cursor:pointer;}
+  .rx-file{display:flex; align-items:center; gap:12px; margin-top:12px; font-size:13px;}
+  .rx-file.bad{color:#9F1239;}
+  .rx-file.ok{color:#166534;}
 
   .drop{
     border:2px dashed var(--line2); border-radius:12px; padding:16px; margin-bottom:13px;
@@ -529,7 +536,7 @@
       <div>
         <div class="eyebrow">Paso 1 de 2</div>
         <h1 style="margin-top:5px">Nuevo estudio</h1>
-        <p>Crea el estudio con su código y órgano, carga las cuatro proyecciones radiográficas y mándalo a procesar.</p>
+        <p id="new-intro">Crea el estudio con su código y órgano, carga las cuatro proyecciones radiográficas y mándalo a procesar.</p>
       </div>
     </div>
 
@@ -556,6 +563,20 @@
         </div>
       </div>
       <small class="patient-note">Nombre y apellido son obligatorios. Se ven en esta pestaña mientras sigues el estudio y se borran al empezar uno nuevo; no quedan guardados en el navegador.</small>
+      <h4 class="sec">Modo de entrada</h4>
+      <div class="pick" id="mode-pick">
+        <button class="opt" data-mode="projections" type="button">
+          <div class="ic"><canvas class="mini" data-organ="lung" width="42" height="42"></canvas></div>
+          <div><b>4 proyecciones</b><span>Las cuatro .npy sintéticas (0°, 45°, 90°, 135°)</span></div>
+          <div class="chk"></div>
+        </button>
+        <button class="opt" data-mode="radiograph" type="button">
+          <div class="ic rx"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M12 7v10M9 9c-2 1-2 5 0 7M15 9c2 1 2 5 0 7"/></svg></div>
+          <div><b>1 radiografía</b><span>Un DICOM de tórax frontal (PA), tal como sale del equipo</span></div>
+          <div class="chk"></div>
+        </button>
+      </div>
+      <div class="mode-status hidden" id="mode-status" role="status"></div>
       <h4 class="sec">Órgano</h4>
       <div class="pick" id="pick">
         <button class="opt" data-organ="lung" type="button">
@@ -594,9 +615,29 @@
       </div>
     </div>
 
+    <div class="card pad locked hidden" style="margin-bottom:16px" id="rx-card">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:13px; flex-wrap:wrap">
+        <h4 class="sec" style="margin:0">Radiografía de tórax</h4>
+        <button class="btn ghost sm" id="btn-rx-pick" type="button">Elegir archivo</button>
+        <!-- Sin accept: muchos equipos exportan el DICOM sin extensión y el selector lo ocultaría. -->
+        <input type="file" id="file-rx" hidden>
+      </div>
+      <div class="drop" id="rx-drop">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        <div>Arrastra aquí <b>una radiografía de tórax frontal (PA), en formato DICOM tal como la entrega el equipo</b> (.dcm, .dicom o sin extensión).</div>
+      </div>
+      <div class="rx-file hidden" id="rx-file"></div>
+    </div>
+
     <div class="note err hidden" id="new-err" role="alert" style="margin-bottom:16px"></div>
 
-    <div class="note" style="margin-bottom:16px">
+    <div class="note info hidden" id="rx-note" style="margin-bottom:16px">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16.5v.01"/></svg>
+      <div>Solo radiografías de <b>tórax frontales (PA)</b>: el modelo no vio otras vistas ni otras zonas del cuerpo. La reconstrucción la hace un servicio externo con GPU y tarda cerca de un minuto (más si hay cola).
+      Es una <b>simulación académica, no una herramienta de diagnóstico</b>, y este modo todavía <b>no detecta tumores</b>: muestra el volumen reconstruido.</div>
+    </div>
+
+    <div class="note" style="margin-bottom:16px" id="proj-note">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16.5v.01"/></svg>
       <div>Cada proyección debe ser un <b>.npy</b> de 128 × 128 de hasta 1 MiB.
       Las cuatro se suben juntas: si una no es válida, el servidor no guarda ninguna. Los nombres de archivo no se envían ni se muestran.</div>
@@ -629,24 +670,24 @@
       <div class="stage" id="st-1">
         <div class="dot">1</div>
         <div class="body">
-          <h4>Preprocesamiento y calibración geométrica <span class="stg-st">en espera</span></h4>
-          <p>Normalización de intensidades, alineación de las 4 proyecciones y estimación de la geometría de adquisición.</p>
+          <h4><span class="stg-name">Preprocesamiento y calibración geométrica</span> <span class="stg-st">en espera</span></h4>
+          <p class="stg-desc">Normalización de intensidades, alineación de las 4 proyecciones y estimación de la geometría de adquisición.</p>
           <div class="bar"><i></i></div>
         </div>
       </div>
       <div class="stage" id="st-2">
         <div class="dot">2</div>
         <div class="body">
-          <h4>Reconstrucción volumétrica 3D <span class="stg-st">en espera</span></h4>
-          <p>CNN generativa 2D→3D. Expande las proyecciones a un volumen de 128 × 128 × 128 vóxeles.</p>
+          <h4><span class="stg-name">Reconstrucción volumétrica 3D</span> <span class="stg-st">en espera</span></h4>
+          <p class="stg-desc">CNN generativa 2D→3D. Expande las proyecciones a un volumen de 128 × 128 × 128 vóxeles.</p>
           <div class="bar"><i></i></div>
         </div>
       </div>
       <div class="stage" id="st-3">
         <div class="dot">3</div>
         <div class="body">
-          <h4>Segmentación tumoral <span class="stg-st">en espera</span></h4>
-          <p>Red 3D tipo U-Net que delimita las lesiones vóxel a vóxel dentro del volumen reconstruido.</p>
+          <h4><span class="stg-name">Segmentación tumoral</span> <span class="stg-st">en espera</span></h4>
+          <p class="stg-desc">Red 3D tipo U-Net que delimita las lesiones vóxel a vóxel dentro del volumen reconstruido.</p>
           <div class="bar"><i></i></div>
         </div>
       </div>
@@ -666,6 +707,7 @@
       <div class="kv" style="font-size:12.5px; color:var(--muted)">Tiempo transcurrido: <b id="clk" class="mono">0,0 s</b></div>
       <div style="display:flex; gap:10px; flex-wrap:wrap">
         <button class="btn ghost hidden" id="btn-resume" type="button">Completar el estudio</button>
+        <button class="btn ghost hidden" id="btn-retry" type="button">Reintentar con la radiografía</button>
         <button class="btn ghost" data-go="history" type="button">Historial</button>
         <button class="btn" id="btn-open" type="button" disabled>Abrir en el visor 3D</button>
       </div>
@@ -713,7 +755,7 @@
           </div>
           <div class="ov tr">
             <b id="ov-case">—</b>
-            <span class="dim">4 proyecciones · 0/45/90/135°</span>
+            <span class="dim" id="ov-input">4 proyecciones · 0/45/90/135°</span>
           </div>
           <div class="ov bl">
             <span class="dim">Rotación</span>
@@ -917,6 +959,12 @@ const STAGE_LABELS = {
 // informa el avance dentro de una etapa: la barra se acerca al 95 % y salta al 100 % al terminar.
 // Medidos en CPU: preprocesamiento < 1 s, reconstruccion ~15 s, segmentacion ~3 min.
 const STAGE_TAU_S = [1, 10, 90, 10];
+// Modo de una radiografia: la etapa 2 es el servicio externo (~52 s por trabajo, mas si
+// hay cola) y la 3 es el gancho de segmentacion, que no tarda.
+const STAGE_TAU_RX_S = [1, 45, 1, 10];
+const RADIOGRAPH_EXTENSIONS = ['.dcm', '.dicom', ''];
+const RX_UNAVAILABLE = 'El modo de una radiografía no está disponible en este momento.';
+const REMOTE_STATE_LABELS = { queued: 'en cola', running: 'reconstruyendo' };
 
 const number_format = new Intl.NumberFormat('es', { maximumFractionDigits: 1 });
 const percent_format = new Intl.NumberFormat('es', { style: 'percent', maximumFractionDigits: 0 });
@@ -1190,9 +1238,31 @@ window.addEventListener('hashchange', route);
 function fresh_new_state() {
   const slots = {};
   for (const angle of ANGLES) slots[angle] = { file: null, preview: null, state: 'empty', message: '' };
-  return { code: null, organ: 'lung', created: false, uploaded: false, processed: false, busy: false, slots, reconstruction: 'en1' };
+  return {
+    code: null, organ: 'lung', mode: 'projections', created: false, uploaded: false,
+    processed: false, busy: false, slots, rx: { file: null, state: 'empty', message: '' },
+    reconstruction: 'en1',
+  };
 }
 let new_state = fresh_new_state();
+
+// Disponibilidad del modo de una radiografia. La consulta pasa por el backend
+// (GET /radiograph-mode): el navegador nunca habla con el servicio externo.
+const rx_mode = { checked: false, checking: false, available: null, max_bytes: 50000000 };
+
+async function check_radiograph_mode() {
+  if (rx_mode.checking) return;
+  rx_mode.checking = true;
+  render_new();
+  const { body } = await api('/radiograph-mode');
+  rx_mode.checking = false;
+  rx_mode.checked = true;
+  rx_mode.available = !!(body && body.available);
+  if (body && typeof body.max_bytes === 'number') rx_mode.max_bytes = body.max_bytes;
+  // Si el servicio se apago y el estudio aun no se creo, se vuelve al otro modo.
+  if (!rx_mode.available && new_state.mode === 'radiograph' && !new_state.created) new_state.mode = 'projections';
+  render_new();
+}
 
 // El paciente del ultimo estudio creado en esta pestaña: { study_code, first_name,
 // last_name, national_id }. Solo en memoria; la API nunca lo devuelve.
@@ -1252,6 +1322,7 @@ async function enter_new(code) {
     // mandado a procesar no: se empieza uno nuevo con el formulario en blanco.
     if (new_state.processed) reset_new_form();
     if (!new_state.created && !$('#f-code').value) $('#f-code').value = default_code();
+    if (!rx_mode.checked) check_radiograph_mode();
     render_new();
     return;
   }
@@ -1262,7 +1333,7 @@ async function enter_new(code) {
   if (!body) { show_new_error(error); return; }
   if (body.status !== 'pending') { go(body.status === 'completed' ? 'viewer' : 'run', code); return; }
   new_state = fresh_new_state();
-  Object.assign(new_state, { code, organ: body.organ, created: true });
+  Object.assign(new_state, { code, organ: body.organ, created: true, mode: body.input_mode || 'projections' });
   $('#f-code').value = code;
   fill_patient_inputs(code);
   render_new();
@@ -1272,10 +1343,33 @@ function render_new() {
   const s = new_state;
   $('#f-code').disabled = s.created || s.busy;
   for (const id of ['#f-patient-name', '#f-patient-surname', '#f-patient-dni']) $(id).disabled = s.created || s.busy;
+  const radiograph = s.mode === 'radiograph';
+  $$('#mode-pick .opt').forEach((opt) => {
+    opt.classList.toggle('sel', opt.dataset.mode === s.mode);
+    opt.disabled = s.created || s.busy || (opt.dataset.mode === 'radiograph' && rx_mode.available === false);
+  });
+  render_mode_status();
   $$('#pick .opt').forEach((opt) => {
     opt.classList.toggle('sel', opt.dataset.organ === s.organ);
-    opt.disabled = s.created || s.busy;
+    // El modo de una radiografia solo admite pulmon (el modelo vio radiografias de torax).
+    opt.disabled = s.created || s.busy || (radiograph && opt.dataset.organ !== 'lung');
+    const input_text = radiograph ? (opt.dataset.organ === 'lung' ? '1 radiografía' : 'no disponible en este modo') : '4 proyecciones';
+    opt.querySelector('span').textContent = { lung: 'Tórax', liver: 'Abdomen superior' }[opt.dataset.organ] + ' · ' + input_text;
   });
+  $('#new-intro').textContent = radiograph
+    ? 'Crea el estudio, sube una radiografía de tórax frontal (DICOM) y mándala a reconstruir.'
+    : 'Crea el estudio con su código y órgano, carga las cuatro proyecciones radiográficas y mándalo a procesar.';
+  $('#proj-card').classList.toggle('hidden', radiograph);
+  $('#proj-note').classList.toggle('hidden', radiograph);
+  $('#rx-card').classList.toggle('hidden', !radiograph);
+  $('#rx-note').classList.toggle('hidden', !radiograph);
+  $('#rx-card').classList.toggle('locked', !s.created);
+  $('#btn-rx-pick').disabled = s.uploaded || s.busy;
+  const rx_line = $('#rx-file');
+  rx_line.classList.toggle('hidden', s.rx.state === 'empty');
+  rx_line.classList.toggle('bad', s.rx.state === 'invalid');
+  rx_line.classList.toggle('ok', s.rx.state === 'uploaded');
+  rx_line.textContent = s.rx.message;
   $('#btn-create').classList.toggle('hidden', s.created);
   $('#btn-create').disabled = s.busy;
   const created_tag = $('#study-created');
@@ -1307,19 +1401,52 @@ function render_new() {
     el.querySelector('.pst').textContent = slot.message;
   }
 
-  const all_ready = ANGLES.every((angle) => s.slots[angle].state === 'ready');
+  const all_ready = radiograph ? s.rx.state === 'ready' : ANGLES.every((angle) => s.slots[angle].state === 'ready');
+  // La version de reconstruccion solo aplica a 4 proyecciones de pulmon: la radiografia
+  // siempre usa el servicio externo.
+  const choose_model = !radiograph && s.organ === 'lung';
+  $('label[for="reconstruction-option"]').classList.toggle('hidden', !choose_model);
+  $('#reconstruction-option').classList.toggle('hidden', !choose_model);
   $('#reconstruction-option').value = s.reconstruction;
-  $('#reconstruction-option').disabled = Boolean(s.busy || s.processed || s.organ !== 'lung');
+  $('#reconstruction-option').disabled = Boolean(s.busy || s.processed || !choose_model);
   $('#btn-upload').disabled = !(s.created && all_ready && !s.uploaded && !s.busy);
   $('#btn-process').disabled = !(s.uploaded && !s.busy && !s.processed);
-  $('#btn-upload').innerHTML = s.busy === 'upload' ? '<span class="spin"></span> Subiendo…' : (s.uploaded ? '✓ Proyecciones subidas' : 'Subir proyecciones');
+  const upload_label = radiograph ? ['✓ Radiografía subida', 'Subir radiografía'] : ['✓ Proyecciones subidas', 'Subir proyecciones'];
+  $('#btn-upload').innerHTML = s.busy === 'upload' ? '<span class="spin"></span> Subiendo…' : (s.uploaded ? upload_label[0] : upload_label[1]);
   $('#btn-process').innerHTML = s.busy === 'process' ? '<span class="spin"></span> Lanzando…' : 'Procesar';
   $('#btn-create').innerHTML = s.busy === 'create' ? '<span class="spin"></span> Creando…' : 'Crear estudio';
 }
 
 $$('#pick .opt').forEach((opt) => opt.addEventListener('click', () => {
   if (new_state.created) return;
+  if (new_state.mode === 'radiograph' && opt.dataset.organ !== 'lung') return;
   new_state.organ = opt.dataset.organ;
+  render_new();
+}));
+
+function render_mode_status() {
+  const line = $('#mode-status');
+  let html = '';
+  if (rx_mode.checking) html = 'Comprobando el servicio de reconstrucción de una radiografía…';
+  else if (rx_mode.available === false) html = RX_UNAVAILABLE + ' El modo de 4 proyecciones funciona igual. <button type="button" id="rx-recheck">Volver a comprobar</button>';
+  line.innerHTML = html;
+  line.classList.toggle('hidden', !html || new_state.created);
+  line.classList.toggle('err', rx_mode.available === false && !rx_mode.checking);
+  const recheck = $('#rx-recheck');
+  if (recheck) recheck.addEventListener('click', check_radiograph_mode);
+}
+
+$$('#mode-pick .opt').forEach((opt) => opt.addEventListener('click', () => {
+  if (new_state.created || new_state.busy) return;
+  const mode = opt.dataset.mode;
+  if (mode === 'radiograph' && rx_mode.available === false) return;
+  new_state.mode = mode;
+  if (mode === 'radiograph') {
+    new_state.organ = 'lung';
+    // Al intentar usarlo se vuelve a comprobar que el servicio responda (requisito 4).
+    check_radiograph_mode();
+  }
+  show_new_error('');
   render_new();
 }));
 
@@ -1364,6 +1491,7 @@ $('#study-card').addEventListener('submit', async (event) => {
   show_new_error('');
   new_state.busy = 'create'; render_new();
   const request = { study_code: code, organ: new_state.organ, patient };
+  if (new_state.mode === 'radiograph') request.input_mode = 'radiograph';
   const { ok, body, error, http_status } = await api('/studies', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1380,6 +1508,71 @@ $('#study-card').addEventListener('submit', async (event) => {
   render_new();
   window.history.replaceState(null, '', '#/new/' + encodeURIComponent(body.study_code));
 });
+
+// ---- Modo de una radiografia: un solo DICOM ----
+function extension_of(name) {
+  const base = (name || '').split(/[\\/]/).pop();
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(dot).toLowerCase() : '';
+}
+
+function megabytes(bytes) {
+  return number_format.format(bytes / 1000000) + ' MB';
+}
+
+// Revisa el archivo en el navegador, sin enviar nada: extension, tamano y la marca DICM
+// en los bytes 128 a 131 (lo mismo que vuelve a revisar el backend).
+async function assign_radiograph(file) {
+  const rx = new_state.rx;
+  const fail = (message) => { Object.assign(rx, { file: null, state: 'invalid', message }); render_new(); };
+  Object.assign(rx, { file, state: 'checking', message: 'Revisando el archivo…' });
+  render_new();
+  if (!RADIOGRAPH_EXTENSIONS.includes(extension_of(file.name))) return fail('No es un DICOM: usa un archivo .dcm, .dicom o sin extensión.');
+  if (file.size > rx_mode.max_bytes) return fail('Supera el tamaño máximo de ' + megabytes(rx_mode.max_bytes) + '.');
+  if (file.size < 132) return fail('El archivo es demasiado pequeño para ser un DICOM.');
+  let magic = '';
+  try {
+    magic = new TextDecoder('latin1').decode(new Uint8Array(await file.slice(128, 132).arrayBuffer()));
+  } catch { magic = ''; }
+  if (rx.file !== file) return; // lo reemplazaron mientras se leia
+  if (magic !== 'DICM') return fail('El archivo no es un DICOM válido (falta la marca DICM). Súbelo tal como lo entrega el equipo.');
+  Object.assign(rx, { state: 'ready', message: 'Listo para subir · ' + megabytes(file.size) });
+  render_new();
+}
+
+bind_drop($('#rx-drop'), (files) => {
+  if (new_state.uploaded || new_state.busy || !files.length) return;
+  show_new_error(files.length > 1 ? 'Se soltaron ' + files.length + ' archivos; se usa solo el primero.' : '');
+  assign_radiograph(files[0]);
+});
+$('#rx-drop').addEventListener('click', () => { if (!new_state.uploaded && !new_state.busy) $('#file-rx').click(); });
+$('#btn-rx-pick').addEventListener('click', () => $('#file-rx').click());
+$('#file-rx').addEventListener('change', (event) => {
+  if (event.target.files.length) assign_radiograph(event.target.files[0]);
+  event.target.value = '';
+});
+
+async function upload_radiograph() {
+  const s = new_state;
+  const form = new FormData();
+  // Nombre neutro, con la extension original: el nombre podria traer datos del paciente.
+  form.append('file', s.rx.file, 'radiografia' + extension_of(s.rx.file.name));
+  show_new_error('');
+  s.busy = 'upload';
+  Object.assign(s.rx, { state: 'uploading', message: 'Subiendo ' + megabytes(s.rx.file.size) + '…' });
+  render_new();
+  const { ok, http_status, error } = await api(study_path(s.code, '/radiograph'), { method: 'POST', body: form });
+  s.busy = false;
+  if (ok || http_status === 409) {
+    // 409: el estudio ya tenia su radiografia guardada.
+    s.uploaded = true;
+    Object.assign(s.rx, { state: 'uploaded', message: '✓ Radiografía subida' });
+  } else {
+    Object.assign(s.rx, { state: 'invalid', message: 'Rechazada por el servidor' });
+    show_new_error(error);
+  }
+  render_new();
+}
 
 // Si el nombre trae el angulo con tres digitos (como los campos angle_000..angle_135), manda.
 function angle_from_name(name) {
@@ -1468,6 +1661,7 @@ $('#file-one').addEventListener('change', (event) => {
 
 $('#btn-upload').addEventListener('click', async () => {
   const s = new_state;
+  if (s.mode === 'radiograph') { await upload_radiograph(); return; }
   const form = new FormData();
   // Nombre neutro: el nombre original del archivo podria traer datos del paciente.
   for (const angle of ANGLES) {
@@ -1503,10 +1697,20 @@ $('#btn-process').addEventListener('click', async () => {
   const s = new_state;
   show_new_error('');
   s.busy = 'process'; render_new();
-  const query = s.organ === 'lung' ? '?' + new URLSearchParams({ reconstruction: s.reconstruction }) : '';
-  const { ok, error } = await api(study_path(s.code, '/process') + query, { method: 'POST' });
+  const choose_model = s.mode !== 'radiograph' && s.organ === 'lung';
+  const query = choose_model ? '?' + new URLSearchParams({ reconstruction: s.reconstruction }) : '';
+  const { ok, error, http_status } = await api(study_path(s.code, '/process') + query, { method: 'POST' });
   s.busy = false;
-  if (!ok) { show_new_error(error); render_new(); return; }
+  if (!ok) {
+    if (s.mode === 'radiograph' && http_status === 503) {
+      // El estudio sigue en pending: se puede procesar cuando el servicio vuelva.
+      show_new_error(RX_UNAVAILABLE + ' El estudio quedó guardado: puedes procesarlo más tarde desde el historial.');
+    } else {
+      show_new_error(error);
+    }
+    render_new();
+    return;
+  }
   // El formulario queda como esta, con el paciente, hasta que se empiece otro estudio.
   s.processed = true;
   render_new();
@@ -1522,7 +1726,30 @@ $('#btn-cancel').addEventListener('click', () => {
 /* ============================================================
    7. PROCESANDO (consulta el estado cada 3 s)
    ============================================================ */
-const run = { code: null, token: 0, poll_timer: null, ticker: null, started: 0, running_since: {}, stages: [], final_time: null };
+const run = { code: null, token: 0, poll_timer: null, ticker: null, started: 0, running_since: {}, stages: [], final_time: null, mode: 'projections' };
+
+// Textos de las etapas 1 a 3 en cada modo. La 4 (mallas) es la misma.
+const STAGE_TEXTS = {
+  projections: [
+    ['Preprocesamiento y calibración geométrica', 'Normalización de intensidades, alineación de las 4 proyecciones y estimación de la geometría de adquisición.'],
+    ['Reconstrucción volumétrica 3D', 'CNN generativa 2D→3D. Expande las proyecciones a un volumen de 128 × 128 × 128 vóxeles.'],
+    ['Segmentación tumoral', 'Red 3D tipo U-Net que delimita las lesiones vóxel a vóxel dentro del volumen reconstruido.'],
+  ],
+  radiograph: [
+    ['Validación de la radiografía', 'Se comprueba que el archivo sea un DICOM. La conversión que necesita el modelo la hace el servicio externo.'],
+    ['Reconstrucción desde una radiografía', 'Modelo AXON en un servicio externo con GPU: unos 52 s por radiografía, más si hay otras en cola.'],
+    ['Segmentación (pendiente)', 'Todavía no hay un segmentador para estos volúmenes: no se buscan lesiones.'],
+  ],
+};
+
+function set_stage_texts(mode) {
+  const texts = STAGE_TEXTS[mode] || STAGE_TEXTS.projections;
+  texts.forEach(([name, description], index) => {
+    const el = $('#st-' + (index + 1));
+    el.querySelector('.stg-name').textContent = name;
+    el.querySelector('.stg-desc').textContent = description;
+  });
+}
 
 function format_seconds(seconds) {
   if (seconds < 60) return seconds.toFixed(1).replace('.', ',') + ' s';
@@ -1544,10 +1771,12 @@ function show_run_error(text) {
 function enter_run(code) {
   if (!code) { go('new'); return; }
   stop_run();
-  Object.assign(run, { code, started: performance.now(), running_since: {}, stages: [], final_time: null });
+  Object.assign(run, { code, started: performance.now(), running_since: {}, stages: [], final_time: null, mode: 'projections' });
+  set_stage_texts('projections');
   show_run_error('');
   $('#btn-open').disabled = true;
   $('#btn-resume').classList.add('hidden');
+  $('#btn-retry').classList.add('hidden');
   $('#run-sub').textContent = 'Consultando el estado del estudio ' + code + '…';
   show_patient_line('#run-patient', code);
   $('#clk').textContent = format_seconds(0);
@@ -1568,7 +1797,8 @@ function tick_run() {
   if (run.final_time === null) $('#clk').textContent = format_seconds((now - run.started) / 1000);
   for (const [number, since] of Object.entries(run.running_since)) {
     const elapsed = (now - since) / 1000;
-    const width = 95 * (1 - Math.exp(-elapsed / STAGE_TAU_S[number - 1]));
+    const taus = run.mode === 'radiograph' ? STAGE_TAU_RX_S : STAGE_TAU_S;
+    const width = 95 * (1 - Math.exp(-elapsed / taus[number - 1]));
     $('#st-' + number + ' .bar i').style.width = width.toFixed(1) + '%';
   }
 }
@@ -1589,6 +1819,8 @@ async function poll_status(token) {
     return;
   }
   show_run_error('');
+  const mode = body.input_mode || 'projections';
+  if (mode !== run.mode) { run.mode = mode; set_stage_texts(mode); }
   for (const stage of body.stages || []) {
     const n = stage.stage_number;
     if (stage.status === 'running') {
@@ -1597,6 +1829,10 @@ async function poll_status(token) {
       delete run.running_since[n];
     }
     paint_stage(n, stage.status);
+    // Modo de una radiografia: en la etapa 2, si el trabajo esta en cola o reconstruyendose.
+    if (n === 2 && stage.status === 'running' && REMOTE_STATE_LABELS[body.remote_state]) {
+      $('#st-2 .stg-st').textContent = REMOTE_STATE_LABELS[body.remote_state];
+    }
   }
   const organ = (ORGAN_LABELS[body.organ] || body.organ || '').toLowerCase();
   if (body.status === 'processing') {
@@ -1617,7 +1853,12 @@ async function poll_status(token) {
     const failed = (body.stages || []).find((stage) => stage.status === 'failed');
     const where = failed ? ' en la etapa ' + failed.stage_number + ' (' + (STAGE_LABELS[failed.stage_name] || failed.stage_name) + ')' : '';
     $('#run-sub').textContent = 'El procesamiento del estudio ' + run.code + ' no terminó.';
-    show_run_error('El procesamiento falló' + where + '. Revisa los registros del servidor y vuelve a crear el estudio.');
+    if (run.mode === 'radiograph') {
+      show_run_error('No se pudo reconstruir esta radiografía' + where + '. Puede que el servicio externo se haya apagado o reiniciado. Puedes reintentar con un estudio nuevo.');
+      $('#btn-retry').classList.remove('hidden');
+    } else {
+      show_run_error('El procesamiento falló' + where + '. Revisa los registros del servidor y vuelve a crear el estudio.');
+    }
   } else {
     $('#run-sub').textContent = 'El estudio ' + run.code + ' todavía no se mandó a procesar.';
     $('#btn-resume').classList.remove('hidden');
@@ -1627,11 +1868,27 @@ async function poll_status(token) {
 $('#btn-open').addEventListener('click', () => go('viewer', run.code));
 $('#btn-resume').addEventListener('click', () => go('new', run.code));
 
+// Reintentar un estudio de una radiografia que fallo: uno nuevo, en el mismo modo y con
+// el mismo paciente si esta pestana lo conoce. El archivo hay que elegirlo otra vez.
+$('#btn-retry').addEventListener('click', () => {
+  const patient = patient_of(run.code);
+  reset_new_form();
+  new_state.mode = 'radiograph';
+  new_state.organ = 'lung';
+  $('#f-code').value = default_code();
+  if (patient) {
+    $('#f-patient-name').value = patient.first_name || '';
+    $('#f-patient-surname').value = patient.last_name || '';
+    $('#f-patient-dni').value = patient.national_id || '';
+  }
+  go('new');
+});
+
 /* ============================================================
    8. VISOR 3D (Three.js)
    ============================================================ */
 const viewer = {
-  code: null, token: 0, loaded: false,
+  code: null, token: 0, loaded: false, input_mode: 'projections',
   three: null, GLTFLoader: null, renderer: null, scene: null, camera: null, controls: null,
   root: null, organ: null, organ_material: null, lesions: [], axes: null, home: null,
   result: null, selected: 0, mode: 'tissue', opacity: ORGAN_OPACITY,
@@ -1674,6 +1931,7 @@ function reset_viewer_panels(code) {
   $('#vw-title').textContent = 'Reconstrucción volumétrica · ' + code;
   $('#vw-sub').textContent = 'Arrastra para rotar, rueda para acercar. Las lesiones detectadas aparecen en rojo.';
   $('#ov-case').textContent = 'Estudio ' + code;
+  $('#ov-input').textContent = '4 proyecciones · 0/45/90/135°';
   $('#ov-organ').textContent = '—';
   $('#ov-organ-sub').textContent = 'Malla del órgano';
   $('#ov-fps').textContent = '— FPS';
@@ -1712,6 +1970,11 @@ async function load_study(code) {
   if (viewer.experimental_geometry) {
     $('#vw-sub').textContent = 'V2 experimental. Orientación anatómica no verificada y medidas nominales. No apto para uso clínico.';
     $('#orientation_cube').classList.add('hidden');
+  }
+  viewer.input_mode = study.input_mode || 'projections';
+  if (viewer.input_mode === 'radiograph') {
+    $('#vw-sub').textContent = 'Volumen reconstruido desde una sola radiografía. Simulación académica: no es una herramienta de diagnóstico y este modo todavía no detecta tumores.';
+    $('#ov-input').textContent = '1 radiografía · DICOM';
   }
   const organ_label = ORGAN_LABELS[study.organ] || study.organ;
   $('#vw-title').textContent = 'Reconstrucción volumétrica · ' + organ_label;
@@ -2127,7 +2390,9 @@ function render_finding() {
   const find = $('#find');
   if (!lesions.length) {
     find.className = 'find none';
-    $('#f-title').textContent = 'Sin lesiones detectadas';
+    $('#f-title').textContent = viewer.input_mode === 'radiograph'
+      ? 'Segmentación pendiente: no se buscaron lesiones'
+      : 'Sin lesiones detectadas';
     $('#f-nav').classList.add('hidden');
     $('#f-dl').classList.add('hidden');
     return;

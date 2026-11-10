@@ -8,6 +8,9 @@ import numpy as np
 
 from radvol3d.domain.entities import Lesion, SegmentationResult
 from radvol3d.services.meshing.meshing_strategy import MeshingStrategy, MeshSet
+from radvol3d.services.reconstruction.radiograph_reconstruction_strategy import (
+    RadiographReconstructionStrategy,
+)
 from radvol3d.services.reconstruction.reconstruction_strategy import ReconstructionStrategy
 from radvol3d.services.segmentation.segmentation_strategy import SegmentationStrategy
 
@@ -122,4 +125,46 @@ class FailingSegmentationStrategy(FakeSegmentationStrategy):
 
 class FailingMeshingStrategy(FakeMeshingStrategy):
     def build_meshes(self, volume, mask, regions) -> MeshSet:
+        raise RuntimeError(INTERNAL_DETAIL)
+
+
+# ---------------------------------------------------------------------------
+# Modo de una radiografia
+# ---------------------------------------------------------------------------
+
+
+class FakeRadiographReconstructionStrategy(RadiographReconstructionStrategy):
+    """Devuelve un volumen constante y anota lo que recibio. No toca la red.
+
+    Si se le pasan estados (states), los avisa en orden antes de devolver el volumen,
+    como haria el servicio real mientras el trabajo pasa por la cola.
+    """
+
+    def __init__(self, available: bool = True, states: tuple = (), grid_size: int = 128) -> None:
+        self.available = available
+        self.states = states
+        self.received: list[bytes] = []
+        self._grid_size = grid_size
+
+    def reconstruct(self, radiograph, report=None):
+        self.received.append(radiograph)
+        for state in self.states:
+            if report is not None:
+                report(state)
+        return np.full((self._grid_size,) * 3, 0.5, dtype=np.float32)
+
+    def is_available(self) -> bool:
+        return self.available
+
+    @property
+    def model_name(self) -> str:
+        return "fake_radiograph_reconstruction"
+
+    @property
+    def model_version(self) -> str:
+        return "0.0.0"
+
+
+class FailingRadiographReconstructionStrategy(FakeRadiographReconstructionStrategy):
+    def reconstruct(self, radiograph, report=None):
         raise RuntimeError(INTERNAL_DETAIL)

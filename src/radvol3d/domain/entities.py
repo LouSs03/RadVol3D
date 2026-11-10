@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from radvol3d.domain.enums import OrganName, StageNumber, StageStatus, StudyStatus
+from radvol3d.domain.enums import InputMode, OrganName, StageNumber, StageStatus, StudyStatus
 
 
 @dataclass(frozen=True)
@@ -105,6 +105,8 @@ class Study:
     patient: Patient | None = None
     model: Model | None = None
     grid_size: int | None = None
+    input_mode: InputMode = InputMode.PROJECTIONS
+    has_radiograph: bool = False
 
 
 @dataclass(frozen=True)

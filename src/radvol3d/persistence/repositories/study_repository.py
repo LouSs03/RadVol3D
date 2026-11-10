@@ -6,10 +6,11 @@ Las proyecciones, etapas y lesiones las cargan sus propios repositorios: un Stud
 que sale de aqui trae esas tres listas vacias.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 from radvol3d.domain.entities import Model, Study, StudyHistoryEntry
-from radvol3d.domain.enums import OrganName, StudyStatus
+from radvol3d.domain.enums import InputMode, OrganName, StudyStatus
 from radvol3d.domain.exceptions import (
     InvalidPatientDataError,
     PersistenceError,
@@ -24,6 +25,7 @@ from radvol3d.persistence.storage_layout import validate_study_code
 # Un estudio con su organo, su paciente y, si ya se uso, su modelo de reconstruccion.
 _SELECT_STUDY = """
     select s.study_code, s.status, s.grid_size, s.total_time_sec, s.created_at,
+           s.input_mode, s.radiograph_path,
            o.name as organ_name,
            p.patient_code, p.first_name, p.last_name, p.national_id,
            m.model_name, m.version, m.trained_on, m.description
@@ -51,6 +53,21 @@ _SELECT_HISTORY = """
     order by s.created_at desc, s.study_id desc
     limit %s offset %s
 """
+
+
+@dataclass(frozen=True)
+class ClaimDetails:
+    """Lo que claim_for_processing necesita saber del estudio bloqueado."""
+
+    status: StudyStatus
+    organ: OrganName
+    input_mode: InputMode = InputMode.PROJECTIONS
+    has_radiograph: bool = False
+
+
+def parse_input_mode(value: Any) -> InputMode:
+    """El modo de entrada de una fila. Una fila sin la columna (o nula) es projections."""
+    return InputMode(value) if value else InputMode.PROJECTIONS
 
 
 def find_study_id(connection: Any, study_code: str) -> int:
@@ -156,17 +173,64 @@ class StudyRepository:
         La usa claim_for_processing: el organo hace falta para comprobar que haya
         modelo antes de reclamar el estudio, y traerlo aqui ahorra una ida a la base.
         """
+        details = self.lock_claim_details(study_code)
+        return details.status, details.organ
+
+    def lock_claim_details(self, study_code: str) -> ClaimDetails:
+        """Como lock_for_claim, y ademas el modo de entrada y si ya tiene radiografia.
+
+        Sigue siendo una sola consulta: el modo decide que se exige antes de procesar
+        (cuatro proyecciones o una radiografia).
+        """
         validate_study_code(study_code)
         row = execute_translated(
             self._connection,
-            "select s.status, o.name as organ_name from study s "
+            "select s.status, o.name as organ_name, s.input_mode, s.radiograph_path "
+            "from study s "
             "join organ o on o.organ_id = s.organ_id "
             "where s.study_code = %s for update of s",
             (study_code,),
         ).fetchone()
         if row is None:
             raise StudyNotFoundError(f"No existe el estudio '{study_code}'.")
-        return StudyStatus(row["status"]), OrganName(row["organ_name"])
+        return ClaimDetails(
+            status=StudyStatus(row["status"]),
+            organ=OrganName(row["organ_name"]),
+            input_mode=parse_input_mode(row.get("input_mode")),
+            has_radiograph=bool(row.get("radiograph_path")),
+        )
+
+    def set_input_mode(self, study_code: str, input_mode: InputMode | str) -> None:
+        """Cambia el modo de entrada. Se usa al crear un estudio de una radiografia."""
+        validate_study_code(study_code)
+        mode = InputMode(input_mode)
+        cursor = execute_translated(
+            self._connection,
+            "update study set input_mode = %s where study_code = %s",
+            (mode.value, study_code),
+        )
+        if cursor.rowcount == 0:
+            raise StudyNotFoundError(f"No existe el estudio '{study_code}'.")
+
+    def set_radiograph_path(self, study_code: str, path: str) -> None:
+        """Registra la ruta del DICOM del estudio en el bucket."""
+        validate_study_code(study_code)
+        cursor = execute_translated(
+            self._connection,
+            "update study set radiograph_path = %s where study_code = %s",
+            (path, study_code),
+        )
+        if cursor.rowcount == 0:
+            raise StudyNotFoundError(f"No existe el estudio '{study_code}'.")
+
+    def count_processing_radiographs(self) -> int:
+        """Cuantos estudios de una radiografia se estan procesando ahora."""
+        row = execute_translated(
+            self._connection,
+            "select count(*) as active from study where status = %s and input_mode = %s",
+            (StudyStatus.PROCESSING.value, InputMode.RADIOGRAPH.value),
+        ).fetchone()
+        return int(row["active"]) if row else 0
 
     def delete(self, study_code: str) -> None:
         """Borra el estudio. Sus proyecciones, etapas y lesiones caen en cascada."""
@@ -261,4 +325,6 @@ class StudyRepository:
             patient=patient_from_row(row),
             model=model_from_row(row),
             grid_size=row["grid_size"],
+            input_mode=parse_input_mode(row.get("input_mode")),
+            has_radiograph=bool(row.get("radiograph_path")),
         )

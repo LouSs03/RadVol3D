@@ -21,6 +21,9 @@ class PipelineData:
     study_code: str
     projections_by_angle: Mapping[int, ndarray]
     projections: ndarray | None = None
+    # Solo en el modo de una radiografia: los bytes del DICOM (y entonces
+    # projections_by_angle queda vacio).
+    radiograph: bytes | None = None
     volume: ndarray | None = None
     segmentation: SegmentationResult | None = None
     meshes: MeshSet | None = None

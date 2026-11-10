@@ -4,11 +4,13 @@ Las credenciales se guardan como SecretStr: ni str() ni repr() muestran su valor
 La configuracion se carga la primera vez que se pide, no al importar el modulo,
 para poder importarlo (y probarlo) aunque falte el .env.
 
-Hay dos grupos de variables:
+Hay tres grupos de variables:
 
 - Settings: la base y el bucket de datos. Son obligatorias; sin ellas no se arranca.
 - ModelSettings: el bucket de modelos y los pesos. Son opcionales; si falta una, el
   modelo correspondiente queda no disponible y la aplicacion arranca igual.
+- ReconstructionServiceSettings: la direccion y la clave del servicio externo AXON
+  (modo de una radiografia). Opcionales; sin ellas ese modo queda no disponible.
 """
 
 from functools import cache
@@ -97,3 +99,44 @@ class ModelSettings(BaseSettings):
 def get_model_settings() -> ModelSettings:
     """Carga la configuracion de los modelos la primera vez. Nunca falla por una variable."""
     return ModelSettings()
+
+
+class ReconstructionServiceSettings(BaseSettings):
+    """El servicio externo de reconstruccion de una radiografia (AXON, en Colab + ngrok).
+
+    AXON_URL y AXON_API_KEY van solo en el entorno del servidor o en su .env: nunca en
+    el codigo, en el repositorio ni en el navegador. La clave es SecretStr, asi que no
+    sale en str() ni en repr(). Si falta alguna de las dos, el modo de una radiografia
+    queda no disponible y el de cuatro proyecciones sigue igual.
+
+    Los tiempos siguen la guia del modo de una radiografia: 5 s para /health, unos
+    120 s para subir el archivo y 15 minutos como espera total por trabajo.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE,
+        env_file_encoding="utf-8",
+        env_ignore_empty=True,
+        extra="ignore",
+    )
+
+    axon_url: str | None = None
+    axon_api_key: SecretStr | None = None
+    axon_poll_seconds: float = Field(default=5.0, gt=0)
+    axon_max_wait_seconds: float = Field(default=900.0, gt=0)
+    axon_health_timeout_seconds: float = Field(default=5.0, gt=0)
+    axon_upload_timeout_seconds: float = Field(default=120.0, gt=0)
+    axon_request_timeout_seconds: float = Field(default=30.0, gt=0)
+
+    @property
+    def configured(self) -> bool:
+        """Si estan la direccion y la clave."""
+        return bool(self.axon_url) and bool(
+            self.axon_api_key and self.axon_api_key.get_secret_value()
+        )
+
+
+@cache
+def get_reconstruction_service_settings() -> ReconstructionServiceSettings:
+    """Carga la configuracion del servicio externo la primera vez."""
+    return ReconstructionServiceSettings()

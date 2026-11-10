@@ -62,6 +62,15 @@ def projection_path(study_code: str, angle_degrees: int) -> str:
     return f"{study_code}/projections/angle_{angle_degrees:03d}.npy"
 
 
+def radiograph_path(study_code: str) -> str:
+    """Ruta del DICOM de un estudio de una radiografia.
+
+    Siempre el mismo nombre: el original podria traer datos del paciente.
+    """
+    validate_study_code(study_code)
+    return f"{study_code}/input/radiograph.dcm"
+
+
 def volume_path(study_code: str) -> str:
     """Ruta del volumen reconstruido."""
     return f"{validate_study_code(study_code)}/volume.npy"

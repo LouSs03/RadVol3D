@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from radvol3d.domain.enums import OrganName, StageStatus, StudyStatus
+from radvol3d.domain.enums import InputMode, OrganName, RemoteJobState, StageStatus, StudyStatus
 
 # El mismo formato que valida la persistencia (storage_layout.STUDY_CODE_PATTERN).
 STUDY_CODE_REGEX = r"^[A-Za-z0-9_-]{1,64}$"
@@ -56,6 +56,10 @@ class StudyCreate(BaseModel):
     )
     organ: OrganName = Field(description="Organo estudiado")
     patient: PatientInput | None = Field(default=None, description="Datos del paciente")
+    input_mode: InputMode = Field(
+        default=InputMode.PROJECTIONS,
+        description="projections (cuatro .npy) o radiograph (una radiografia DICOM)",
+    )
 
 
 class StudyResponse(BaseModel):
@@ -66,6 +70,9 @@ class StudyResponse(BaseModel):
     status: StudyStatus = Field(description="Estado del procesamiento")
     created_at: datetime | None = Field(default=None, description="Fecha de creacion")
     patient_code: str | None = Field(default=None, description="Codigo del paciente")
+    input_mode: InputMode = Field(
+        default=InputMode.PROJECTIONS, description="Como entro el estudio"
+    )
 
 
 class StageStatusResponse(BaseModel):
@@ -84,6 +91,13 @@ class StudyStatusResponse(StudyResponse):
     total_time_sec: float | None = Field(default=None, description="Tiempo total")
     reconstruction_model: str | None = None
     stages: list[StageStatusResponse] = Field(description="Las cuatro etapas")
+    remote_state: RemoteJobState | None = Field(
+        default=None,
+        description=(
+            "Solo en el modo de una radiografia, durante la etapa 2: queued (en cola) o "
+            "running (reconstruyendo en el servicio externo)"
+        ),
+    )
 
 
 class ProcessingAccepted(BaseModel):
@@ -92,3 +106,18 @@ class ProcessingAccepted(BaseModel):
     study_code: str = Field(description="Codigo del estudio")
     status: StudyStatus = Field(description="processing")
     status_url: str = Field(description="Donde consultar el avance")
+
+
+class RadiographUploaded(BaseModel):
+    """La radiografia quedo guardada."""
+
+    study_code: str = Field(description="Codigo del estudio")
+    size_bytes: int = Field(description="Tamano del archivo guardado")
+
+
+class RadiographModeStatus(BaseModel):
+    """Si el modo de una radiografia se puede usar ahora."""
+
+    available: bool = Field(description="True si el servicio externo responde")
+    message: str | None = Field(default=None, description="Por que no esta disponible")
+    max_bytes: int = Field(description="Tamano maximo del DICOM, en bytes")

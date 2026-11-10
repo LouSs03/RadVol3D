@@ -22,13 +22,16 @@ from radvol3d.domain.exceptions import StageFailedError
 from radvol3d.services.pipeline.filters import (
     MeshingFilter,
     PreprocessingFilter,
+    RadiographPreprocessingFilter,
+    RadiographReconstructionFilter,
     ReconstructionFilter,
     SegmentationFilter,
 )
 from radvol3d.services.pipeline.pipeline_data import PipelineData
 from radvol3d.services.pipeline.progress import PipelineProgress
 from radvol3d.services.pipeline.projection_loader import ProjectionLoader
-from radvol3d.services.strategy_factory import StrategySet
+from radvol3d.services.pipeline.remote_job_board import RemoteJobBoard
+from radvol3d.services.strategy_factory import RadiographStrategySet, StrategySet
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +50,9 @@ def _save_result(progress: PipelineProgress, data: PipelineData) -> None:
 class ProcessingPipeline:
     """Encadena preprocesamiento, reconstruccion, segmentacion y mallas."""
 
-    def __init__(self, loader: ProjectionLoader) -> None:
+    def __init__(self, loader: ProjectionLoader, board: RemoteJobBoard | None = None) -> None:
         self._loader = loader
+        self._board = board
 
     def run(
         self,
@@ -59,7 +63,28 @@ class ProcessingPipeline:
     ) -> PipelineData:
         """Procesa un estudio completo y devuelve los datos de todas sus etapas."""
         data = PipelineData(study_code=study_code, projections_by_angle=projections_by_angle)
-        for stage_filter, save in self._stages(strategies):
+        return self._run_stages(data, self._stages(strategies), progress)
+
+    def run_radiograph(
+        self,
+        study_code: str,
+        radiograph: bytes,
+        strategies: RadiographStrategySet,
+        progress: PipelineProgress,
+    ) -> PipelineData:
+        """Procesa un estudio de una radiografia: mismas cuatro etapas, otra entrada."""
+        data = PipelineData(study_code=study_code, projections_by_angle={}, radiograph=radiograph)
+        return self._run_stages(data, self._radiograph_stages(strategies), progress)
+
+    def _run_stages(
+        self,
+        data: PipelineData,
+        stages: list[tuple[object, _SaveStep]],
+        progress: PipelineProgress,
+    ) -> PipelineData:
+        """Corre las etapas en orden, guardando y avisando como dice el docstring."""
+        study_code = data.study_code
+        for stage_filter, save in stages:
             stage = stage_filter.stage_number
             try:
                 progress.stage_started(study_code, stage)
@@ -97,6 +122,17 @@ class ProcessingPipeline:
                 study_code,
                 type(record_error).__name__,
             )
+
+    def _radiograph_stages(
+        self, strategies: RadiographStrategySet
+    ) -> list[tuple[object, _SaveStep]]:
+        """Los cuatro filtros del modo de una radiografia."""
+        return [
+            (RadiographPreprocessingFilter(), None),
+            (RadiographReconstructionFilter(strategies.reconstruction, self._board), _save_volume),
+            (SegmentationFilter(strategies.segmentation), None),
+            (MeshingFilter(strategies.meshing), _save_result),
+        ]
 
     def _stages(self, strategies: StrategySet) -> list[tuple[object, _SaveStep]]:
         """Los cuatro filtros de esta corrida, cada uno con su paso de guardado."""

@@ -21,7 +21,7 @@ from radvol3d.api.schemas.study_schema import (
     StudyStatusResponse,
 )
 from radvol3d.domain.entities import PatientDetails, Study
-from radvol3d.domain.enums import StageNumber, StudyStatus
+from radvol3d.domain.enums import InputMode, StageNumber, StudyStatus
 from radvol3d.services.study_service import StudyService
 
 router = APIRouter(prefix="/studies", tags=["estudios"])
@@ -30,7 +30,11 @@ ERRORS = {
     400: {"model": ErrorResponse, "description": "Codigo de estudio invalido"},
     404: {"model": ErrorResponse, "description": "El estudio no existe"},
     409: {"model": ErrorResponse, "description": "El estado del estudio no lo permite"},
-    503: {"model": ErrorResponse, "description": "No hay modelo para el organo"},
+    429: {"model": ErrorResponse, "description": "Demasiadas radiografias en proceso"},
+    503: {
+        "model": ErrorResponse,
+        "description": "No hay modelo para el organo o el servicio externo no responde",
+    },
 }
 
 
@@ -57,11 +61,12 @@ def study_response(study: Study) -> StudyResponse:
         status=study.status,
         created_at=study.created_at,
         patient_code=study.patient.patient_code if study.patient else None,
+        input_mode=study.input_mode,
     )
 
 
-def status_response(study: Study) -> StudyStatusResponse:
-    """El estudio con sus cuatro etapas en orden."""
+def status_response(study: Study, remote_state: object = None) -> StudyStatusResponse:
+    """El estudio con sus cuatro etapas en orden (y, si aplica, el trabajo externo)."""
     stages = sorted(study.stages, key=lambda stage: stage.stage_number.value)
     reconstruction_model = next(
         (
@@ -75,6 +80,7 @@ def status_response(study: Study) -> StudyStatusResponse:
         **study_response(study).model_dump(),
         total_time_sec=study.total_time_sec,
         reconstruction_model=reconstruction_model,
+        remote_state=remote_state,
         stages=[
             StageStatusResponse(
                 stage_number=stage.stage_number.value,
@@ -110,7 +116,12 @@ def create_study(
         if request.patient is not None
         else None
     )
-    study = service.create_study(request.study_code, request.organ, patient)
+    if request.input_mode is InputMode.RADIOGRAPH:
+        study = service.create_study(
+            request.study_code, request.organ, patient, input_mode=request.input_mode
+        )
+    else:
+        study = service.create_study(request.study_code, request.organ, patient)
     response.headers["Location"] = status_url(study.study_code)
     return study_response(study)
 
@@ -125,8 +136,16 @@ def read_status(
     study_code: str,
     service: Annotated[StudyService, Depends(get_study_service)],
 ) -> StudyStatusResponse:
-    """Devuelve el estado del estudio y el de cada una de sus cuatro etapas."""
-    return status_response(service.get_study(study_code))
+    """Devuelve el estado del estudio y el de cada una de sus cuatro etapas.
+
+    En un estudio de una radiografia en processing agrega remote_state: si el trabajo
+    esta en cola o reconstruyendose en el servicio externo.
+    """
+    study = service.get_study(study_code)
+    remote_state = None
+    if study.input_mode is InputMode.RADIOGRAPH and study.status is StudyStatus.PROCESSING:
+        remote_state = service.remote_state(study_code)
+    return status_response(study, remote_state)
 
 
 @router.delete(

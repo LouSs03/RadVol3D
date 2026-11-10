@@ -26,3 +26,29 @@ ACCEPTED_FORMATS: Final[tuple[str, ...]] = (".npy",)
 # Un .npy de 128 x 128 pesa 65 664 bytes en float32 y 131 200 en float64, asi que el
 # limite deja margen sin aceptar archivos absurdos (research.md R7 de la funcionalidad 004).
 MAX_PROJECTION_BYTES: Final[int] = 1_048_576
+
+# ---------------------------------------------------------------------------
+# Modo de una radiografia (guia de Lourdes, 7 de noviembre de 2026)
+# ---------------------------------------------------------------------------
+
+# Tamano maximo del DICOM que se sube, en bytes. El servicio de reconstruccion admite
+# hasta 60 MB, pero el archivo se guarda en el bucket de Supabase, cuyo plan gratuito
+# no acepta archivos de mas de 50 MB: manda el limite mas estricto.
+MAX_RADIOGRAPH_BYTES: Final[int] = 50_000_000
+
+# Un DICOM valido trae las letras DICM en los bytes 128 a 131 (preambulo de 128 bytes).
+DICOM_PREAMBLE_BYTES: Final[int] = 128
+DICOM_MAGIC: Final[bytes] = b"DICM"
+
+# Extensiones que acepta la interfaz. La cadena vacia es un archivo sin extension, como
+# los que exportan muchos equipos. El contenido se revisa siempre (DICOM_MAGIC).
+RADIOGRAPH_EXTENSIONS: Final[tuple[str, ...]] = (".dcm", ".dicom", "")
+
+# Ventana Hounsfield del volumen que devuelve el servicio AXON: [0, 1] equivale a
+# [-100, 900] HU. Se convierte a HU_WINDOW para que el resto del sistema no cambie.
+REMOTE_VOLUME_HU_WINDOW: Final[tuple[float, float]] = (-100.0, 900.0)
+
+# Cuantos estudios de una radiografia pueden estar en processing a la vez. El servicio
+# tiene una sola GPU y la cuota de ngrok gratis es de ~1 GB al mes: no hay usuarios
+# con sesion todavia, asi que el limite es global.
+MAX_ACTIVE_RADIOGRAPH_STUDIES: Final[int] = 3

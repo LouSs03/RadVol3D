@@ -95,3 +95,31 @@ class InvalidStudyStateError(RadVol3DError):
     esta en pending o pedir el resultado de uno que no termino. El mensaje dice el
     estado actual, nunca datos del paciente.
     """
+
+
+class InvalidRadiographError(RadVol3DError):
+    """La radiografia subida no es un DICOM aceptable, o el estudio no admite una."""
+
+
+class RadiographTooLargeError(InvalidRadiographError):
+    """La radiografia supera el tamano maximo permitido."""
+
+
+class ReconstructionServiceUnavailableError(RadVol3DError):
+    """El servicio externo de reconstruccion no responde, o no esta configurado.
+
+    El mensaje es siempre el mismo y no trae la direccion ni la clave del servicio.
+    """
+
+
+class RemoteReconstructionError(RadVol3DError):
+    """El servicio externo no pudo reconstruir la radiografia.
+
+    Cubre un trabajo que termina en error, uno que desaparece (404, por ejemplo si
+    Colab se reinicio), una respuesta inesperada y la espera maxima agotada. Ocurre
+    dentro de la tuberia: el estudio queda failed y se puede reintentar.
+    """
+
+
+class TooManyActiveStudiesError(RadVol3DError):
+    """Ya hay demasiados estudios de una radiografia procesandose a la vez."""
