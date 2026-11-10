@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from radvol3d.domain.entities import Patient, PatientDetails, ProcessingStage, Study
+from radvol3d.domain.entities import Model, Patient, PatientDetails, ProcessingStage, Study
 from radvol3d.domain.enums import (
     InputMode,
     OrganName,
@@ -13,7 +13,7 @@ from radvol3d.domain.enums import (
     StageStatus,
     StudyStatus,
 )
-from radvol3d.domain.exceptions import InvalidStudyStateError
+from radvol3d.domain.exceptions import InvalidStudyStateError, ModelNotAvailableError
 
 CODE = "lung_028"
 CREATED_AT = datetime(2026, 10, 9, 15, 4, 5, tzinfo=UTC)
@@ -150,6 +150,56 @@ def test_a_rejected_claim_does_not_launch_the_pipeline(client, service) -> None:
 
     assert response.status_code == 409
     service.run_processing.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("reconstruction", ["en1", "en1_luna16"])
+def test_processing_passes_the_requested_reconstruction_to_the_job(
+    client, service, reconstruction
+) -> None:
+    response = client.post(f"/studies/{CODE}/process", params={"reconstruction": reconstruction})
+
+    assert response.status_code == 202
+    service.start_processing.assert_called_once_with(CODE, reconstruction)
+    service.run_processing.assert_called_once_with(CODE, reconstruction)
+
+
+@pytest.mark.unit
+def test_unknown_reconstruction_is_rejected_before_claiming(client, service) -> None:
+    response = client.post(f"/studies/{CODE}/process", params={"reconstruction": "unknown"})
+
+    assert response.status_code == 422
+    service.start_processing.assert_not_called()
+    service.run_processing.assert_not_called()
+
+
+@pytest.mark.unit
+def test_unavailable_v2_does_not_launch_a_fallback_job(client, service) -> None:
+    service.start_processing.side_effect = ModelNotAvailableError("LUNA16 no está disponible.")
+    response = client.post(f"/studies/{CODE}/process", params={"reconstruction": "en1_luna16"})
+
+    assert response.status_code == 503
+    service.run_processing.assert_not_called()
+
+
+@pytest.mark.unit
+def test_status_reports_the_reconstruction_model_from_stage_two(client, service) -> None:
+    service.get_study.return_value = study(
+        StudyStatus.COMPLETED,
+        stages=[
+            ProcessingStage(
+                StageNumber.RECONSTRUCTION, StageStatus.COMPLETED,
+                model=Model("reconstruction_en1_luna16", "2.0.0"),
+            ),
+            ProcessingStage(
+                StageNumber.SEGMENTATION, StageStatus.COMPLETED,
+                model=Model("segmentation_lung", "1.0.0"),
+            ),
+        ],
+    )
+    assert client.get(f"/studies/{CODE}/status").json()["reconstruction_model"] == (
+        "reconstruction_en1_luna16"
+    )
 
 
 # --- Borrar (historia 4) ---

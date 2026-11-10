@@ -8,19 +8,20 @@ consultas de estado siguen respondiendo mientras el estudio se procesa.
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response, status
 
 from radvol3d.api.dependencies import get_study_service
 from radvol3d.api.schemas.error_schema import ErrorResponse
 from radvol3d.api.schemas.study_schema import (
     ProcessingAccepted,
+    ReconstructionOption,
     StageStatusResponse,
     StudyCreate,
     StudyResponse,
     StudyStatusResponse,
 )
 from radvol3d.domain.entities import PatientDetails, Study
-from radvol3d.domain.enums import InputMode, StudyStatus
+from radvol3d.domain.enums import InputMode, StageNumber, StudyStatus
 from radvol3d.services.study_service import StudyService
 
 router = APIRouter(prefix="/studies", tags=["estudios"])
@@ -42,12 +43,14 @@ def status_url(study_code: str) -> str:
     return f"/studies/{study_code}/status"
 
 
-def run_in_background(service: StudyService, study_code: str) -> None:
+def run_in_background(
+    service: StudyService, study_code: str, *selection: ReconstructionOption
+) -> None:
     """La tarea en segundo plano. Es una funcion sincrona comun a proposito: Starlette
     la ejecuta en su grupo de hilos, fuera del bucle de eventos. run_processing nunca
     lanza, asi que un fallo no llega aqui: queda en el estado del estudio.
     """
-    service.run_processing(study_code)
+    service.run_processing(study_code, *selection)
 
 
 def study_response(study: Study) -> StudyResponse:
@@ -65,9 +68,18 @@ def study_response(study: Study) -> StudyResponse:
 def status_response(study: Study, remote_state: object = None) -> StudyStatusResponse:
     """El estudio con sus cuatro etapas en orden (y, si aplica, el trabajo externo)."""
     stages = sorted(study.stages, key=lambda stage: stage.stage_number.value)
+    reconstruction_model = next(
+        (
+            stage.model.model_name
+            for stage in stages
+            if stage.stage_number is StageNumber.RECONSTRUCTION and stage.model
+        ),
+        None,
+    )
     return StudyStatusResponse(
         **study_response(study).model_dump(),
         total_time_sec=study.total_time_sec,
+        reconstruction_model=reconstruction_model,
         remote_state=remote_state,
         stages=[
             StageStatusResponse(
@@ -163,13 +175,17 @@ def process_study(
     study_code: str,
     background_tasks: BackgroundTasks,
     service: Annotated[StudyService, Depends(get_study_service)],
+    reconstruction: Annotated[
+        ReconstructionOption | None, Query(description="Reconstruction model for this study")
+    ] = None,
 ) -> ProcessingAccepted:
     """Reclama el estudio y lanza la tuberia sin esperarla.
 
     Un fallo de la tuberia no cambia esta respuesta: se ve despues en el estado.
     """
-    service.start_processing(study_code)
-    background_tasks.add_task(run_in_background, service, study_code)
+    selection = () if reconstruction is None else (reconstruction,)
+    service.start_processing(study_code, *selection)
+    background_tasks.add_task(run_in_background, service, study_code, *selection)
     return ProcessingAccepted(
         study_code=study_code,
         status=StudyStatus.PROCESSING,

@@ -24,6 +24,7 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import partial
 
 from radvol3d.domain.entities import PatientDetails, StoredResult, Study, StudyHistoryPage
 from radvol3d.domain.enums import (
@@ -182,7 +183,7 @@ class StudyService:
         by_angle = self._loader.parse(files)
         return self._metadata_store.add_projections(study_code, self._uploads(files, by_angle))
 
-    def start_processing(self, study_code: str) -> None:
+    def start_processing(self, study_code: str, reconstruction_key: str | None = None) -> None:
         """Reclama el estudio para procesarlo: pasa de pending a processing.
 
         Dentro de la misma transaccion comprueba que haya modelo para su organo; si no,
@@ -196,18 +197,28 @@ class StudyService:
         responda (/health, 5 s como maximo); si no, lanza
         ReconstructionServiceUnavailableError y el estudio sigue en pending.
         """
-        self._metadata_store.claim_for_processing(study_code, self._check_strategies)
+        check = partial(self._check_strategies, reconstruction_key=reconstruction_key)
+        self._metadata_store.claim_for_processing(study_code, check)
 
-    def _check_strategies(self, organ: OrganName, input_mode: InputMode | None = None) -> None:
-        """Lo que check_organ comprueba antes de reclamar el estudio."""
+    def _check_strategies(
+        self,
+        organ: OrganName,
+        input_mode: InputMode | None = None,
+        reconstruction_key: str | None = None,
+    ) -> StrategySet | None:
+        """Lo que check_organ comprueba antes de reclamar el estudio.
+
+        reconstruction_key elige el modelo de un estudio de 4 proyecciones; el modo de
+        una radiografia siempre usa el servicio externo, asi que ahi no se usa.
+        """
         if input_mode is not InputMode.RADIOGRAPH:
-            self._factory.strategies_for(organ)
-            return
+            return self._factory.strategies_for(organ, reconstruction_key)
         strategies = self._factory.radiograph_strategies_for(organ)
         if not strategies.reconstruction.is_available():
             raise ReconstructionServiceUnavailableError(RADIOGRAPH_UNAVAILABLE)
+        return None
 
-    def run_processing(self, study_code: str) -> None:
+    def run_processing(self, study_code: str, reconstruction_key: str | None = None) -> None:
         """Corre la tuberia de un estudio ya reclamado. Nunca lanza.
 
         Es la tarea en segundo plano de la API: nadie espera su resultado, asi que
@@ -231,7 +242,7 @@ class StudyService:
                     study_code, radiograph, radiograph_strategies, started
                 )
                 return
-            strategies = self._factory.strategies_for(study.organ)
+            strategies = self._factory.strategies_for(study.organ, reconstruction_key)
             by_angle = self._metadata_store.load_projections(study_code)
             failed_stage = StageNumber.MESHING
             self._run_pipeline(study_code, by_angle, strategies, started)

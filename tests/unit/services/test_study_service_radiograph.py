@@ -117,6 +117,22 @@ def test_the_claim_check_asks_the_remote_service_in_radiograph_mode() -> None:
 
 
 @pytest.mark.unit
+def test_a_radiograph_study_ignores_the_reconstruction_choice_of_the_projections() -> None:
+    harness = Harness()
+    harness.metadata.get_study.return_value = radiograph_study()
+    harness.metadata.load_radiograph.return_value = fake_dicom()
+
+    # Una version que la fabrica de 4 proyecciones no tiene: la radiografia no la usa.
+    harness.service.start_processing(CODE, "en1_luna16")
+    check = harness.metadata.claim_for_processing.call_args.args[1]
+    check(OrganName.LUNG, InputMode.RADIOGRAPH)
+    harness.service.run_processing(CODE, "en1_luna16")
+
+    model_name = harness.progress.complete_study.call_args.args[1]
+    assert model_name == "fake_radiograph_reconstruction"
+
+
+@pytest.mark.unit
 def test_run_processing_of_a_radiograph_runs_its_pipeline_and_completes() -> None:
     harness = Harness()
     harness.metadata.get_study.return_value = radiograph_study()

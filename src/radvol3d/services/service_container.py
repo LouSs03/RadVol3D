@@ -39,6 +39,7 @@ from radvol3d.services.meshing.meshing_strategy import MeshingStrategy
 from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
 from radvol3d.services.pipeline.projection_loader import ProjectionLoader
 from radvol3d.services.pipeline.remote_job_board import RemoteJobBoard
+from radvol3d.services.reconstruction.luna16_strategy import Luna16Strategy
 from radvol3d.services.reconstruction.neural_en1_strategy import NeuralEn1Strategy
 from radvol3d.services.reconstruction.radiograph_reconstruction_strategy import (
     RadiographReconstructionStrategy,
@@ -58,6 +59,7 @@ logger = logging.getLogger(__name__)
 # Descripcion con que se registra cada modelo en la tabla model (data-model.md §5).
 MODEL_DESCRIPTIONS: dict[str, str] = {
     "reconstruction_en1": "Retroproyector de TA-2, filtro rampa y U-Net 3D residual EN-1",
+    "reconstruction_en1_luna16": "Experimental LUNA16 reconstruction, training run v3",
     "segmentation_lung": "U-Net 3D residual con supervision profunda EN-2",
     "reconstruction_axon_coarsediff": (
         "AXON CoarseDiff: volumen desde una radiografia real, servicio externo con GPU"
@@ -139,12 +141,17 @@ def default_strategy_builders(
             raise ModelNotAvailableError(f"Falta configurar MODEL_BUCKET o {variable}.")
         return weights_store.fetch(object_path)
 
+    reconstruction: dict[str, Callable[[], ReconstructionStrategy]] = {
+        "en1": lambda: NeuralEn1Strategy.from_weights(
+            weights(model_settings.en1_weights_object, "EN1_WEIGHTS_OBJECT")
+        ),
+    }
+    if model_settings.en1_v2_weights_object:
+        reconstruction["en1_luna16"] = lambda: Luna16Strategy.from_weights(
+            weights(model_settings.en1_v2_weights_object, "EN1_V2_WEIGHTS_OBJECT")
+        )
     return StrategyBuilders(
-        reconstruction={
-            "en1": lambda: NeuralEn1Strategy.from_weights(
-                weights(model_settings.en1_weights_object, "EN1_WEIGHTS_OBJECT")
-            ),
-        },
+        reconstruction=reconstruction,
         segmentation={
             OrganName.LUNG: lambda: LungUnetStrategy.from_weights(
                 weights(model_settings.en2_weights_object, "EN2_WEIGHTS_OBJECT")
