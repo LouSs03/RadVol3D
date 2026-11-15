@@ -22,6 +22,8 @@
     --line:#E2E8F0; --line2:#CBD5E1; --bg:#F1F5F9; --card:#FFFFFF;
     --brand:#0F6B5C; --brand-d:#0B5145; --brand-l:#E6F4F1;
     --nav:#0B1220; --navtxt:#94A3B8;
+    /* Gris oscurecido para texto pequeno: cumple 4,5:1 sobre los fondos claros (WCAG 1.4.3). */
+    --muted-aa:#5A6778;
     --tumor:#E11D48; --tumor-l:#FFE4E6;
     --warn:#B45309; --ok:#15803D;
     --view-bg:#0A0F1A;
@@ -96,7 +98,7 @@
   }
   .tag.brand{background:var(--brand-l); color:var(--brand-d);}
   .tag.tumor{background:var(--tumor-l); color:#9F1239;}
-  .tag.grey{background:#F1F5F9; color:var(--muted);}
+  .tag.grey{background:#F1F5F9; color:var(--muted-aa);}
   .tag.ok{background:#DCFCE7; color:#166534;}
   .tag.warn{background:#FEF3C7; color:#92400E;}
 
@@ -106,7 +108,16 @@
     width:13px; height:13px; border-radius:50%; border:2px solid currentColor; border-right-color:transparent;
     display:inline-block; animation:rot .7s linear infinite; flex:none;
   }
+  /* Los encabezados de tarjeta son h2/h3 por jerarquia (WCAG 1.3.1); la clase
+     conserva el tamano que tenian como h4. */
+  .card-h{font-size:1em; font-weight:bold; margin:1.33em 0;}
   @keyframes rot{to{transform:rotate(360deg);}}
+  /* WCAG 2.3.3: quien pide menos movimiento en su sistema no ve animaciones. */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.01ms !important; animation-iteration-count:1 !important;
+      transition-duration:.01ms !important; scroll-behavior:auto !important;}
+    .spin{animation:rot .7s linear infinite !important;}
+  }
 
   /* ---------- HOME ---------- */
   .hero{
@@ -212,7 +223,7 @@
   .proj.lock{cursor:default;}
   .proj .ph{
     width:100%; aspect-ratio:1/1.25; border-radius:7px; background:#F1F5F9; margin-bottom:9px;
-    display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:12px; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; color:var(--muted-aa); font-size:12px; overflow:hidden;
   }
   .proj .ph.img{background:#0A0F1A;}
   .proj .ph canvas{width:100%; height:auto; display:block;}
@@ -236,11 +247,11 @@
   .stage:last-child{border-bottom:0;}
   .stage .dot{
     width:30px; height:30px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
-    background:#F1F5F9; color:var(--faint); font-weight:800; font-size:12px; transition:.2s;
+    background:#F1F5F9; color:var(--muted-aa); font-weight:800; font-size:12px; transition:.2s;
   }
   .stage.run .dot{background:var(--brand-l); color:var(--brand-d);}
   .stage.done .dot{background:var(--brand); color:#fff;}
-  .stage.skip .dot{background:#E2E8F0; color:var(--muted);}
+  .stage.skip .dot{background:#E2E8F0; color:var(--muted-aa);}
   .stage.fail .dot{background:var(--tumor); color:#fff;}
   .stage .body{flex:1; min-width:0;}
   .stage h4{font-size:13.5px; display:flex; align-items:center; gap:9px; flex-wrap:wrap;}
@@ -415,7 +426,7 @@
     width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center;
     color:var(--faint); transition:.15s;
   }
-  .hrow .del:hover{color:var(--tumor); background:#FFF1F2;}
+  .hrow .del:hover{color:#BE123C; background:#FFF1F2;}
   .hcode{overflow-wrap:anywhere;}
   .hmore{display:flex; justify-content:center; margin-top:14px;}
   .hfilter{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px;}
@@ -484,22 +495,22 @@
     <div class="pipe">
       <div class="step">
         <div class="n">1</div>
-        <h4>Ingreso de proyecciones</h4>
+        <h2 class="card-h">Ingreso de proyecciones</h2>
         <p>Se cargan 4 radiografías del órgano tomadas a 0°, 45°, 90° y 135°. Equipo convencional, dosis baja.</p>
       </div>
       <div class="step">
         <div class="n">2</div>
-        <h4>Reconstrucción volumétrica</h4>
+        <h2 class="card-h">Reconstrucción volumétrica</h2>
         <p>Una CNN generativa expande las proyecciones 2D a un volumen 3D tipo TC. Es la etapa central del proyecto.</p>
       </div>
       <div class="step">
         <div class="n">3</div>
-        <h4>Segmentación del tumor</h4>
+        <h2 class="card-h">Segmentación del tumor</h2>
         <p>Un segundo modelo 3D recorre el volumen reconstruido y delimita vóxel a vóxel la lesión.</p>
       </div>
       <div class="step">
         <div class="n">4</div>
-        <h4>Entrega al médico</h4>
+        <h2 class="card-h">Entrega al médico</h2>
         <p>Visor 3D interactivo con el órgano semitransparente, las lesiones en color y cortes ortogonales del volumen.</p>
       </div>
     </div>
@@ -512,17 +523,17 @@
     </div>
     <div class="organs">
       <div class="organ">
-        <canvas class="mini" data-organ="lung" width="150" height="150"></canvas>
+        <canvas class="mini" data-organ="lung" width="150" height="150" role="img" aria-label="Ejemplo de un pulmón reconstruido en 3D, con una lesión marcada en rojo"></canvas>
         <div>
-          <h4>Pulmón</h4>
+          <h3 class="card-h">Pulmón</h3>
           <p>Nódulos y tumores primarios de pulmón. Línea base del estado del arte: Dice 0,63 sobre TC.</p>
           <div class="ds">LIDC-IDRI · LUNA16 · NSCLC-Radiomics · MSD Task06</div>
         </div>
       </div>
       <div class="organ">
-        <canvas class="mini" data-organ="liver" width="150" height="150"></canvas>
+        <canvas class="mini" data-organ="liver" width="150" height="150" role="img" aria-label="Ejemplo de un hígado reconstruido en 3D, con una lesión marcada en rojo"></canvas>
         <div>
-          <h4>Hígado</h4>
+          <h3 class="card-h">Hígado</h3>
           <p>Lesiones hepáticas focales. Línea base del estado del arte: Dice 0,832 sobre 3DIRCADb.</p>
           <div class="ds">LiTS17 · 3DIRCADb · MSD Task03</div>
         </div>
@@ -541,13 +552,13 @@
     </div>
 
     <form class="card pad" style="margin-bottom:16px" id="study-card">
-      <h4 class="sec">Datos del estudio</h4>
+      <h2 class="sec">Datos del estudio</h2>
       <div class="field">
         <label for="f-code">Código del estudio</label>
         <input id="f-code" class="mono" autocomplete="off" spellcheck="false" maxlength="64" placeholder="RV-0418" pattern="[A-Za-z0-9_\-]{1,64}" title="Letras, dígitos, guion y guion bajo, hasta 64 caracteres" required>
         <small>Se propone uno con la fecha; puedes cambiarlo. Letras, dígitos, guion y guion bajo (hasta 64). Nunca uses el nombre o el DNI del paciente.</small>
       </div>
-      <h4 class="sec">Paciente</h4>
+      <h2 class="sec">Paciente</h2>
       <div class="patient">
         <div class="field">
           <label for="f-patient-name">Nombre <span class="req" aria-hidden="true">*</span></label>
@@ -563,29 +574,29 @@
         </div>
       </div>
       <small class="patient-note">Nombre y apellido son obligatorios. Se ven en esta pestaña mientras sigues el estudio y se borran al empezar uno nuevo; no quedan guardados en el navegador.</small>
-      <h4 class="sec">Modo de entrada</h4>
-      <div class="pick" id="mode-pick">
-        <button class="opt" data-mode="projections" type="button">
-          <div class="ic"><canvas class="mini" data-organ="lung" width="42" height="42"></canvas></div>
+      <h2 class="sec">Modo de entrada</h2>
+      <div class="pick" id="mode-pick" role="radiogroup" aria-label="Modo de entrada">
+        <button class="opt" data-mode="projections" type="button" role="radio" aria-checked="false">
+          <div class="ic"><canvas class="mini" data-organ="lung" width="42" height="42" aria-hidden="true"></canvas></div>
           <div><b>4 proyecciones</b><span>Las cuatro .npy sintéticas (0°, 45°, 90°, 135°)</span></div>
           <div class="chk"></div>
         </button>
-        <button class="opt" data-mode="radiograph" type="button">
+        <button class="opt" data-mode="radiograph" type="button" role="radio" aria-checked="false">
           <div class="ic rx"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M12 7v10M9 9c-2 1-2 5 0 7M15 9c2 1 2 5 0 7"/></svg></div>
           <div><b>1 radiografía</b><span>Un DICOM de tórax frontal (PA), tal como sale del equipo</span></div>
           <div class="chk"></div>
         </button>
       </div>
       <div class="mode-status hidden" id="mode-status" role="status"></div>
-      <h4 class="sec">Órgano</h4>
-      <div class="pick" id="pick">
-        <button class="opt" data-organ="lung" type="button">
-          <div class="ic"><canvas class="mini" data-organ="lung" width="42" height="42"></canvas></div>
+      <h2 class="sec">Órgano</h2>
+      <div class="pick" id="pick" role="radiogroup" aria-label="Órgano">
+        <button class="opt" data-organ="lung" type="button" role="radio" aria-checked="false">
+          <div class="ic"><canvas class="mini" data-organ="lung" width="42" height="42" aria-hidden="true"></canvas></div>
           <div><b>Pulmón</b><span>Tórax · 4 proyecciones</span></div>
           <div class="chk"></div>
         </button>
-        <button class="opt" data-organ="liver" type="button">
-          <div class="ic"><canvas class="mini" data-organ="liver" width="42" height="42"></canvas></div>
+        <button class="opt" data-organ="liver" type="button" role="radio" aria-checked="false">
+          <div class="ic"><canvas class="mini" data-organ="liver" width="42" height="42" aria-hidden="true"></canvas></div>
           <div><b>Hígado</b><span>Abdomen superior · 4 proyecciones</span></div>
           <div class="chk"></div>
         </button>
@@ -598,7 +609,7 @@
 
     <div class="card pad locked" style="margin-bottom:16px" id="proj-card">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:13px; flex-wrap:wrap">
-        <h4 class="sec" style="margin:0">Proyecciones radiográficas</h4>
+        <h2 class="sec" style="margin:0">Proyecciones radiográficas</h2>
         <button class="btn ghost sm" id="btn-pick" type="button">Elegir archivos</button>
         <input type="file" id="file-many" accept=".npy" multiple hidden>
         <input type="file" id="file-one" accept=".npy" hidden>
@@ -617,7 +628,7 @@
 
     <div class="card pad locked hidden" style="margin-bottom:16px" id="rx-card">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:13px; flex-wrap:wrap">
-        <h4 class="sec" style="margin:0">Radiografía de tórax</h4>
+        <h2 class="sec" style="margin:0">Radiografía de tórax</h2>
         <button class="btn ghost sm" id="btn-rx-pick" type="button">Elegir archivo</button>
         <!-- Sin accept: muchos equipos exportan el DICOM sin extensión y el selector lo ocultaría. -->
         <input type="file" id="file-rx" hidden>
@@ -670,7 +681,7 @@
       <div class="stage" id="st-1">
         <div class="dot">1</div>
         <div class="body">
-          <h4><span class="stg-name">Preprocesamiento y calibración geométrica</span> <span class="stg-st">en espera</span></h4>
+          <h2 class="card-h"><span class="stg-name">Preprocesamiento y calibración geométrica</span> <span class="stg-st">en espera</span></h2>
           <p class="stg-desc">Normalización de intensidades, alineación de las 4 proyecciones y estimación de la geometría de adquisición.</p>
           <div class="bar"><i></i></div>
         </div>
@@ -678,7 +689,7 @@
       <div class="stage" id="st-2">
         <div class="dot">2</div>
         <div class="body">
-          <h4><span class="stg-name">Reconstrucción volumétrica 3D</span> <span class="stg-st">en espera</span></h4>
+          <h2 class="card-h"><span class="stg-name">Reconstrucción volumétrica 3D</span> <span class="stg-st">en espera</span></h2>
           <p class="stg-desc">CNN generativa 2D→3D. Expande las proyecciones a un volumen de 128 × 128 × 128 vóxeles.</p>
           <div class="bar"><i></i></div>
         </div>
@@ -686,7 +697,7 @@
       <div class="stage" id="st-3">
         <div class="dot">3</div>
         <div class="body">
-          <h4><span class="stg-name">Segmentación tumoral</span> <span class="stg-st">en espera</span></h4>
+          <h2 class="card-h"><span class="stg-name">Segmentación tumoral</span> <span class="stg-st">en espera</span></h2>
           <p class="stg-desc">Red 3D tipo U-Net que delimita las lesiones vóxel a vóxel dentro del volumen reconstruido.</p>
           <div class="bar"><i></i></div>
         </div>
@@ -694,7 +705,7 @@
       <div class="stage" id="st-4">
         <div class="dot">4</div>
         <div class="body">
-          <h4>Generación de mallas 3D <span class="stg-st">en espera</span></h4>
+          <h2 class="card-h">Generación de mallas 3D <span class="stg-st">en espera</span></h2>
           <p>Extrae la superficie del órgano y de cada lesión, y exporta las mallas .glb que dibuja el visor.</p>
           <div class="bar"><i></i></div>
         </div>
@@ -741,7 +752,7 @@
 
       <div class="vgrid">
         <div class="stage3d">
-          <canvas id="cv3d"></canvas>
+          <canvas id="cv3d" role="img" aria-label="Vista 3D interactiva del órgano reconstruido. Los hallazgos en texto están en el panel de la derecha."></canvas>
           <div class="vmsg" id="vw-msg"></div>
           <div class="vtools">
             <button data-mode="tissue" class="on" type="button">Tejido</button>
@@ -782,7 +793,7 @@
 
         <div>
           <div class="find wait" id="find">
-            <h4 id="f-title">Cargando lesiones…</h4>
+            <h2 class="card-h" id="f-title">Cargando lesiones…</h2>
             <div class="lnav hidden" id="f-nav">
               <button id="f-prev" type="button" aria-label="Lesión anterior">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 5 8 12 15 19"/></svg>
@@ -801,7 +812,7 @@
           </div>
 
           <div class="panel">
-            <h4>Controles de visualización</h4>
+            <h2 class="card-h">Controles de visualización</h2>
             <div class="ctl">
               <label for="r-op">Opacidad del órgano <b id="lb-op">35 %</b></label>
               <input type="range" id="r-op" min="4" max="100" value="35">
@@ -825,20 +836,20 @@
           </div>
 
           <div class="panel">
-            <h4>Cortes ortogonales</h4>
+            <h2 class="card-h">Cortes ortogonales</h2>
             <div class="ctl">
               <label for="r-sl">Posición del corte <b id="lb-sl">centrado</b></label>
               <input type="range" id="r-sl" min="0" max="100" value="50" disabled>
             </div>
             <div class="slices">
-              <div class="slice"><canvas id="sl-ax" width="120" height="120"></canvas><span>AXIAL</span></div>
-              <div class="slice"><canvas id="sl-co" width="120" height="120"></canvas><span>CORONAL</span></div>
-              <div class="slice"><canvas id="sl-sa" width="120" height="120"></canvas><span>SAGITAL</span></div>
+              <div class="slice"><canvas id="sl-ax" width="120" height="120" role="img" aria-label="Corte axial del volumen"></canvas><span>AXIAL</span></div>
+              <div class="slice"><canvas id="sl-co" width="120" height="120" role="img" aria-label="Corte coronal del volumen"></canvas><span>CORONAL</span></div>
+              <div class="slice"><canvas id="sl-sa" width="120" height="120" role="img" aria-label="Corte sagital del volumen"></canvas><span>SAGITAL</span></div>
             </div>
           </div>
 
           <div class="panel">
-            <h4>Descargas</h4>
+            <h2 class="card-h">Descargas</h2>
             <ul class="dls">
               <li><a id="dl-organ" href="#" download>Malla del órgano <span>.glb</span></a></li>
               <li><a id="dl-tumor" href="#" download>Malla del tumor completo <span>.glb</span></a></li>
@@ -1191,6 +1202,8 @@ function render_mini(canvas, key) {
 /* ============================================================
    5. NAVEGACION (hash: #/vista/codigo)
    ============================================================ */
+// WCAG 2.3.3: si el sistema pide menos movimiento, el visor no arranca girando.
+const prefiere_menos_movimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const VIEWS = ['home', 'new', 'run', 'viewer', 'metrics', 'history'];
 const NAV_OF = { home: 'home', new: 'new', run: 'new', viewer: 'viewer', metrics: 'metrics', history: 'history' };
 let current_view = null;
@@ -1345,12 +1358,16 @@ function render_new() {
   for (const id of ['#f-patient-name', '#f-patient-surname', '#f-patient-dni']) $(id).disabled = s.created || s.busy;
   const radiograph = s.mode === 'radiograph';
   $$('#mode-pick .opt').forEach((opt) => {
-    opt.classList.toggle('sel', opt.dataset.mode === s.mode);
+    const elegido = opt.dataset.mode === s.mode;
+    opt.classList.toggle('sel', elegido);
+    opt.setAttribute('aria-checked', String(elegido));
     opt.disabled = s.created || s.busy || (opt.dataset.mode === 'radiograph' && rx_mode.available === false);
   });
   render_mode_status();
   $$('#pick .opt').forEach((opt) => {
-    opt.classList.toggle('sel', opt.dataset.organ === s.organ);
+    const elegido = opt.dataset.organ === s.organ;
+    opt.classList.toggle('sel', elegido);
+    opt.setAttribute('aria-checked', String(elegido));
     // El modo de una radiografia solo admite pulmon (el modelo vio radiografias de torax).
     opt.disabled = s.created || s.busy || (radiograph && opt.dataset.organ !== 'lung');
     const input_text = radiograph ? (opt.dataset.organ === 'lung' ? '1 radiografía' : 'no disponible en este modo') : '4 proyecciones';
@@ -1416,6 +1433,21 @@ function render_new() {
   $('#btn-process').innerHTML = s.busy === 'process' ? '<span class="spin"></span> Lanzando…' : 'Procesar';
   $('#btn-create').innerHTML = s.busy === 'create' ? '<span class="spin"></span> Creando…' : 'Crear estudio';
 }
+
+function mover_entre_opciones(grupo, evento) {
+  const teclas = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+  const paso = teclas[evento.key];
+  if (!paso) return;
+  const opciones = $$(grupo + ' .opt').filter((opt) => !opt.disabled);
+  if (opciones.length < 2) return;
+  const actual = opciones.indexOf(document.activeElement);
+  const siguiente = opciones[((actual < 0 ? 0 : actual) + paso + opciones.length) % opciones.length];
+  evento.preventDefault();
+  siguiente.focus();
+  siguiente.click();
+}
+$('#mode-pick').addEventListener('keydown', (e) => mover_entre_opciones('#mode-pick', e));
+$('#pick').addEventListener('keydown', (e) => mover_entre_opciones('#pick', e));
 
 $$('#pick .opt').forEach((opt) => opt.addEventListener('click', () => {
   if (new_state.created) return;
@@ -1892,7 +1924,8 @@ const viewer = {
   three: null, GLTFLoader: null, renderer: null, scene: null, camera: null, controls: null,
   root: null, organ: null, organ_material: null, lesions: [], axes: null, home: null,
   result: null, selected: 0, mode: 'tissue', opacity: ORGAN_OPACITY,
-  show_tumor: true, spin: true, show_axes: false, show_confidence: false, volume: null,
+  show_tumor: true, spin: !prefiere_menos_movimiento, show_axes: false,
+  show_confidence: false, volume: null,
   fps_frames: 0, fps_since: 0,
 };
 
@@ -2453,6 +2486,10 @@ function bind_toggle(selector, apply) {
 }
 bind_toggle('#t-tumor', (on) => { viewer.show_tumor = on; });
 bind_toggle('#t-spin', (on) => { viewer.spin = on; });
+if (prefiere_menos_movimiento) {
+  $('#t-spin').classList.remove('on');
+  $('#t-spin').setAttribute('aria-pressed', 'false');
+}
 bind_toggle('#t-axes', (on) => { viewer.show_axes = on; });
 bind_toggle('#t-conf', (on) => { viewer.show_confidence = on; });
 $('#btn-conf-toggle').addEventListener('click', () => {
