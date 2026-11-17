@@ -108,6 +108,19 @@
   }
   @keyframes rot{to{transform:rotate(360deg);}}
 
+  /* ---------- DOCTOR ACCESS PREVIEW ---------- */
+  .login-layout{display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,430px); gap:22px; align-items:stretch;}
+  .login-intro{background:linear-gradient(135deg,#0B1220,#0F3B33); color:#fff; border-radius:16px; padding:38px;}
+  .login-intro h1{font-size:30px; line-height:1.2; margin:12px 0;}
+  .login-intro p{color:#C6D5DC; max-width:490px; margin:0;}
+  .login-card{padding:30px;}
+  .login-card h2{font-size:20px; margin:5px 0 8px;}
+  .login-card p{color:var(--muted); font-size:13px; margin:0 0 22px;}
+  .login-card .field{max-width:none;}
+  .login-card .btn{width:100%;}
+  .login-disclaimer{font-size:12px; color:var(--muted); margin-top:16px; line-height:1.5;}
+  @media (max-width:760px){.login-layout{grid-template-columns:1fr;}.login-intro{padding:27px;}.login-card{padding:24px;}}
+
   /* ---------- HOME ---------- */
   .hero{
     background:linear-gradient(135deg,#0B1220 0%,#12233A 55%,#0F3B33 100%);
@@ -463,6 +476,35 @@
       <button data-go="viewer">Visor 3D</button>
       <button data-go="metrics">Métricas</button>
       <button data-go="history">Historial</button>
+      <button data-go="login">Acceso médico</button>
+    </div>
+  </div>
+
+  <!-- ==================== ACCESO MÉDICO ==================== -->
+  <div class="view" id="v-login">
+    <div class="login-layout">
+      <div class="login-intro">
+        <div class="eyebrow" style="color:#5EEAD4">RadVol 3D</div>
+        <h1>Acceso para personal médico</h1>
+        <p>Un espacio para consultar estudios y revisar reconstrucciones volumétricas desde la misma aplicación.</p>
+      </div>
+      <div class="card login-card">
+        <div class="eyebrow">Acceso médico</div>
+        <h2>Iniciar sesión</h2>
+        <p>Aquí ingresarás con la cuenta que te asigne el responsable del sistema.</p>
+        <form id="login-form" autocomplete="off">
+          <div class="field">
+            <label for="login-identifier">Usuario o correo</label>
+            <input id="login-identifier" type="text" placeholder="Usuario o correo institucional" autocapitalize="none" spellcheck="false" required>
+          </div>
+          <div class="field">
+            <label for="login-password">Contraseña</label>
+            <input id="login-password" type="password" placeholder="Contraseña" required>
+          </div>
+          <button class="btn" type="submit">Iniciar sesión</button>
+        </form>
+        <div class="login-disclaimer" role="note">El acceso con cuentas aún no está habilitado: usa datos ficticios. Esta pantalla no valida credenciales ni restringe los estudios.</div>
+      </div>
     </div>
   </div>
 
@@ -1191,8 +1233,8 @@ function render_mini(canvas, key) {
 /* ============================================================
    5. NAVEGACION (hash: #/vista/codigo)
    ============================================================ */
-const VIEWS = ['home', 'new', 'run', 'viewer', 'metrics', 'history'];
-const NAV_OF = { home: 'home', new: 'new', run: 'new', viewer: 'viewer', metrics: 'metrics', history: 'history' };
+const VIEWS = ['login', 'home', 'new', 'run', 'viewer', 'metrics', 'history'];
+const NAV_OF = { login: 'login', home: 'home', new: 'new', run: 'new', viewer: 'viewer', metrics: 'metrics', history: 'history' };
 let current_view = null;
 
 function parse_hash() {
@@ -1211,6 +1253,7 @@ function go(view, code) {
 
 function route() {
   const { view, code } = parse_hash();
+  if (current_view === 'login' && view !== 'login') $('#login-form').reset();
   if (current_view === 'run') stop_run();
   if (current_view === 'viewer' && view !== 'viewer') pause_viewer();
   current_view = view;
@@ -1231,6 +1274,13 @@ document.addEventListener('click', (event) => {
   go(target, target === 'viewer' ? viewer.code : null);
 });
 window.addEventListener('hashchange', route);
+
+$('#login-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  // El flujo visual no envia ni guarda los datos; la validacion real requiere el backend.
+  event.currentTarget.reset();
+  go('home');
+});
 
 /* ============================================================
    6. NUEVO ESTUDIO
