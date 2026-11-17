@@ -63,4 +63,5 @@ def test_the_web_interface_is_served_under_static() -> None:
         response = client.get("/static/")
 
     assert response.status_code == 200
-    assert '<canvas id="cv3d">' in response.text
+    # Solo el id: el lienzo lleva ademas role y aria-label (WCAG 1.1.1).
+    assert '<canvas id="cv3d"' in response.text
