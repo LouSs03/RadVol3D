@@ -12,6 +12,8 @@ cuelgan del codigo del estudio:
     <study_code>/meshes/organ.glb
     <study_code>/meshes/tumor.glb
     <study_code>/meshes/lesion_001.glb       (una por lesion: 002, 003, ...)
+    <study_code>/input/radiograph.dcm        (modo de una radiografia)
+    <study_code>/reconstruction/...          (modo de una radiografia con X2CT-GAN)
 
 El numero de cada malla de lesion es la posicion de su region en el resumen, desde 1.
 No es region_id: el enlace entre la fila de lesion y su malla es la columna
@@ -69,6 +71,24 @@ def radiograph_path(study_code: str) -> str:
     """
     validate_study_code(study_code)
     return f"{study_code}/input/radiograph.dcm"
+
+
+# Lo que deja X2CT-GAN en un estudio de una radiografia (services/reconstruction/
+# x2ct_strategy.py): su paquete de salida tal cual y los datos que usa el visor.
+RADIOGRAPH_OUTPUT_FILES: tuple[str, ...] = (
+    "volumen.nii.gz",
+    "entrada_modelo_128.png",
+    "metadatos.json",
+    "visor.json",
+)
+
+
+def radiograph_output_path(study_code: str, file_name: str) -> str:
+    """Ruta de un archivo de X2CT-GAN: <study_code>/reconstruction/<archivo>."""
+    validate_study_code(study_code)
+    if file_name not in RADIOGRAPH_OUTPUT_FILES:
+        raise ValueError(f"'{file_name}' no es un archivo de la reconstruccion.")
+    return f"{study_code}/reconstruction/{file_name}"
 
 
 def volume_path(study_code: str) -> str:

@@ -42,13 +42,14 @@ jobs:
       - name: Pruebas unitarias con cobertura
         run: pytest -m unit --cov --cov-report=xml
 
-      # El umbral del 80 % se mide solo sobre services/. Los cuatro modulos que importan
-      # PyTorch no cuentan: el CI no instala el extra "ml" y esos modulos solo corren con
-      # las pruebas "ml", que se miden en local (research.md R17 de la funcionalidad 002).
+      # El umbral del 80 % se mide solo sobre services/. Los modulos que importan PyTorch
+      # no cuentan: el CI no instala el extra "ml" y esos modulos solo corren con las
+      # pruebas "ml", que se miden en local (research.md R17 de la funcionalidad 002).
+      # Tampoco la copia de X2CT-GAN (services/reconstruction/x2ct/), por lo mismo.
       - name: Cobertura de services
         run: >-
           coverage report --include="src/radvol3d/services/*"
-          --omit="*/en1_network.py,*/en1_reconstructor.py,*/lung_unet_network.py,*/lung_segmenter.py"
+          --omit="*/en1_network.py,*/en1_reconstructor.py,*/lung_unet_network.py,*/lung_segmenter.py,*/x2ct/x2ct_network.py,*/x2ct/x2ct_sistema.py"
           --fail-under=80
 
       # SC-007 de la funcionalidad 004: la capa de presentacion tambien con al menos 80 %.

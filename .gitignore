@@ -27,6 +27,9 @@ data/
 models/
 # Cache local de pesos y referencias bajados del bucket de modelos
 .cache/
+# X2CT-GAN: pesos y radiografias de prueba temporales (los pesos viven en Supabase)
+docs/x2ct/*.pth
+docs/x2ct/*.dcm
 
 # Editor y sistema operativo
 .vscode/

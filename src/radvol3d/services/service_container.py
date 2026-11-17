@@ -25,13 +25,16 @@ from radvol3d.persistence.connection import Database
 from radvol3d.persistence.model_weights_store import ModelWeightsStore
 from radvol3d.persistence.object_storage import ObjectStorage
 from radvol3d.persistence.processing_progress_store import ProcessingProgressStore
+from radvol3d.persistence.radiograph_result_store import RadiographResultStore
 from radvol3d.persistence.reconstruction_service_client import ReconstructionServiceClient
 from radvol3d.persistence.result_store import ResultStore
 from radvol3d.persistence.settings import (
     ModelSettings,
+    RadiographEngineSettings,
     ReconstructionServiceSettings,
     Settings,
 )
+from radvol3d.persistence.split_weights_store import SplitWeightsStore
 from radvol3d.persistence.study_metadata_store import StudyMetadataStore
 from radvol3d.services.meshing.lung_air_region import LungAirRegion
 from radvol3d.services.meshing.marching_cubes_strategy import MarchingCubesStrategy
@@ -39,6 +42,7 @@ from radvol3d.services.meshing.meshing_strategy import MeshingStrategy
 from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
 from radvol3d.services.pipeline.projection_loader import ProjectionLoader
 from radvol3d.services.pipeline.remote_job_board import RemoteJobBoard
+from radvol3d.services.pipeline.x2ct_run import X2ctRadiographRun
 from radvol3d.services.reconstruction.luna16_strategy import Luna16Strategy
 from radvol3d.services.reconstruction.neural_en1_strategy import NeuralEn1Strategy
 from radvol3d.services.reconstruction.radiograph_reconstruction_strategy import (
@@ -46,6 +50,10 @@ from radvol3d.services.reconstruction.radiograph_reconstruction_strategy import 
 )
 from radvol3d.services.reconstruction.reconstruction_strategy import ReconstructionStrategy
 from radvol3d.services.reconstruction.remote_axon_strategy import RemoteAxonStrategy
+from radvol3d.services.reconstruction.x2ct_strategy import (
+    X2CT_WEIGHTS_SHA256_PREFIX,
+    X2ctStrategy,
+)
 from radvol3d.services.segmentation.lung_unet_strategy import LungUnetStrategy
 from radvol3d.services.segmentation.pending_segmentation_strategy import (
     PendingSegmentationStrategy,
@@ -64,6 +72,7 @@ MODEL_DESCRIPTIONS: dict[str, str] = {
     "reconstruction_axon_coarsediff": (
         "AXON CoarseDiff: volumen desde una radiografia real, servicio externo con GPU"
     ),
+    "reconstruction_x2ct": "X2CT-GAN de 1 vista: volumen desde una radiografia real, en CPU",
 }
 
 
@@ -129,10 +138,46 @@ def radiograph_reconstruction_builder(
     return build
 
 
+def x2ct_reconstruction_builder(
+    split_weights_store: SplitWeightsStore | None,
+    engine_settings: RadiographEngineSettings,
+) -> Callable[[], RadiographReconstructionStrategy]:
+    """El constructor de X2CT-GAN: baja y verifica los pesos y carga el modelo en CPU.
+
+    Corre una sola vez, al arrancar (StrategyFactory.preload). Si faltan los pesos o la
+    huella no coincide, lanza y el modo de una radiografia queda no disponible.
+    """
+
+    def build() -> RadiographReconstructionStrategy:
+        object_path = engine_settings.x2ct_weights_object
+        if split_weights_store is None or not object_path:
+            raise ModelNotAvailableError("Falta configurar MODEL_BUCKET o X2CT_WEIGHTS_OBJECT.")
+        weights_path = split_weights_store.fetch(object_path, X2CT_WEIGHTS_SHA256_PREFIX)
+        return X2ctStrategy.from_weights(weights_path)
+
+    return build
+
+
+def radiograph_engine_builder(
+    engine_settings: RadiographEngineSettings | None,
+    service_settings: ReconstructionServiceSettings | None,
+    split_weights_store: SplitWeightsStore | None,
+) -> Callable[[], RadiographReconstructionStrategy] | None:
+    """El motor del modo de una radiografia segun RADIOGRAPH_ENGINE.
+
+    Sin engine_settings se arma AXON, como antes de X2CT-GAN.
+    """
+    if engine_settings is None or engine_settings.radiograph_engine == "axon":
+        return radiograph_reconstruction_builder(service_settings)
+    return x2ct_reconstruction_builder(split_weights_store, engine_settings)
+
+
 def default_strategy_builders(
     weights_store: ModelWeightsStore | None,
     model_settings: ModelSettings,
     service_settings: ReconstructionServiceSettings | None = None,
+    engine_settings: RadiographEngineSettings | None = None,
+    split_weights_store: SplitWeightsStore | None = None,
 ) -> StrategyBuilders:
     """Las estrategias reales. Cada una baja sus pesos solo cuando se construye."""
 
@@ -162,7 +207,9 @@ def default_strategy_builders(
             # El pulmon es aire: su malla sale del aire que encierra el cuerpo.
             OrganName.LUNG: lambda: MarchingCubesStrategy(organ_region=LungAirRegion()),
         },
-        radiograph_reconstruction=radiograph_reconstruction_builder(service_settings),
+        radiograph_reconstruction=radiograph_engine_builder(
+            engine_settings, service_settings, split_weights_store
+        ),
         radiograph_segmentation={
             # Gancho: aqui se registra el segmentador que entrene Lourdes.
             OrganName.LUNG: PendingSegmentationStrategy,
@@ -178,6 +225,7 @@ def build_service_container(
     storage_factory: Callable[..., ObjectStorage] = ObjectStorage.from_settings,
     strategy_builders: StrategyBuilders | None = None,
     service_settings: ReconstructionServiceSettings | None = None,
+    engine_settings: RadiographEngineSettings | None = None,
 ) -> ServiceContainer:
     """Arma todos los servicios. Lanza solo si la base no se puede abrir."""
     database = database_factory(settings)
@@ -185,12 +233,14 @@ def build_service_container(
 
     storage = storage_factory(settings)
     weights_store = None
+    split_weights_store = None
     if model_settings.model_bucket:
         model_storage = storage_factory(settings, bucket=model_settings.model_bucket)
         weights_store = ModelWeightsStore(model_storage, model_settings.model_cache_dir)
+        split_weights_store = SplitWeightsStore(model_storage, model_settings.model_cache_dir)
 
     builders = strategy_builders or default_strategy_builders(
-        weights_store, model_settings, service_settings
+        weights_store, model_settings, service_settings, engine_settings, split_weights_store
     )
     factory = StrategyFactory(
         reconstruction_builders=builders.reconstruction,
@@ -218,14 +268,18 @@ def build_service_container(
 
     loader = ProjectionLoader()
     board = RemoteJobBoard()
+    metadata_store = StudyMetadataStore(database, storage)
+    radiograph_results = RadiographResultStore(storage)
     study_service = StudyService(
-        metadata_store=StudyMetadataStore(database, storage),
+        metadata_store=metadata_store,
         result_store=ResultStore(database, storage),
         progress_store=progress_store,
         factory=factory,
         pipeline=ProcessingPipeline(loader, board),
         loader=loader,
         board=board,
+        radiograph_results=radiograph_results,
+        x2ct_run=X2ctRadiographRun(progress_store, metadata_store, radiograph_results),
     )
     # La tarea que procesaba un estudio en processing murio con el proceso anterior:
     # sin esto quedaria colgado y no se podria borrar (research.md R5 de 004).

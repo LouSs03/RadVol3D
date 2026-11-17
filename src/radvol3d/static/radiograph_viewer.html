@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RadVol 3D · Visor de una radiografía</title>
+<!--
+  Visor del modo de una radiografia (X2CT-GAN). Es una pagina aparte: el visor del modo de
+  cuatro proyecciones (index.html) no cambia. index.html abre esta pagina cuando el estudio
+  es de una radiografia (study.input_mode = "radiograph").
+
+  Replica el diseno del visor de cuatro proyecciones: los estilos de abajo son copia de los
+  de index.html (no se importan para no editar aquel archivo). Diferencias: sin tumores, sin
+  mapa de confianza ni panel de lesiones; los cortes se dibujan con la proporcion real del
+  voxel. El cubo de orientacion gira la reconstruccion igual que en index.html
+  (orientation_cube.js).
+  Three.js desde jsDelivr con la misma version fija que index.html.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root{
+    --ink:#0F172A; --ink2:#334155; --muted:#64748B; --faint:#94A3B8;
+    --line:#E2E8F0; --line2:#CBD5E1; --bg:#F1F5F9; --card:#FFFFFF;
+    --brand:#0F6B5C; --brand-d:#0B5145; --brand-l:#E6F4F1;
+    --nav:#0B1220; --navtxt:#94A3B8;
+    --muted-aa:#5A6778;
+    --view-bg:#0A0F1A;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
+    background:var(--bg); color:var(--ink); font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{margin:0; font-weight:700; letter-spacing:-0.01em;}
+  button{font-family:inherit; cursor:pointer; border:0; background:none; color:inherit;}
+  ::selection{background:#CDEAE3;}
+  .hidden{display:none !important;}
+  :focus-visible{outline:2px solid var(--brand); outline-offset:2px;}
+
+  /* ---------- shell (copia de index.html) ---------- */
+  .shell{max-width:1380px; margin:0 auto; padding:18px 26px 40px;}
+  @media (max-width:820px){ .shell{padding:14px 16px 32px;} }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    background:var(--nav); border-radius:14px; padding:12px 18px; margin-bottom:18px; flex-wrap:wrap;
+  }
+  .brand{display:flex; align-items:center; gap:11px; min-width:0; text-decoration:none;}
+  .logo{
+    width:36px; height:36px; border-radius:10px; background:var(--brand);
+    display:flex; align-items:center; justify-content:center; flex:none;
+  }
+  .brand-txt{display:flex; flex-direction:column; line-height:1.15; min-width:0;}
+  .brand-txt b{color:#fff; font-size:15px; letter-spacing:-0.01em;}
+  .brand-txt span{color:#8B94A3; font-size:11px;}
+  .nav{display:flex; align-items:center; gap:4px; flex-wrap:wrap;}
+  .nav a{
+    color:var(--navtxt); font-size:13.5px; font-weight:500; text-decoration:none;
+    padding:7px 13px; border-radius:8px; transition:.15s;
+  }
+  .nav a:hover{color:#fff; background:rgba(255,255,255,.07);}
+  .nav a.on{color:#fff; background:rgba(255,255,255,.13); font-weight:600;}
+
+  .head{display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:16px; flex-wrap:wrap;}
+  .head h1{font-size:23px;}
+  .head p{margin:3px 0 0; color:var(--muted); font-size:13.5px; max-width:760px;}
+  .eyebrow{font-size:11px; font-weight:700; letter-spacing:.09em; color:var(--brand); text-transform:uppercase;}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; justify-content:center;
+    padding:10px 18px; border-radius:9px; font-size:13.5px; font-weight:600; text-decoration:none;
+    background:var(--brand); color:#fff; transition:.15s;
+  }
+  .btn.ghost{background:#fff; color:var(--ink2); border:1px solid var(--line2);}
+  .btn.ghost:hover{background:#F8FAFC; border-color:var(--muted);}
+  .btn.danger{background:#fff; color:#BE123C; border:1px solid #FECDD3;}
+  .btn.danger:hover{background:#FFF1F2; border-color:#E11D48;}
+  .btn.sm{padding:7px 13px; font-size:12.5px;}
+  .mono{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;}
+  .spin{
+    width:13px; height:13px; border-radius:50%; border:2px solid currentColor; border-right-color:transparent;
+    display:inline-block; animation:rot .7s linear infinite; flex:none;
+  }
+  .card-h{font-size:1em; font-weight:bold; margin:1.33em 0;}
+  @keyframes rot{to{transform:rotate(360deg);}}
+  /* WCAG 2.3.3: quien pide menos movimiento en su sistema no ve animaciones (la rotacion
+     automatica tambien empieza apagada, en radiograph_viewer_page.js). */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.01ms !important; animation-iteration-count:1 !important;
+      transition-duration:.01ms !important; scroll-behavior:auto !important;}
+    .spin{animation:rot .7s linear infinite !important;}
+  }
+  .note{
+    background:#FFFBEB; border:1px solid #FDE68A; border-radius:11px; padding:11px 13px;
+    font-size:12.5px; color:#78350F;
+  }
+  .note.err{background:#FFF1F2; border-color:#FECDD3; color:#9F1239; margin-bottom:16px;}
+
+  /* ---------- VISOR (copia de index.html, sin lesiones ni confianza) ---------- */
+  .vgrid{display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:16px; align-items:start;}
+  @media (max-width:1040px){ .vgrid{grid-template-columns:1fr;} }
+  .stage3d{
+    background:var(--view-bg); border-radius:14px; position:relative; overflow:hidden;
+    border:1px solid #1E293B;
+  }
+  #cv3d{
+    display:block; width:100%; height:520px; cursor:grab; touch-action:none;
+    background:radial-gradient(circle at 50% 50%,#111C2E 0%,#070B12 72%);
+  }
+  #cv3d:active{cursor:grabbing;}
+  @media (max-width:700px){ #cv3d{height:400px;} }
+  .ov{position:absolute; pointer-events:none; color:#CBD5E1; font-size:11.5px;}
+  .ov.tl{top:12px; left:14px;}
+  .ov.tr{top:12px; right:14px; text-align:right;}
+  .ov.bl{bottom:12px; left:14px;}
+  .ov.br{bottom:12px; right:14px; text-align:right;}
+  /* Igual que en index.html: el cubo recibe clics y arrastres (orientation_cube.js). */
+  .orientation_cube{
+    position:absolute; bottom:36px; right:14px; width:90px; height:90px;
+    z-index:5; cursor:grab; touch-action:none;
+  }
+  .orientation_cube:active{cursor:grabbing;}
+  .orientation_cube canvas{display:block;}
+  .ov b{color:#F8FAFC; font-size:12.5px; display:block;}
+  .ov .dim{color:#64748B;}
+  .vmsg{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:10px;
+    padding:24px; text-align:center; color:#CBD5E1; font-size:13px; pointer-events:none;
+  }
+  .vmsg.err{color:#FDA4AF;}
+  .vtools{
+    position:absolute; top:12px; left:50%; transform:translateX(-50%);
+    display:flex; gap:5px; background:rgba(15,23,42,.82); padding:5px; border-radius:10px;
+    border:1px solid #1E293B; backdrop-filter:blur(4px);
+  }
+  .vtools button{
+    color:#94A3B8; font-size:11.5px; font-weight:600; padding:6px 11px; border-radius:7px; transition:.15s; white-space:nowrap;
+  }
+  .vtools button:hover{color:#fff; background:rgba(255,255,255,.08);}
+  .vtools button.on{color:#fff; background:var(--brand);}
+  @media (max-width:700px){
+    .vtools{top:auto; bottom:44px;}
+    .ov.tr{display:none;}
+  }
+
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:13px; padding:16px 17px; margin-bottom:14px;}
+  .ctl{margin-bottom:14px;}
+  .ctl:last-child{margin-bottom:0;}
+  .ctl label{display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:6px; color:var(--ink2);}
+  .ctl label b{color:var(--ink); font-variant-numeric:tabular-nums;}
+  input[type=range]{width:100%; accent-color:var(--brand); height:4px;}
+  input[type=range]:disabled{opacity:.4;}
+  .sw{display:flex; align-items:center; justify-content:space-between; padding:7px 0; font-size:13px;}
+  .toggle{width:38px; height:21px; border-radius:20px; background:var(--line2); position:relative; transition:.18s; flex:none;}
+  .toggle::after{content:''; position:absolute; top:2.5px; left:2.5px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.18s;}
+  .toggle.on{background:var(--brand);}
+  .toggle.on::after{transform:translateX(17px);}
+
+  .slices{display:grid; grid-template-columns:repeat(3,1fr); gap:9px;}
+  .slice{text-align:center;}
+  .slice canvas{width:100%; height:auto; border-radius:8px; background:#0A0F1A; display:block; border:1px solid #1E293B;}
+  .slice span{font-size:10.5px; color:var(--muted); display:block; margin-top:5px; font-weight:600;}
+
+  .dls{list-style:none; margin:0; padding:0; display:grid; gap:7px;}
+  .dls a{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 11px; border:1px solid var(--line); border-radius:9px;
+    color:var(--ink2); text-decoration:none; font-size:12.5px; transition:.15s;
+  }
+  .dls a:hover{border-color:var(--brand); color:var(--brand-d); background:var(--brand-l);}
+  .dls a span{color:var(--faint); font-size:11px;}
+
+  /* ---------- propios de este visor ---------- */
+  .input-img{width:100%; aspect-ratio:1/1; object-fit:contain; background:#0A0F1A; border-radius:9px; display:block; border:1px solid #1E293B;}
+  .caption{font-size:11.5px; color:var(--muted-aa); margin:7px 0 0;}
+  .vol dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:5px 12px; font-size:12.5px;}
+  .vol dt{color:var(--muted-aa);}
+  .vol dd{margin:0; font-weight:600; text-align:right; font-variant-numeric:tabular-nums; overflow-wrap:anywhere;}
+  .vol .note{margin-top:12px;}
+  .vol ul{margin:5px 0 0; padding-left:17px;}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <a class="brand" href="/static/#/home" aria-label="RadVol 3D, inicio">
+      <span class="logo" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v6"/><path d="M8.5 8C6 8 4.2 10 4 12.6c-.2 2.4.3 5 1.2 6.8.5 1 1.8 1.2 2.5.3 1.2-1.4 1.8-3.4 1.8-5.6V8z"/>
+          <path d="M15.5 8c2.5 0 4.3 2 4.5 4.6.2 2.4-.3 5-1.2 6.8-.5 1-1.8 1.2-2.5.3-1.2-1.4-1.8-3.4-1.8-5.6V8z"/>
+        </svg>
+      </span>
+      <span class="brand-txt"><b>RadVol 3D</b><span>Reconstrucción volumétrica y detección tumoral</span></span>
+    </a>
+    <nav class="nav" aria-label="Secciones">
+      <a href="/static/#/home">Inicio</a>
+      <a href="/static/#/new">Nuevo estudio</a>
+      <a class="on" href="#" aria-current="page">Visor 3D</a>
+      <a href="/static/#/metrics" class="times-link">Tiempos</a>
+      <a href="/static/#/history">Historial</a>
+      <a href="/static/#/login">Acceso médico</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="head">
+      <div>
+        <div class="eyebrow">Resultado del estudio</div>
+        <h1 style="margin-top:5px" id="vw-title">Reconstrucción volumétrica</h1>
+        <p id="vw-sub">Arrastra para rotar, rueda para acercar. Volumen reconstruido con X2CT-GAN desde una sola radiografía: simulación académica, sin segmentación ni búsqueda de nódulos.</p>
+      </div>
+      <div style="display:flex; gap:9px; flex-wrap:wrap">
+        <a class="btn ghost sm times-link" href="/static/#/metrics">Ver tiempos</a>
+        <a class="btn ghost sm" href="/static/#/history">Historial</a>
+        <button class="btn danger sm" id="btn-delete" type="button">Eliminar estudio</button>
+      </div>
+    </div>
+
+    <div class="vgrid">
+      <div class="stage3d">
+        <canvas id="cv3d" role="img" aria-label="Vista 3D interactiva de la superficie del aire pulmonar del volumen reconstruido. Los datos del volumen están en el panel de la derecha."></canvas>
+        <div class="vmsg" id="vw-msg" role="status"></div>
+        <div class="vtools">
+          <button data-mode="tissue" class="on" type="button" aria-pressed="true">Tejido</button>
+          <button id="btn-home-view" type="button">Vista inicial</button>
+        </div>
+        <div class="ov tl">
+          <b id="ov-organ">Pulmón</b>
+          <span class="dim" id="ov-organ-sub">Superficie del aire pulmonar · por umbral de densidad</span>
+        </div>
+        <div class="ov tr">
+          <b id="ov-case">—</b>
+          <span class="dim" id="ov-input">1 radiografía · X2CT-GAN</span>
+        </div>
+        <div class="ov bl">
+          <span class="dim">Rotación</span>
+          <b id="ov-rot" class="mono">Az 0° · El 0°</b>
+        </div>
+        <div class="ov br">
+          <span class="dim">Render</span>
+          <b id="ov-fps" class="mono">— FPS</b>
+        </div>
+        <div id="orientation_cube" class="orientation_cube" title="Pulsa una cara para ver ese lado o arrastra para girar" aria-label="Orientación anatómica: pulsa una cara para ir a esa vista o arrastra para girar la reconstrucción"></div>
+      </div>
+
+      <div>
+        <section class="panel" aria-labelledby="h-input">
+          <h2 class="card-h" id="h-input">Radiografía de entrada</h2>
+          <img class="input-img hidden" id="rx-input" alt="La radiografía tal como la vio el modelo (128 × 128 píxeles).">
+          <p class="caption" id="rx-input-caption">La placa exacta que recibió el modelo, reducida a 128 × 128.</p>
+        </section>
+
+        <section class="panel" aria-labelledby="h-controls">
+          <h2 class="card-h" id="h-controls">Controles de visualización</h2>
+          <div class="ctl">
+            <label for="r-op">Opacidad del órgano <b id="lb-op">35 %</b></label>
+            <input type="range" id="r-op" min="4" max="100" value="35">
+          </div>
+          <div class="sw">
+            <span>Rotación automática</span>
+            <button class="toggle on" id="t-spin" aria-pressed="true" aria-label="Rotación automática" type="button"></button>
+          </div>
+          <div class="sw">
+            <span>Ejes del volumen</span>
+            <button class="toggle" id="t-axes" aria-pressed="false" aria-label="Ejes del volumen" type="button"></button>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="h-slices">
+          <h2 class="card-h" id="h-slices">Cortes ortogonales</h2>
+          <div class="ctl">
+            <label for="r-sl">Posición del corte <b id="lb-sl">centrado</b></label>
+            <input type="range" id="r-sl" min="0" max="100" value="50" disabled>
+          </div>
+          <div class="slices">
+            <div class="slice"><canvas id="sl-ax" width="120" height="120" role="img" aria-label="Corte axial del volumen"></canvas><span>AXIAL</span></div>
+            <div class="slice"><canvas id="sl-co" width="120" height="120" role="img" aria-label="Corte coronal del volumen"></canvas><span>CORONAL</span></div>
+            <div class="slice"><canvas id="sl-sa" width="120" height="120" role="img" aria-label="Corte sagital del volumen"></canvas><span>SAGITAL</span></div>
+          </div>
+        </section>
+
+        <section class="panel vol" aria-labelledby="h-volume">
+          <h2 class="card-h" id="h-volume">Volumen</h2>
+          <dl>
+            <dt>Vóxel (R × A × S)</dt><dd id="kv-voxel">—</dd>
+            <dt>Campo</dt><dd id="kv-fov">—</dd>
+            <dt>Placa original</dt><dd id="kv-input">—</dd>
+            <dt>Modelo</dt><dd id="kv-model">—</dd>
+            <dt>Inferencia</dt><dd id="kv-time">—</dd>
+          </dl>
+          <div class="note hidden" id="rx-relative" role="note"></div>
+          <div class="note hidden" id="rx-warnings" role="note"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="h-downloads">
+          <h2 class="card-h" id="h-downloads">Descargas</h2>
+          <ul class="dls">
+            <li><a id="dl-surface" href="#" download>Superficie del aire pulmonar <span>.glb</span></a></li>
+            <li><a id="dl-volume" href="#" download>Volumen reconstruido <span>.npy</span></a></li>
+            <li id="li-nifti"><a id="dl-nifti" href="#" download>Volumen en HU <span>.nii.gz</span></a></li>
+            <li id="li-meta"><a id="dl-meta" href="#" download>Metadatos de la reconstrucción <span>.json</span></a></li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+<script type="module" src="/static/js/radiograph_viewer_page.js"></script>
+</body>
+</html>

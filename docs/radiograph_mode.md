@@ -1,5 +1,12 @@
 # Modo de una radiografía
 
+> **Desde el 17 de noviembre de 2026 el motor por omisión es X2CT-GAN**, en la CPU del servidor y
+> sin Colab (`RADIOGRAPH_ENGINE=x2ct`): especificación en `docs/x2ct/README_X2CT.md` y despliegue en
+> `docs/x2ct/DESPLIEGUE.md`. Con X2CT-GAN el estudio tiene tres etapas visibles (carga y validación,
+> reconstrucción 3D, visualización), la segmentación queda omitida y se abre un visor propio
+> (`static/radiograph_viewer.html`). Lo que sigue describe AXON, que queda disponible con
+> `RADIOGRAPH_ENGINE=axon`.
+
 Segundo modo de entrada pedido por el profesor el 6 de noviembre de 2026: el usuario sube **una radiografía de tórax real (DICOM)** y el sistema reconstruye un volumen con el modelo AXON CoarseDiff de Lourdes. El modo de 4 proyecciones no cambia. Requisitos y contrato del servicio: guía de Lourdes del 7 de noviembre (`Guia_companero_modo_1_radiografia.docx`).
 
 ## Cómo encaja en el sistema

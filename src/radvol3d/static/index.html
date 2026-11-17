@@ -302,10 +302,12 @@
   .ov.tr{top:12px; right:14px; text-align:right;}
   .ov.bl{bottom:12px; left:14px;}
   .ov.br{bottom:12px; right:14px; text-align:right;}
+  /* El cubo gira la reconstruccion: clic en una cara o arrastre (orientation_cube.js). */
   .orientation_cube{
     position:absolute; bottom:36px; right:14px; width:90px; height:90px;
-    pointer-events:none; z-index:5;
+    z-index:5; cursor:grab; touch-action:none;
   }
+  .orientation_cube:active{cursor:grabbing;}
   .orientation_cube canvas{display:block;}
   /* HU-3.2: Leyenda de escala de confianza (valores con 2 decimales) y tooltip de punto */
   .conf_legend{
@@ -679,8 +681,8 @@
 
     <div class="note info hidden" id="rx-note" style="margin-bottom:16px">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16.5v.01"/></svg>
-      <div>Solo radiografías de <b>tórax frontales (PA)</b>: el modelo no vio otras vistas ni otras zonas del cuerpo. La reconstrucción la hace un servicio externo con GPU y tarda cerca de un minuto (más si hay cola).
-      Es una <b>simulación académica, no una herramienta de diagnóstico</b>, y este modo todavía <b>no detecta tumores</b>: muestra el volumen reconstruido.</div>
+      <div>Solo radiografías de <b>tórax frontales (PA)</b>: el modelo no vio otras vistas ni otras zonas del cuerpo. La reconstrucción la hace el modelo X2CT-GAN en este servidor y tarda unos segundos.
+      Es una <b>simulación académica, no una herramienta de diagnóstico</b>, y este modo <b>no segmenta ni detecta tumores</b>: muestra el volumen reconstruido.</div>
     </div>
 
     <div class="note" style="margin-bottom:16px" id="proj-note">
@@ -740,8 +742,8 @@
       <div class="stage" id="st-4">
         <div class="dot">4</div>
         <div class="body">
-          <h2 class="card-h">Generación de mallas 3D <span class="stg-st">en espera</span></h2>
-          <p>Extrae la superficie del órgano y de cada lesión, y exporta las mallas .glb que dibuja el visor.</p>
+          <h2 class="card-h"><span class="stg-name">Generación de mallas 3D</span> <span class="stg-st">en espera</span></h2>
+          <p class="stg-desc">Extrae la superficie del órgano y de cada lesión, y exporta las mallas .glb que dibuja el visor.</p>
           <div class="bar"><i></i></div>
         </div>
       </div>
@@ -812,7 +814,7 @@
             <span class="dim">Render</span>
             <b id="ov-fps" class="mono">— FPS</b>
           </div>
-          <div id="orientation_cube" class="orientation_cube" aria-label="Orientación anatómica"></div>
+          <div id="orientation_cube" class="orientation_cube" title="Pulsa una cara para ver ese lado o arrastra para girar" aria-label="Orientación anatómica: pulsa una cara para ir a esa vista o arrastra para girar la reconstrucción"></div>
           <div id="conf_legend" class="conf_legend hidden" aria-label="Escala de confianza">
             <span class="cl_title">Mapa de confianza</span>
             <div class="cl_bar"></div>
@@ -923,7 +925,7 @@
       <div style="padding:14px 22px 18px">
         <div class="note">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16.5v.01"/></svg>
-          <div>La duración de cada etapa se calcula con sus marcas de inicio y fin. El tiempo total lo registra el servidor al completar el estudio e incluye el procesamiento de las cuatro etapas.</div>
+          <div>La duración de cada etapa se calcula con sus marcas de inicio y fin. El tiempo total lo registra el servidor al completar el estudio e incluye el procesamiento de las <span id="times-stage-count">cuatro</span> etapas.</div>
         </div>
       </div>
     </div>
@@ -973,6 +975,7 @@ import {
   lesion_count_text, national_id_text, volume_text,
 } from '/static/js/history_view.js';
 import { HOME_DIRECTION, VOLUME_AXES_IN_SCENE, slice_layout } from '/static/js/volume_orientation.js';
+import { enable_orientation_cube } from '/static/js/orientation_cube.js';
 
 /* ============================================================
    0. CONFIGURACION
@@ -1001,9 +1004,9 @@ const STAGE_LABELS = {
 // informa el avance dentro de una etapa: la barra se acerca al 95 % y salta al 100 % al terminar.
 // Medidos en CPU: preprocesamiento < 1 s, reconstruccion ~15 s, segmentacion ~3 min.
 const STAGE_TAU_S = [1, 10, 90, 10];
-// Modo de una radiografia: la etapa 2 es el servicio externo (~52 s por trabajo, mas si
-// hay cola) y la 3 es el gancho de segmentacion, que no tarda.
-const STAGE_TAU_RX_S = [1, 45, 1, 10];
+// Modo de una radiografia con X2CT-GAN en CPU: la etapa 2 tarda unos 5 s, la 3
+// (segmentacion) no se ejecuta y la 4 (visualizacion) unos pocos segundos.
+const STAGE_TAU_RX_S = [1, 5, 1, 3];
 const RADIOGRAPH_EXTENSIONS = ['.dcm', '.dicom', ''];
 const RX_UNAVAILABLE = 'El modo de una radiografía no está disponible en este momento.';
 const REMOTE_STATE_LABELS = { queued: 'en cola', running: 'reconstruyendo' };
@@ -1264,7 +1267,7 @@ function route() {
   window.scrollTo(0, 0);
   if (view === 'new') enter_new(code);
   if (view === 'run') enter_run(code);
-  if (view === 'viewer') enter_viewer(code);
+  if (view === 'viewer') open_viewer(code);
   if (view === 'metrics') enter_times(code);
   if (view === 'history') load_history(true);
 }
@@ -1280,6 +1283,21 @@ document.addEventListener('click', (event) => {
   go(target, code);
 });
 window.addEventListener('hashchange', route);
+
+// Los estudios de una radiografia tienen su propio visor (radiograph_viewer.html). Se
+// consulta el modo del estudio y, si no lo es, se abre el visor de siempre, sin cambios.
+const RADIOGRAPH_VIEWER = '/static/radiograph_viewer.html';
+async function open_viewer(code) {
+  if (code) {
+    const { body } = await api(study_path(code, '/status'));
+    if (current_view !== 'viewer' || parse_hash().code !== code) return;
+    if (body && body.input_mode === 'radiograph') {
+      window.location.href = RADIOGRAPH_VIEWER + '?code=' + encodeURIComponent(code);
+      return;
+    }
+  }
+  enter_viewer(code);
+}
 
 $('#login-form').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -1463,7 +1481,7 @@ function render_new() {
 
   const all_ready = radiograph ? s.rx.state === 'ready' : ANGLES.every((angle) => s.slots[angle].state === 'ready');
   // La version de reconstruccion solo aplica a 4 proyecciones de pulmon: la radiografia
-  // siempre usa el servicio externo.
+  // usa su propio modelo (X2CT-GAN, o AXON con RADIOGRAPH_ENGINE=axon).
   const choose_model = !radiograph && s.organ === 'lung';
   $('label[for="reconstruction-option"]').classList.toggle('hidden', !choose_model);
   $('#reconstruction-option').classList.toggle('hidden', !choose_model);
@@ -1803,27 +1821,47 @@ $('#btn-cancel').addEventListener('click', () => {
    ============================================================ */
 const run = { code: null, token: 0, poll_timer: null, ticker: null, started: 0, running_since: {}, stages: [], final_time: null, mode: 'projections' };
 
-// Textos de las etapas 1 a 3 en cada modo. La 4 (mallas) es la misma.
+// Textos de las cuatro etapas en cada modo. En el de una radiografia la etapa 3
+// (segmentacion) no se muestra: ese modo no segmenta.
 const STAGE_TEXTS = {
   projections: [
     ['Preprocesamiento y calibración geométrica', 'Normalización de intensidades, alineación de las 4 proyecciones y estimación de la geometría de adquisición.'],
     ['Reconstrucción volumétrica 3D', 'CNN generativa 2D→3D. Expande las proyecciones a un volumen de 128 × 128 × 128 vóxeles.'],
     ['Segmentación tumoral', 'Red 3D tipo U-Net que delimita las lesiones vóxel a vóxel dentro del volumen reconstruido.'],
+    ['Generación de mallas 3D', 'Extrae la superficie del órgano y de cada lesión, y exporta las mallas .glb que dibuja el visor.'],
   ],
   radiograph: [
-    ['Validación de la radiografía', 'Se comprueba que el archivo sea un DICOM. La conversión que necesita el modelo la hace el servicio externo.'],
+    ['Carga y validación del DICOM', 'Se comprueba que el archivo sea una radiografía DICOM legible.'],
+    ['Reconstrucción 3D (X2CT-GAN)', 'La placa se lleva a 128 × 128 y el modelo X2CT-GAN reconstruye en este servidor un volumen de 128 × 128 × 128 vóxeles.'],
+    ['Segmentación', ''],
+    ['Visualización', 'Prepara el volumen y la superficie del aire de los pulmones, calculada por umbral de densidad, para el visor. No se segmentan lesiones ni se buscan nódulos.'],
+  ],
+  // RADIOGRAPH_ENGINE=axon (servicio externo de Colab), para volver atras.
+  radiograph_axon: [
+    ['Carga y validación del DICOM', 'Se comprueba que el archivo sea un DICOM. La conversión que necesita el modelo la hace el servicio externo.'],
     ['Reconstrucción desde una radiografía', 'Modelo AXON en un servicio externo con GPU: unos 52 s por radiografía, más si hay otras en cola.'],
-    ['Segmentación (pendiente)', 'Todavía no hay un segmentador para estos volúmenes: no se buscan lesiones.'],
+    ['Segmentación', ''],
+    ['Visualización', 'Prepara el volumen y la superficie del aire de los pulmones, calculada por umbral de densidad, para el visor. No se segmentan lesiones ni se buscan nódulos.'],
   ],
 };
 
-function set_stage_texts(mode) {
-  const texts = STAGE_TEXTS[mode] || STAGE_TEXTS.projections;
+function stage_texts_key(mode, reconstruction_model) {
+  if (mode !== 'radiograph') return 'projections';
+  return reconstruction_model === 'reconstruction_axon_coarsediff' ? 'radiograph_axon' : 'radiograph';
+}
+
+function set_stage_texts(key) {
+  const texts = STAGE_TEXTS[key] || STAGE_TEXTS.projections;
+  const radiograph = key !== 'projections';
   texts.forEach(([name, description], index) => {
     const el = $('#st-' + (index + 1));
     el.querySelector('.stg-name').textContent = name;
     el.querySelector('.stg-desc').textContent = description;
   });
+  // Modo de una radiografia: sin la etapa de segmentacion, la de visualizacion es la 3.
+  // Con style y no con la clase hidden: paint_stage reescribe las clases de la etapa.
+  $('#st-3').style.display = radiograph ? 'none' : '';
+  $('#st-4 .dot').textContent = radiograph ? '3' : '4';
 }
 
 function format_seconds(seconds) {
@@ -1846,7 +1884,7 @@ function show_run_error(text) {
 function enter_run(code) {
   if (!code) { go('new'); return; }
   stop_run();
-  Object.assign(run, { code, started: performance.now(), running_since: {}, stages: [], final_time: null, mode: 'projections' });
+  Object.assign(run, { code, started: performance.now(), running_since: {}, stages: [], final_time: null, mode: 'projections', texts: 'projections' });
   set_stage_texts('projections');
   show_run_error('');
   $('#btn-open').disabled = true;
@@ -1896,7 +1934,8 @@ async function poll_status(token) {
   }
   show_run_error('');
   const mode = body.input_mode || 'projections';
-  if (mode !== run.mode) { run.mode = mode; set_stage_texts(mode); }
+  const texts = stage_texts_key(mode, body.reconstruction_model);
+  if (mode !== run.mode || texts !== run.texts) { run.mode = mode; run.texts = texts; set_stage_texts(texts); }
   for (const stage of body.stages || []) {
     const n = stage.stage_number;
     if (stage.status === 'running') {
@@ -1931,7 +1970,7 @@ async function poll_status(token) {
     const where = failed ? ' en la etapa ' + failed.stage_number + ' (' + (STAGE_LABELS[failed.stage_name] || failed.stage_name) + ')' : '';
     $('#run-sub').textContent = 'El procesamiento del estudio ' + run.code + ' no terminó.';
     if (run.mode === 'radiograph') {
-      show_run_error('No se pudo reconstruir esta radiografía' + where + '. Puede que el servicio externo se haya apagado o reiniciado. Puedes reintentar con un estudio nuevo.');
+      show_run_error('No se pudo reconstruir esta radiografía' + where + '. Revisa que sea una radiografía de tórax frontal en DICOM. Puedes reintentar con un estudio nuevo.');
       $('#btn-retry').classList.remove('hidden');
     } else {
       show_run_error('El procesamiento falló' + where + '. Revisa los registros del servidor y vuelve a crear el estudio.');
@@ -2047,7 +2086,6 @@ async function load_study(code) {
   viewer.experimental_geometry = study.reconstruction_model === 'reconstruction_en1_luna16';
   if (viewer.experimental_geometry) {
     $('#vw-sub').textContent = 'V2 experimental. Orientación anatómica no verificada y medidas nominales. No apto para uso clínico.';
-    $('#orientation_cube').classList.add('hidden');
   }
   viewer.input_mode = study.input_mode || 'projections';
   if (viewer.input_mode === 'radiograph') {
@@ -2163,7 +2201,7 @@ function setup_orientation(three) {
   );
   const cube = new three.Mesh(new three.BoxGeometry(1, 1, 1), materials);
   scene.add(cube);
-  return { renderer, scene, camera };
+  return { renderer, scene, camera, cube };
 }
 
 function sync_orientation(three, orientation, main_camera, controls) {
@@ -2288,6 +2326,15 @@ async function ensure_three() {
   });
 
   const orientation = setup_orientation(three);
+  // Clic en una cara: vista estandar; arrastrar el cubo: gira la reconstruccion.
+  if (orientation) {
+    enable_orientation_cube(three, orientation, camera, controls, () => {
+      viewer.spin = false;
+      $('#t-spin').classList.remove('on');
+      $('#t-spin').setAttribute('aria-pressed', 'false');
+      apply_view_state();
+    });
+  }
   Object.assign(viewer, { three, GLTFLoader: gltf_module.GLTFLoader, renderer, scene, camera, controls, orientation });
   new ResizeObserver(resize_viewer).observe(canvas);
   resize_viewer();
@@ -2431,7 +2478,7 @@ function render_frame(time) {
   const { controls, renderer, scene, camera, three, orientation } = viewer;
   controls.update();
   renderer.render(scene, camera);
-  if (!viewer.experimental_geometry) sync_orientation(three, orientation, camera, controls);
+  sync_orientation(three, orientation, camera, controls);
   viewer.fps_frames++;
   if (!viewer.fps_since) viewer.fps_since = time;
   if (time - viewer.fps_since >= 500) {
@@ -2670,15 +2717,22 @@ function stage_duration(stage) {
     ? (finish - start) / 1000 : null;
 }
 
+// Etapas del modo de una radiografia (sin segmentacion): numero de etapa -> rotulo.
+const RX_TIME_LABELS = { 1: 'carga y validación del DICOM', 2: 'reconstrucción 3D', 4: 'visualización' };
+
 function render_times(study) {
   const stages = study.stages || [];
-  const rows = [1, 2, 3, 4].map((number) => {
+  const radiograph = study.input_mode === 'radiograph';
+  const numbers = radiograph ? [1, 2, 4] : [1, 2, 3, 4];
+  $('#times-stage-count').textContent = radiograph ? 'tres' : 'cuatro';
+  const rows = numbers.map((number, index) => {
     const stage = stages.find((item) => item.stage_number === number);
-    const label = stage ? STAGE_LABELS[stage.stage_name] || stage.stage_name : 'etapa ' + number;
+    const label = radiograph ? RX_TIME_LABELS[number]
+      : stage ? STAGE_LABELS[stage.stage_name] || stage.stage_name : 'etapa ' + number;
     const duration = stage_duration(stage);
     const value = stage && stage.status === 'skipped' ? 'Etapa omitida'
       : duration === null ? 'No disponible' : format_seconds(duration);
-    return '<tr><td>' + number + '. ' + escape_html(label) + '</td><td class="num">' + value + '</td></tr>';
+    return '<tr><td>' + (index + 1) + '. ' + escape_html(label) + '</td><td class="num">' + value + '</td></tr>';
   });
   const total = study.status === 'completed' &&
     typeof study.total_time_sec === 'number' && Number.isFinite(study.total_time_sec) &&

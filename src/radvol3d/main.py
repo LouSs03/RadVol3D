@@ -27,6 +27,7 @@ from radvol3d.api.routers import (
 )
 from radvol3d.persistence.settings import (
     get_model_settings,
+    get_radiograph_engine_settings,
     get_reconstruction_service_settings,
     get_settings,
 )
@@ -44,7 +45,24 @@ def build_default_container() -> Any:
         get_settings(),
         get_model_settings(),
         service_settings=_reconstruction_service_settings(),
+        engine_settings=_radiograph_engine_settings(),
     )
+
+
+def _radiograph_engine_settings() -> Any:
+    """El motor del modo de una radiografia (RADIOGRAPH_ENGINE), o None si no es valido.
+
+    Un valor mal escrito deja el modo como antes de X2CT-GAN (AXON), sin detener el
+    arranque. Solo se registra el tipo del error.
+    """
+    try:
+        return get_radiograph_engine_settings()
+    except Exception as error:  # noqa: BLE001 - este modo es opcional
+        logger.warning(
+            "La configuracion del motor de una radiografia no es valida (%s)",
+            type(error).__name__,
+        )
+        return None
 
 
 def _reconstruction_service_settings() -> Any:

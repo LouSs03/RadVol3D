@@ -26,6 +26,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import partial
 
+from radvol3d import config
 from radvol3d.domain.entities import PatientDetails, StoredResult, Study, StudyHistoryPage
 from radvol3d.domain.enums import (
     InputMode,
@@ -43,6 +44,7 @@ from radvol3d.domain.exceptions import (
     StageFailedError,
 )
 from radvol3d.persistence.processing_progress_store import ProcessingProgressStore
+from radvol3d.persistence.radiograph_result_store import RadiographResultStore
 from radvol3d.persistence.result_store import ResultStore
 from radvol3d.persistence.study_metadata_store import ProjectionUpload, StudyMetadataStore
 from radvol3d.services.pipeline.persistence_progress import PersistenceProgress
@@ -50,6 +52,8 @@ from radvol3d.services.pipeline.processing_pipeline import ProcessingPipeline
 from radvol3d.services.pipeline.projection_loader import ProjectionFile, ProjectionLoader
 from radvol3d.services.pipeline.radiograph_check import validate_radiograph
 from radvol3d.services.pipeline.remote_job_board import RemoteJobBoard
+from radvol3d.services.pipeline.x2ct_run import X2ctRadiographRun
+from radvol3d.services.reconstruction.x2ct_strategy import X2ctStrategy
 from radvol3d.services.strategy_factory import (
     RADIOGRAPH_UNAVAILABLE,
     RadiographStrategySet,
@@ -86,6 +90,8 @@ class StudyService:
         pipeline: ProcessingPipeline,
         loader: ProjectionLoader,
         board: RemoteJobBoard | None = None,
+        radiograph_results: RadiographResultStore | None = None,
+        x2ct_run: X2ctRadiographRun | None = None,
     ) -> None:
         self._metadata_store = metadata_store
         self._result_store = result_store
@@ -94,6 +100,9 @@ class StudyService:
         self._pipeline = pipeline
         self._loader = loader
         self._board = board or RemoteJobBoard()
+        # Modo de una radiografia con X2CT-GAN: su almacen y sus etapas (camino propio).
+        self._radiograph_results = radiograph_results
+        self._x2ct_run = x2ct_run
 
     def process_study(self, request: StudyRequest) -> Study:
         """Registra el estudio, lo pasa por las cuatro etapas y lo devuelve terminado.
@@ -340,7 +349,13 @@ class StudyService:
 
         El estudio queda enlazado al modelo de reconstruccion (AXON): la segmentacion
         todavia es el gancho pendiente y no es un modelo de verdad.
+
+        Con X2CT-GAN (RADIOGRAPH_ENGINE=x2ct) las etapas son otras, sin segmentacion, y
+        las corre X2ctRadiographRun, que tambien cierra el estudio.
         """
+        if self._x2ct_run is not None and isinstance(strategies.reconstruction, X2ctStrategy):
+            self._x2ct_run.run(study_code, radiograph, strategies.reconstruction, started)
+            return
         progress = PersistenceProgress(
             self._progress_store, self._metadata_store, self._result_store
         )
@@ -353,6 +368,38 @@ class StudyService:
             int(data.volume.shape[0]),
             time.perf_counter() - started,
         )
+
+    def radiograph_view(self, study_code: str) -> dict[str, object]:
+        """Lo que necesita el visor del modo de una radiografia, de un estudio completed.
+
+        Con X2CT-GAN: el voxel real (o relativo), si las medidas son relativas y los
+        avisos. Un estudio reconstruido con AXON no tiene esos datos: su volumen sigue
+        la rejilla del sistema (voxel cubico de config.MM_PER_VOXEL).
+        """
+        study = self._metadata_store.get_study(study_code)
+        if study.input_mode is not InputMode.RADIOGRAPH:
+            raise InvalidStudyStateError(
+                f"El estudio '{study_code}' no es de una radiografia: usa el visor de siempre."
+            )
+        self._require_completed(study_code)
+        if self._radiograph_results is not None and self._radiograph_results.has_view(
+            study_code
+        ):
+            return self._radiograph_results.read_view(study_code)
+        return {
+            "model_name": study.model.model_name if study.model else None,
+            "voxel_mm": [config.MM_PER_VOXEL] * 3,
+            "relative_measurements": False,
+            "warnings": [],
+            "has_reconstruction_files": False,
+        }
+
+    def read_radiograph_output(self, study_code: str, file_name: str) -> bytes:
+        """Uno de los archivos de X2CT-GAN (volumen, placa del modelo o metadatos)."""
+        self._require_completed(study_code)
+        if self._radiograph_results is None:
+            raise InvalidStudyStateError("Este servidor no guarda archivos de X2CT-GAN.")
+        return self._radiograph_results.read_file(study_code, file_name)
 
     def _require_completed(self, study_code: str) -> None:
         """Lanza InvalidStudyStateError si el estudio no esta en completed."""
