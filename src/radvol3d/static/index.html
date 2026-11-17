@@ -377,7 +377,7 @@
   .empty h3{font-size:16px; color:var(--ink); margin-bottom:6px;}
   .empty p{margin:0 auto 16px; max-width:460px; font-size:13px;}
 
-  /* ---------- METRICS ---------- */
+  /* ---------- PROCESSING TIMES ---------- */
   .mtable{width:100%; border-collapse:collapse; font-size:13px;}
   .mtable th{
     text-align:left; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
@@ -388,14 +388,7 @@
   .mtable .num{font-variant-numeric:tabular-nums; font-weight:700; text-align:right; white-space:nowrap;}
   .mtable .ref{font-size:11.5px; color:var(--muted); line-height:1.35;}
   .mscroll{overflow-x:auto;}
-  .mscroll .mtable{min-width:720px;}
-  .oe{
-    display:inline-block; font-size:10.5px; font-weight:800; color:var(--brand-d);
-    background:var(--brand-l); padding:2px 7px; border-radius:5px; margin-right:7px;
-  }
-  .delta{font-size:11px; font-weight:700; padding:2px 7px; border-radius:5px; white-space:nowrap;}
-  .delta.up{background:#DCFCE7; color:#166534;}
-  .delta.down{background:#FEE2E2; color:#991B1B;}
+  .mscroll .mtable{min-width:420px;}
 
   /* ---------- HISTORY ---------- */
   .hrow{
@@ -461,7 +454,7 @@
       <button data-go="home">Inicio</button>
       <button data-go="new">Nuevo estudio</button>
       <button data-go="viewer">Visor 3D</button>
-      <button data-go="metrics">Métricas</button>
+      <button data-go="metrics">Tiempos</button>
       <button data-go="history">Historial</button>
     </div>
   </div>
@@ -704,7 +697,7 @@
     <div class="note err hidden" id="run-err" role="alert" style="margin-top:16px"></div>
 
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:16px; flex-wrap:wrap">
-      <div class="kv" style="font-size:12.5px; color:var(--muted)">Tiempo transcurrido: <b id="clk" class="mono">0,0 s</b></div>
+      <div class="kv" style="font-size:12.5px; color:var(--muted)"><span id="clk-label">Tiempo en esta pantalla:</span> <b id="clk" class="mono">0,0 s</b></div>
       <div style="display:flex; gap:10px; flex-wrap:wrap">
         <button class="btn ghost hidden" id="btn-resume" type="button">Completar el estudio</button>
         <button class="btn ghost hidden" id="btn-retry" type="button">Reintentar con la radiografía</button>
@@ -734,6 +727,7 @@
           <p class="patient-line hidden" id="vw-patient"></p>
         </div>
         <div style="display:flex; gap:9px; flex-wrap:wrap">
+          <button class="btn ghost sm" data-go="metrics" type="button">Ver tiempos</button>
           <button class="btn ghost sm" data-go="history" type="button">Historial</button>
           <button class="btn danger sm" id="btn-delete" type="button">Eliminar estudio</button>
         </div>
@@ -850,16 +844,15 @@
     </div>
   </div>
 
-  <!-- ==================== MÉTRICAS ==================== -->
+  <!-- ==================== TIEMPOS ==================== -->
   <div class="view" id="v-metrics">
     <div class="head">
       <div>
-        <div class="eyebrow">Evaluación</div>
-        <h1 style="margin-top:5px">Métricas computacionales</h1>
-        <p>Cada métrica se contrasta contra el valor reportado en el estado del arte que el proyecto se propone superar,
-           según los objetivos específicos del Project Charter.</p>
+        <div class="eyebrow">Procesamiento</div>
+        <h1 style="margin-top:5px">Tiempos del estudio</h1>
+        <p id="times-sub">Consultando los tiempos registrados por el servidor…</p>
       </div>
-      <button class="btn ghost sm" data-go="viewer" type="button">Volver al visor</button>
+      <button class="btn ghost sm" data-go="history" type="button">Ir al historial</button>
     </div>
 
     <div class="card" style="overflow:hidden">
@@ -867,11 +860,8 @@
         <table class="mtable">
           <thead>
             <tr>
-              <th style="width:36%">Métrica</th>
-              <th style="width:30%">Referencia del estado del arte</th>
-              <th style="text-align:right">Estado del arte</th>
-              <th style="text-align:right">Este sistema</th>
-              <th style="text-align:right">Resultado</th>
+              <th>Etapa</th>
+              <th style="text-align:right">Duración registrada</th>
             </tr>
           </thead>
           <tbody id="mbody"></tbody>
@@ -880,8 +870,7 @@
       <div style="padding:14px 22px 18px">
         <div class="note">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16.5v.01"/></svg>
-          <div>Los valores de la columna <b>Este sistema</b> son datos de maqueta para ilustrar cómo se presentarán
-          los resultados: la API todavía no expone métricas. Los valores del estado del arte sí son reales y corresponden a los artículos citados.</div>
+          <div>La duración de cada etapa se calcula con sus marcas de inicio y fin. El tiempo total lo registra el servidor al completar el estudio e incluye el procesamiento de las cuatro etapas.</div>
         </div>
       </div>
     </div>
@@ -1220,6 +1209,7 @@ function route() {
   if (view === 'new') enter_new(code);
   if (view === 'run') enter_run(code);
   if (view === 'viewer') enter_viewer(code);
+  if (view === 'metrics') enter_times(code);
   if (view === 'history') load_history(true);
 }
 
@@ -1228,7 +1218,10 @@ document.addEventListener('click', (event) => {
   if (!button) return;
   event.preventDefault();
   const target = button.dataset.go;
-  go(target, target === 'viewer' ? viewer.code : null);
+  const code = target === 'viewer' ? viewer.code
+    : target === 'metrics' ? (current_view === 'run' ? run.code
+      : current_view === 'viewer' ? viewer.code : null) : null;
+  go(target, code);
 });
 window.addEventListener('hashchange', route);
 
@@ -1780,6 +1773,7 @@ function enter_run(code) {
   $('#run-sub').textContent = 'Consultando el estado del estudio ' + code + '…';
   show_patient_line('#run-patient', code);
   $('#clk').textContent = format_seconds(0);
+  $('#clk-label').textContent = 'Tiempo en esta pantalla:';
   for (let n = 1; n <= 4; n++) paint_stage(n, 'waiting');
   run.ticker = setInterval(tick_run, 100);
   poll_status(run.token);
@@ -1844,6 +1838,7 @@ async function poll_status(token) {
   run.running_since = {};
   if (typeof body.total_time_sec === 'number') {
     run.final_time = body.total_time_sec;
+    $('#clk-label').textContent = 'Tiempo total de procesamiento:';
     $('#clk').textContent = format_seconds(body.total_time_sec);
   }
   if (body.status === 'completed') {
@@ -2576,27 +2571,66 @@ $('#r-sl').addEventListener('input', (event) => {
 });
 
 /* ============================================================
-   10. METRICAS (maqueta del prototipo)
+   10. PROCESSING TIMES
    ============================================================ */
-const METRICS = [
-  ['OE1', 'PSNR del volumen reconstruido', 'Zanier et al. (2026) · TomoRay cranial, European Radiology', '15,61 dB', '18,42 dB', '+2,81 dB'],
-  ['OE1', 'SSIM del volumen reconstruido', 'Zanier et al. (2026) · TomoRay cranial, European Radiology', '0,782', '0,834', '+0,052'],
-  ['OE1', 'Dice de la estructura anatómica', 'Chen et al. (2024) · ReVerteR, Scientific Reports', '0,8247', '0,8613', '+0,0366'],
-  ['OE2', 'Dice del tumor — pulmón', 'Carles et al. (2024) · nnU-Net, European Radiology', '0,630', '0,671', '+0,041'],
-  ['OE2', 'Dice del tumor — hígado', 'Shin et al. (2026) · G-UNETR++, Diagnostics', '0,832', '0,847', '+0,015'],
-  ['OE2', 'Sensibilidad en la detección', 'Carles et al. (2024) · nnU-Net, European Radiology', '0,688', '0,742', '+0,054'],
-  ['OE3', 'Tiempo extremo a extremo', 'Chen et al. (2024) · ReVerteR, Scientific Reports', '7,72 s', '5,84 s', '−1,88 s'],
-  ['OE3', 'Refresco del visor 3D', 'AboArab et al. (2025) · DECODE-3DViz, J. Imaging Inform. Med.', '144 FPS', '96 FPS', 'objetivo ≥60 ✓'],
-  ['OE4', 'Caída en validación externa', 'Yu et al. (2022) · Radiology: Artificial Intelligence', '−0,046', '−0,028', '+0,018'],
-  ['OE4', 'Desviación estándar del Dice', 'Carles et al. (2024) · nnU-Net, European Radiology', '±0,340', '±0,192', '−0,148'],
-];
+let times_request = 0;
 
-$('#mbody').innerHTML = METRICS.map((m) =>
-  '<tr><td><span class="oe">' + m[0] + '</span>' + m[1] + '</td>' +
-  '<td class="ref">' + m[2] + '</td>' +
-  '<td class="num" style="color:var(--muted)">' + m[3] + '</td>' +
-  '<td class="num">' + m[4] + '</td>' +
-  '<td class="num"><span class="delta up">' + m[5] + '</span></td></tr>').join('');
+function stage_duration(stage) {
+  if (!stage || !stage.started_at || !stage.finished_at) return null;
+  const start = Date.parse(stage.started_at);
+  const finish = Date.parse(stage.finished_at);
+  return Number.isFinite(start) && Number.isFinite(finish) && finish >= start
+    ? (finish - start) / 1000 : null;
+}
+
+function render_times(study) {
+  const stages = study.stages || [];
+  const rows = [1, 2, 3, 4].map((number) => {
+    const stage = stages.find((item) => item.stage_number === number);
+    const label = stage ? STAGE_LABELS[stage.stage_name] || stage.stage_name : 'etapa ' + number;
+    const duration = stage_duration(stage);
+    const value = stage && stage.status === 'skipped' ? 'Etapa omitida'
+      : duration === null ? 'No disponible' : format_seconds(duration);
+    return '<tr><td>' + number + '. ' + escape_html(label) + '</td><td class="num">' + value + '</td></tr>';
+  });
+  const total = study.status === 'completed' &&
+    typeof study.total_time_sec === 'number' && Number.isFinite(study.total_time_sec) &&
+    study.total_time_sec >= 0
+    ? format_seconds(study.total_time_sec) : 'No disponible';
+  rows.push('<tr><td><b>Procesamiento total</b></td><td class="num">' + total + '</td></tr>');
+  $('#mbody').innerHTML = rows.join('');
+}
+
+async function enter_times(code) {
+  const request = ++times_request;
+  $('#mbody').innerHTML = '';
+  $('#times-sub').textContent = 'Consultando los tiempos registrados por el servidor…';
+  if (!code) {
+    const { body, error } = await api('/studies?limit=' + HISTORY_PAGE_SIZE);
+    if (request !== times_request || current_view !== 'metrics') return;
+    if (!body) {
+      $('#times-sub').textContent = 'No se pudo consultar el historial: ' + error;
+      return;
+    }
+    const entries = Array.isArray(body.items) ? body.items : [];
+    code = entries.find((entry) => entry.status === 'completed')?.study_code;
+  }
+  if (request !== times_request || current_view !== 'metrics') return;
+  if (!code) {
+    $('#times-sub').textContent = 'No hay estudios terminados. Crea uno o ábrelo desde el historial.';
+    return;
+  }
+  if (parse_hash().code !== code) window.history.replaceState(null, '', '#/metrics/' + encodeURIComponent(code));
+  const { body, error } = await api(study_path(code, '/status'));
+  if (request !== times_request || current_view !== 'metrics') return;
+  if (!body) {
+    $('#times-sub').textContent = 'No se pudieron consultar los tiempos del estudio ' + code + ': ' + error;
+    return;
+  }
+  $('#times-sub').textContent = 'Estudio ' + code + ' · ' +
+    (body.status === 'completed' ? 'procesamiento completado' : 'procesamiento sin completar');
+  render_times(body);
+}
 
 /* ============================================================
    11. HISTORIAL
