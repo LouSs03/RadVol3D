@@ -7,14 +7,15 @@ El DICOM llega en un formulario multipart con un solo campo, file. Se lee hasta 
 byte mas que el limite: si lo pasa, se rechaza con 413 sin leer el resto.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from starlette.concurrency import run_in_threadpool
 
 from radvol3d import config
 from radvol3d.api.dependencies import get_study_service
 from radvol3d.api.schemas.error_schema import ErrorResponse
+from radvol3d.api.schemas.radiograph_result_schema import RadiographResultResponse
 from radvol3d.api.schemas.study_schema import RadiographModeStatus, RadiographUploaded
 from radvol3d.domain.exceptions import RadiographTooLargeError
 from radvol3d.services.pipeline.radiograph_check import limit_text
@@ -57,6 +58,73 @@ async def upload_radiograph(
     # El servicio valida y sube al bucket; es sincrono, asi que corre fuera del bucle.
     await run_in_threadpool(service.add_radiograph, study_code, content, file.filename)
     return RadiographUploaded(study_code=study_code, size_bytes=len(content))
+
+
+RESULT_ERRORS = {
+    404: {"model": ErrorResponse, "description": "El estudio no existe"},
+    409: {"model": ErrorResponse, "description": "No termino o no es de una radiografia"},
+}
+
+# Archivos de X2CT-GAN que se pueden descargar, con su tipo.
+OUTPUT_MEDIA_TYPES = {
+    "volumen.nii.gz": "application/gzip",
+    "entrada_modelo_128.png": "image/png",
+    "metadatos.json": "application/json",
+}
+OutputFile = Literal["volumen.nii.gz", "entrada_modelo_128.png", "metadatos.json"]
+
+
+def output_url(study_code: str, file_name: str) -> str:
+    """Ruta de descarga de un archivo de X2CT-GAN."""
+    return f"/studies/{study_code}/radiograph-result/{file_name}"
+
+
+@router.get(
+    "/studies/{study_code}/radiograph-result",
+    response_model=RadiographResultResponse,
+    summary="Resultado de un estudio de una radiografia (visor de ese modo)",
+    responses=RESULT_ERRORS,
+)
+def read_radiograph_result(
+    study_code: str,
+    service: Annotated[StudyService, Depends(get_study_service)],
+) -> RadiographResultResponse:
+    """Voxel con que se muestra el volumen, avisos y direcciones de sus archivos."""
+    view = service.radiograph_view(study_code)
+    has_files = view.get("has_reconstruction_files", True)
+    input_size = view.get("input_size_px")
+    return RadiographResultResponse(
+        study_code=study_code,
+        model_name=view.get("model_name"),
+        voxel_mm=[float(value) for value in view["voxel_mm"]],
+        relative_measurements=bool(view.get("relative_measurements", False)),
+        warnings=[str(text) for text in view.get("warnings", [])],
+        input_size_px=[int(value) for value in input_size] if input_size else None,
+        timings_s={str(k): float(v) for k, v in (view.get("timings_s") or {}).items()},
+        volume_url=f"/studies/{study_code}/result/volume.npy",
+        surface_url=f"/studies/{study_code}/result/organ.glb",
+        input_image_url=output_url(study_code, "entrada_modelo_128.png") if has_files else None,
+        metadata_url=output_url(study_code, "metadatos.json") if has_files else None,
+        nifti_url=output_url(study_code, "volumen.nii.gz") if has_files else None,
+    )
+
+
+@router.get(
+    "/studies/{study_code}/radiograph-result/{file_name}",
+    response_class=Response,
+    summary="Archivo de X2CT-GAN: volumen en HU, placa del modelo o metadatos",
+    responses=RESULT_ERRORS,
+)
+def read_radiograph_output(
+    study_code: str,
+    file_name: OutputFile,
+    service: Annotated[StudyService, Depends(get_study_service)],
+) -> Response:
+    content = service.read_radiograph_output(study_code, file_name)
+    headers = {}
+    if file_name != "entrada_modelo_128.png":
+        headers["Content-Disposition"] = f'attachment; filename="{study_code}_{file_name}"'
+    return Response(content, media_type=OUTPUT_MEDIA_TYPES[file_name], headers=headers)
 
 
 @router.get(
