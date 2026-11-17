@@ -11,10 +11,13 @@ Hay tres grupos de variables:
   modelo correspondiente queda no disponible y la aplicacion arranca igual.
 - ReconstructionServiceSettings: la direccion y la clave del servicio externo AXON
   (modo de una radiografia). Opcionales; sin ellas ese modo queda no disponible.
+- RadiographEngineSettings: que motor reconstruye en el modo de una radiografia
+  (X2CT-GAN en el servidor o AXON en Colab) y donde estan los pesos de X2CT-GAN.
 """
 
 from functools import cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -140,3 +143,30 @@ class ReconstructionServiceSettings(BaseSettings):
 def get_reconstruction_service_settings() -> ReconstructionServiceSettings:
     """Carga la configuracion del servicio externo la primera vez."""
     return ReconstructionServiceSettings()
+
+
+class RadiographEngineSettings(BaseSettings):
+    """El motor del modo de una radiografia.
+
+    - RADIOGRAPH_ENGINE: x2ct (por omision; X2CT-GAN en la CPU del servidor) o axon (el
+      servicio externo de Colab, con AXON_URL y AXON_API_KEY). Sirve para volver atras.
+    - X2CT_WEIGHTS_OBJECT: ruta de los pesos de X2CT-GAN en el bucket de modelos, sin
+      el sufijo .partNN (estan partidos: el plan gratuito no acepta mas de 50 MB).
+      Sin ella, con x2ct el modo de una radiografia queda no disponible.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE,
+        env_file_encoding="utf-8",
+        env_ignore_empty=True,
+        extra="ignore",
+    )
+
+    radiograph_engine: Literal["x2ct", "axon"] = "x2ct"
+    x2ct_weights_object: str | None = None
+
+
+@cache
+def get_radiograph_engine_settings() -> RadiographEngineSettings:
+    """Carga la configuracion del motor del modo de una radiografia la primera vez."""
+    return RadiographEngineSettings()

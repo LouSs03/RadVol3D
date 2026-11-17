@@ -8,10 +8,12 @@ version = "0.1.0"
 description = "Reconstruccion 3D de organos y deteccion de tumores desde radiografias"
 requires-python = ">=3.11"
 
-# PyTorch es opcional: solo lo necesitan los modelos reales (EN-1 y EN-2). El CI no lo
-# instala; los modulos que lo usan se importan de forma perezosa.
+# PyTorch es opcional: solo lo necesitan los modelos reales (EN-1, EN-2 y X2CT-GAN). El
+# CI no lo instala; los modulos que lo usan se importan de forma perezosa. En el
+# servidor sin GPU, torch se instala en su version solo CPU (docs/x2ct/DESPLIEGUE.md).
+# pydicom y nibabel los usa X2CT-GAN para leer el DICOM y escribir el .nii.gz.
 [project.optional-dependencies]
-ml = ["torch>=2.6"]
+ml = ["torch>=2.6", "pydicom>=2.4", "nibabel>=5.0", "pillow>=10.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -29,6 +31,8 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
+# Codigo del modelo X2CT-GAN tal como se entrego: no se reescribe para no tocar su logica.
+"src/radvol3d/services/reconstruction/x2ct/*" = ["E501", "E702", "N806", "I001"]
 
 # ---------------------------------------------------------------------------
 # Pruebas. Cada marca corresponde a una carpeta de tests/.

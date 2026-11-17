@@ -63,6 +63,17 @@ class ProcessingProgressStore:
                 study_code, stage, StageStatus.COMPLETED, model
             )
 
+    def skip_stage(self, study_code: str, stage: StageNumber) -> None:
+        """Pone la etapa en skipped sin haberla ejecutado (queda sin hora de inicio).
+
+        La usa el modo de una radiografia con X2CT-GAN, que no tiene segmentacion.
+        """
+        validate_study_code(study_code)
+        with self._database.transaction() as connection:
+            ProcessingStageRepository(connection).set_status(
+                study_code, stage, StageStatus.SKIPPED
+            )
+
     def fail_from_stage(self, study_code: str, stage: StageNumber) -> None:
         """La etapa fallo: queda en failed, las siguientes en skipped y el estudio en failed.
 

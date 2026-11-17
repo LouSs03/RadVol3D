@@ -68,10 +68,12 @@ from radvol3d.persistence.repositories.study_repository import (
     find_study_id,
 )
 from radvol3d.persistence.storage_layout import (
+    RADIOGRAPH_OUTPUT_FILES,
     mask_path,
     organ_mesh_path,
     probability_path,
     projection_path,
+    radiograph_output_path,
     radiograph_path,
     summary_path,
     tumor_mesh_path,
@@ -395,19 +397,24 @@ class StudyMetadataStore:
 
     @staticmethod
     def _study_files(study_code: str) -> list[str]:
-        """Las once rutas fijas que puede tener un estudio en el bucket.
+        """Las rutas fijas que puede tener un estudio en el bucket.
 
-        La radiografia se incluye siempre: borrar una ruta que no existe no falla.
+        La radiografia y los archivos de X2CT-GAN se incluyen siempre: borrar una ruta
+        que no existe no falla.
         """
-        return [projection_path(study_code, a) for a in config.PROJECTION_ANGLES] + [
-            radiograph_path(study_code),
-            volume_path(study_code),
-            mask_path(study_code),
-            probability_path(study_code),
-            summary_path(study_code),
-            organ_mesh_path(study_code),
-            tumor_mesh_path(study_code),
-        ]
+        return (
+            [projection_path(study_code, a) for a in config.PROJECTION_ANGLES]
+            + [
+                radiograph_path(study_code),
+                volume_path(study_code),
+                mask_path(study_code),
+                probability_path(study_code),
+                summary_path(study_code),
+                organ_mesh_path(study_code),
+                tumor_mesh_path(study_code),
+            ]
+            + [radiograph_output_path(study_code, name) for name in RADIOGRAPH_OUTPUT_FILES]
+        )
 
     @staticmethod
     def _load(connection: Any, study_code: str) -> Study:

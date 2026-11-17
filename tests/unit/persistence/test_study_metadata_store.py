@@ -469,6 +469,14 @@ STUDY_FILES = [
     f"{CODE}/meshes/organ.glb",
     f"{CODE}/meshes/tumor.glb",
 ]
+# Los archivos de X2CT-GAN (modo de una radiografia): se piden borrar siempre, aunque
+# el estudio no los tenga; borrar una ruta que no existe no falla.
+RADIOGRAPH_FILES = [
+    f"{CODE}/reconstruction/volumen.nii.gz",
+    f"{CODE}/reconstruction/entrada_modelo_128.png",
+    f"{CODE}/reconstruction/metadatos.json",
+    f"{CODE}/reconstruction/visor.json",
+]
 
 
 class DeleteWorld:
@@ -502,13 +510,13 @@ def test_delete_locks_checks_deletes_removes_the_files_and_then_commits() -> Non
 
 
 @pytest.mark.unit
-def test_delete_removes_exactly_the_eleven_files_of_the_study() -> None:
+def test_delete_removes_exactly_the_fixed_files_of_the_study() -> None:
     world = DeleteWorld()
 
     world.store.delete_study(CODE)
 
     removes = [e for e in world.events if e.startswith("remove:")]
-    assert removes == [f"remove:{','.join(STUDY_FILES)}"]
+    assert removes == [f"remove:{','.join([*STUDY_FILES, *RADIOGRAPH_FILES])}"]
     assert world.bucket.uploaded_paths() == ["it_otro/volume.npy"]
 
 
@@ -771,7 +779,7 @@ def test_delete_also_removes_the_mesh_of_each_lesion() -> None:
     world.store.delete_study(CODE)
 
     removes = [e for e in world.events if e.startswith("remove:")]
-    assert removes == [f"remove:{','.join([*STUDY_FILES, *lesion_meshes])}"]
+    assert removes == [f"remove:{','.join([*STUDY_FILES, *RADIOGRAPH_FILES, *lesion_meshes])}"]
     assert world.bucket.uploaded_paths() == ["it_otro/meshes/lesion_001.glb", "it_otro/volume.npy"]
 
 
