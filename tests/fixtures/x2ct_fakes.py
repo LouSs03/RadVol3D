@@ -69,8 +69,14 @@ class FakeX2ctReconstructor:
     t_carga = 0.5
     huella = "9d9241a5062f"
 
-    def __init__(self, volume_hu: np.ndarray | None = None, meta: dict | None = None) -> None:
+    def __init__(
+        self,
+        volume_hu: np.ndarray | None = None,
+        meta: dict | None = None,
+        placa: np.ndarray | None = None,
+    ) -> None:
         self.volume_hu = volume_hu if volume_hu is not None else np.full((GRID,) * 3, -1000, np.int16)
+        self.placa = placa if placa is not None else np.zeros((GRID, GRID), np.float32)
         self.meta = meta or metadata(pixel_mm=[0.2, 0.2])
         self.inputs: list[bytes] = []
 
@@ -81,6 +87,6 @@ class FakeX2ctReconstructor:
         voxel = tuple(self.meta["volumen"]["voxel_mm"])
         (carpeta / "volumen.nii.gz").write_bytes(nifti_bytes(self.volume_hu, voxel))
         (carpeta / "entrada_modelo_128.png").write_bytes(png_bytes())
-        (carpeta / "entrada_modelo_128.npy").write_bytes(b"no se guarda")
+        np.save(carpeta / "entrada_modelo_128.npy", self.placa)
         (carpeta / "metadatos.json").write_text(json.dumps(self.meta), encoding="utf-8")
         return self.meta

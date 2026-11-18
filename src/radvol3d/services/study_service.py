@@ -20,6 +20,7 @@ se informa como no disponible) y run_processing corre la tuberia de una radiogra
 El modo de cuatro proyecciones no cambia.
 """
 
+import json
 import logging
 import time
 from collections.abc import Mapping, Sequence
@@ -53,6 +54,10 @@ from radvol3d.services.pipeline.projection_loader import ProjectionFile, Project
 from radvol3d.services.pipeline.radiograph_check import validate_radiograph
 from radvol3d.services.pipeline.remote_job_board import RemoteJobBoard
 from radvol3d.services.pipeline.x2ct_run import X2ctRadiographRun
+from radvol3d.services.reconstruction.frontal_validation import (
+    VALIDATION_FILE,
+    validate_files,
+)
 from radvol3d.services.reconstruction.x2ct_strategy import X2ctStrategy
 from radvol3d.services.strategy_factory import (
     RADIOGRAPH_UNAVAILABLE,
@@ -393,6 +398,50 @@ class StudyService:
             "warnings": [],
             "has_reconstruction_files": False,
         }
+
+    def radiograph_validation(self, study_code: str) -> dict[str, object]:
+        """La validacion frontal de un estudio de una radiografia reconstruido con X2CT-GAN.
+
+        Si el estudio todavia no la tiene (estudios anteriores a la validacion), la calcula
+        una sola vez con sus archivos guardados y la guarda: las siguientes veces se lee.
+        Usa la placa .npy si esta y el PNG solo en los estudios que no la guardaron.
+        """
+        study = self._metadata_store.get_study(study_code)
+        if study.input_mode is not InputMode.RADIOGRAPH:
+            raise InvalidStudyStateError(
+                f"El estudio '{study_code}' no es de una radiografia: no tiene validacion frontal."
+            )
+        if study.status is not StudyStatus.COMPLETED:
+            raise InvalidStudyStateError(
+                f"El estudio '{study_code}' esta en {study.status.value}: la validacion solo "
+                "existe cuando el estudio termina (completed)."
+            )
+        store = self._radiograph_results
+        # Lo habitual es que ya este guardada: se mira primero, para responder rapido.
+        if store is not None and store.has_file(study_code, VALIDATION_FILE):
+            return json.loads(store.read_file(study_code, VALIDATION_FILE))
+        if store is None or not store.has_file(study_code, "volumen.nii.gz"):
+            raise InvalidStudyStateError(
+                f"El estudio '{study_code}' no se reconstruyo con X2CT-GAN: no tiene "
+                "validacion frontal."
+            )
+        placa = (
+            "entrada_modelo_128.npy"
+            if store.has_file(study_code, "entrada_modelo_128.npy")
+            else "entrada_modelo_128.png"
+        )
+        files = {
+            name: store.read_file(study_code, name)
+            for name in ("volumen.nii.gz", "metadatos.json", placa)
+        }
+        validation = validate_files(files)
+        store.save_files(study_code, validation.files())
+        logger.info(
+            "Validacion frontal diferida del estudio %s en %.2f s",
+            study_code,
+            validation.values["tiempo_s"],
+        )
+        return dict(validation.values)
 
     def read_radiograph_output(self, study_code: str, file_name: str) -> bytes:
         """Uno de los archivos de X2CT-GAN (volumen, placa del modelo o metadatos)."""

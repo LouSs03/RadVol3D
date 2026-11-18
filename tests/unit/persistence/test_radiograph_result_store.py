@@ -67,3 +67,16 @@ def test_the_view_and_the_files_are_read_back() -> None:
 def test_only_the_reconstruction_files_can_be_read() -> None:
     with pytest.raises(ValueError):
         RadiographResultStore(Bucket()).read_file(CODE, "../otro/volume.npy")
+
+
+@pytest.mark.unit
+def test_validation_files_are_saved_and_found() -> None:
+    bucket = Bucket()
+    store = RadiographResultStore(bucket)
+    assert store.has_file(CODE, "validacion.json") is False
+
+    store.save_files(CODE, {"validacion.json": b"{}", "proyeccion_frontal_128.png": b"\x89PNG"})
+
+    assert store.has_file(CODE, "validacion.json") is True
+    assert bucket.files[f"{CODE}/reconstruction/validacion.json"] == (b"{}", "application/json")
+    assert bucket.files[f"{CODE}/reconstruction/proyeccion_frontal_128.png"][1] == "image/png"
