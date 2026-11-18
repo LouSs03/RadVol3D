@@ -21,6 +21,8 @@ import {
   parse_npy,
   slice_extent,
   slice_position_text,
+  VALIDATION_IMAGES,
+  validation_rows,
 } from "./radiograph_view.js";
 
 const API = window.location.protocol.startsWith("http") ? window.location.origin : "http://localhost:8000";
@@ -37,6 +39,7 @@ const viewer = {
   three: null, renderer: null, scene: null, camera: null, controls: null, orientation: null,
   root: null, organ: null, organ_material: null, axes: null, home: null,
   opacity: ORGAN_OPACITY, spin: !prefers_less_motion, show_axes: false,
+  images: {}, preloaded: {}, shown: null,
   fps_frames: 0, fps_since: 0,
 };
 
@@ -111,10 +114,104 @@ function fill_panels(result) {
   link("#dl-nifti", "#li-nifti", result.nifti_url);
   link("#dl-meta", "#li-meta", result.metadata_url);
   if (result.input_image_url) {
-    $("#rx-input").src = API + result.input_image_url;
-    $("#rx-input").classList.remove("hidden");
+    preload_image("input", API + result.input_image_url);
+    show_image("input");
   } else {
     $("#rx-input-caption").textContent = "Este estudio no guardó la placa que vio el modelo.";
+  }
+}
+
+/* ---------------- radiografia y validacion frontal ---------------- */
+
+const IMAGE_ALT = {
+  input: "La radiografía tal como la vio el modelo (128 × 128 píxeles).",
+  simulated: "Radiografía simulada desde la tomografía reconstruida, vista de frente.",
+  overlay: "La radiografía con los contornos de los pulmones de la placa en verde y de la reconstrucción en rojo.",
+};
+
+// Precarga la imagen apenas se conoce su direccion: el cambio de pestana es inmediato.
+function preload_image(kind, url) {
+  viewer.images[kind] = url;
+  viewer.preloaded[kind] = Object.assign(new Image(), { src: url });
+}
+
+// Muestra la imagen de la pestana elegida. Mientras carga, el recuadro dice "Cargando…":
+// nunca queda a la vista la imagen anterior (la placa equivocada) ni un instante.
+function show_image(kind) {
+  const url = viewer.images[kind];
+  if (!url) return;
+  viewer.shown = kind;
+  const image = $("#rx-input");
+  const loading = $("#rx-img-loading");
+  const ready = () => {
+    if (viewer.shown !== kind) return;
+    image.classList.remove("hidden");
+    loading.classList.add("hidden");
+  };
+  if (image.src === url && image.complete && image.naturalWidth > 0) {
+    ready();
+  } else {
+    image.classList.add("hidden");
+    loading.textContent = "Cargando…";
+    loading.classList.remove("hidden");
+    image.onload = ready;
+    image.onerror = () => {
+      if (viewer.shown === kind) loading.textContent = "No se pudo cargar la imagen.";
+    };
+    image.alt = IMAGE_ALT[kind];
+    image.src = url;
+    // Precargada: ya esta lista al asignarla y se muestra en el acto, sin "Cargando…".
+    if (image.complete && image.naturalWidth > 0) ready();
+  }
+  $("#rx-input-caption").textContent = VALIDATION_IMAGES[kind];
+  $("#rx-legend").classList.toggle("hidden", kind !== "overlay");
+  document.querySelectorAll(".seg button").forEach((button) => {
+    const on = button.dataset.image === kind;
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-pressed", String(on));
+  });
+}
+
+document.querySelectorAll(".seg button").forEach((button) => {
+  button.addEventListener("click", () => show_image(button.dataset.image));
+});
+
+function fill_validation(values) {
+  const rows = validation_rows(values).map(({ label, value, explain }) => {
+    const item = document.createElement("div");
+    const head = document.createElement("div");
+    head.className = "row";
+    head.append(Object.assign(document.createElement("span"), { textContent: label }),
+      Object.assign(document.createElement("b"), { textContent: value }));
+    item.append(head);
+    if (explain) item.append(Object.assign(document.createElement("p"), { textContent: explain }));
+    return item;
+  });
+  $("#val-body").replaceChildren(...rows);
+}
+
+// La validacion se pide aparte, sin frenar la vista 3D: un estudio anterior a ella la
+// calcula la primera vez que se abre (unos segundos).
+async function load_validation(code) {
+  const response = await api(study_path(code, "/radiograph-validation"));
+  if (!response.ok) {
+    $("#val-body").replaceChildren(Object.assign(document.createElement("p"), {
+      textContent: "Validación no disponible para este estudio" + (response.error ? ": " + response.error : "."),
+    }));
+    return;
+  }
+  const body = response.body;
+  preload_image("simulated", API + body.simulated_url);
+  preload_image("overlay", API + body.overlay_url);
+  document.querySelectorAll(".seg button").forEach((button) => { button.disabled = false; });
+  fill_validation(body.validation);
+  for (const [item, anchor, url] of [
+    ["#li-val-json", "#dl-val-json", body.json_url],
+    ["#li-val-sim", "#dl-val-sim", body.simulated_url],
+    ["#li-val-overlay", "#dl-val-overlay", body.overlay_url],
+  ]) {
+    $(anchor).href = API + url;
+    $(item).classList.remove("hidden");
   }
 }
 
@@ -499,6 +596,7 @@ async function start() {
   }
   fill_panels(viewer.result);
   load_volume(viewer.result.volume_url);
+  load_validation(code);
 
   viewer_message("Cargando el visor 3D…", false, true);
   try {
@@ -523,4 +621,7 @@ async function start() {
   viewer.renderer.setAnimationLoop(render_frame);
 }
 
-start();
+// Si el estudio no se pudo abrir o no guardo la placa, el recuadro no queda en "Cargando…".
+start().finally(() => {
+  if (!viewer.images.input) $("#rx-img-loading").textContent = "No disponible";
+});

@@ -5,7 +5,8 @@ modo de una radiografia con AXON), que no cambia. Usa las mismas cuatro filas de
 processing_stage de todo estudio, con este significado:
 
     1 preprocesamiento -> carga y validacion del DICOM
-    2 reconstruccion   -> X2CT-GAN (incluye su preprocesamiento a 128 x 128)
+    2 reconstruccion   -> X2CT-GAN (incluye su preprocesamiento a 128 x 128) y la
+                          validacion frontal (services/reconstruction/frontal_validation.py)
     3 segmentacion     -> skipped: este modo no tiene segmentacion
     4 mallas           -> visualizacion: la superficie del aire pulmonar para el visor
 
@@ -27,6 +28,7 @@ from radvol3d.persistence.radiograph_result_store import RadiographResultStore
 from radvol3d.persistence.study_metadata_store import StudyMetadataStore
 from radvol3d.services.meshing.radiograph_surface import RadiographSurface
 from radvol3d.services.pipeline.radiograph_check import validate_radiograph
+from radvol3d.services.reconstruction.frontal_validation import validate_files
 from radvol3d.services.reconstruction.x2ct_strategy import X2ctReconstruction
 
 logger = logging.getLogger(__name__)
@@ -77,6 +79,7 @@ class X2ctRadiographRun:
             self._results.save_reconstruction(
                 study_code, reconstruction.files, reconstruction.view()
             )
+            self._save_validation(study_code, reconstruction)
             self._progress.complete_stage(
                 study_code, stage, strategy.model_name, strategy.model_version
             )
@@ -101,6 +104,27 @@ class X2ctRadiographRun:
             time.perf_counter() - started,
         )
         return reconstruction
+
+    def _save_validation(self, study_code: str, reconstruction: X2ctReconstruction) -> None:
+        """Calcula y guarda la validacion frontal. Si falla, el estudio sigue igual.
+
+        La validacion es informativa: si no se puede calcular ahora, el visor la pide y se
+        calcula la primera vez que se abre (StudyService.radiograph_validation).
+        """
+        try:
+            validation = validate_files(reconstruction.files)
+            self._results.save_files(study_code, validation.files())
+            logger.info(
+                "Validacion frontal del estudio %s en %.2f s",
+                study_code,
+                validation.values["tiempo_s"],
+            )
+        except Exception as error:  # noqa: BLE001 - la validacion no tumba el estudio
+            logger.warning(
+                "No se pudo calcular la validacion frontal del estudio %s (%s)",
+                study_code,
+                type(error).__name__,
+            )
 
     def _record_failure(self, study_code: str, stage: StageNumber, error: Exception) -> None:
         """Registra la etapa fallida. El log guarda el tipo del error, nunca su texto."""

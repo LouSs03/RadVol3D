@@ -474,8 +474,12 @@ STUDY_FILES = [
 RADIOGRAPH_FILES = [
     f"{CODE}/reconstruction/volumen.nii.gz",
     f"{CODE}/reconstruction/entrada_modelo_128.png",
+    f"{CODE}/reconstruction/entrada_modelo_128.npy",
     f"{CODE}/reconstruction/metadatos.json",
     f"{CODE}/reconstruction/visor.json",
+    f"{CODE}/reconstruction/proyeccion_frontal_128.png",
+    f"{CODE}/reconstruction/validacion_superposicion.png",
+    f"{CODE}/reconstruction/validacion.json",
 ]
 
 

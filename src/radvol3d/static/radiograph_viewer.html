@@ -180,11 +180,27 @@
   /* ---------- propios de este visor ---------- */
   .input-img{width:100%; aspect-ratio:1/1; object-fit:contain; background:#0A0F1A; border-radius:9px; display:block; border:1px solid #1E293B;}
   .caption{font-size:11.5px; color:var(--muted-aa); margin:7px 0 0;}
+  .img-loading{display:flex; align-items:center; justify-content:center; color:#CBD5E1; font-size:12.5px;}
   .vol dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:5px 12px; font-size:12.5px;}
   .vol dt{color:var(--muted-aa);}
   .vol dd{margin:0; font-weight:600; text-align:right; font-variant-numeric:tabular-nums; overflow-wrap:anywhere;}
   .vol .note{margin-top:12px;}
   .vol ul{margin:5px 0 0; padding-left:17px;}
+
+  /* ---------- validacion frontal ---------- */
+  .seg{display:flex; gap:4px; background:#F1F5F9; border:1px solid var(--line); border-radius:9px; padding:3px; margin-bottom:10px;}
+  .seg button{flex:1; font-size:12px; font-weight:600; color:var(--ink2); padding:6px 4px; border-radius:7px; transition:.15s;}
+  .seg button:hover{background:#fff;}
+  .seg button.on{background:var(--brand); color:#fff;}
+  .seg button[disabled]{opacity:.45; cursor:not-allowed; background:none;}
+  .legend{display:flex; gap:14px; font-size:11.5px; color:var(--ink2); margin:7px 0 0;}
+  .legend i{display:inline-block; width:14px; height:3px; border-radius:2px; vertical-align:middle; margin-right:5px;}
+  .val{margin-top:14px; display:grid; gap:11px;}
+  .val .row{display:flex; justify-content:space-between; gap:10px; font-size:12.5px;}
+  .val .row span{color:var(--ink2); font-weight:600;}
+  .val .row b{font-variant-numeric:tabular-nums; text-align:right;}
+  .val p{margin:2px 0 0; font-size:11.5px; color:var(--muted-aa); line-height:1.45;}
+  .val-note{margin-top:13px;}
 </style>
 </head>
 <body>
@@ -252,9 +268,18 @@
 
       <div>
         <section class="panel" aria-labelledby="h-input">
-          <h2 class="card-h" id="h-input">Radiografía de entrada</h2>
+          <h2 class="card-h" id="h-input">Radiografía y validación</h2>
+          <div class="seg" role="group" aria-label="Imagen que se muestra">
+            <button type="button" data-image="input" class="on" aria-pressed="true">Entrada</button>
+            <button type="button" data-image="simulated" aria-pressed="false" disabled>Simulada</button>
+            <button type="button" data-image="overlay" aria-pressed="false" disabled>Superposición</button>
+          </div>
+          <div class="input-img img-loading" id="rx-img-loading" role="status">Cargando…</div>
           <img class="input-img hidden" id="rx-input" alt="La radiografía tal como la vio el modelo (128 × 128 píxeles).">
           <p class="caption" id="rx-input-caption">La placa exacta que recibió el modelo, reducida a 128 × 128.</p>
+          <p class="legend hidden" id="rx-legend"><span><i style="background:#00DC00"></i>placa</span><span><i style="background:#EB2828"></i>reconstrucción</span></p>
+          <div class="val" id="val-body" aria-live="polite"><p>Calculando la validación…</p></div>
+          <div class="note val-note" role="note">Valida forma, posición y tamaño frontal. No valida el detalle interno ni la profundidad.</div>
         </section>
 
         <section class="panel" aria-labelledby="h-controls">
@@ -306,6 +331,9 @@
             <li><a id="dl-volume" href="#" download>Volumen reconstruido <span>.npy</span></a></li>
             <li id="li-nifti"><a id="dl-nifti" href="#" download>Volumen en HU <span>.nii.gz</span></a></li>
             <li id="li-meta"><a id="dl-meta" href="#" download>Metadatos de la reconstrucción <span>.json</span></a></li>
+            <li id="li-val-json" class="hidden"><a id="dl-val-json" href="#" download>Validación frontal <span>.json</span></a></li>
+            <li id="li-val-sim" class="hidden"><a id="dl-val-sim" href="#" download>Radiografía simulada <span>.png</span></a></li>
+            <li id="li-val-overlay" class="hidden"><a id="dl-val-overlay" href="#" download>Superposición de pulmones <span>.png</span></a></li>
           </ul>
         </section>
       </div>

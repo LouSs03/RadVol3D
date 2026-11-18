@@ -46,6 +46,7 @@ def test_the_stages_run_in_order_and_segmentation_is_skipped() -> None:
         "progress.start_stage",
         "metadata.save_volume",
         "results.save_reconstruction",
+        "results.save_files",  # la validacion frontal, justo despues de reconstruir
         "progress.complete_stage",
         "progress.skip_stage",
         "progress.start_stage",
@@ -80,7 +81,12 @@ def test_the_output_package_and_the_view_are_saved_with_the_study() -> None:
 
     code, files, view = h.results.save_reconstruction.call_args.args
     assert code == CODE
-    assert set(files) == {"volumen.nii.gz", "entrada_modelo_128.png", "metadatos.json"}
+    assert set(files) == {
+        "volumen.nii.gz",
+        "entrada_modelo_128.png",
+        "entrada_modelo_128.npy",
+        "metadatos.json",
+    }
     assert set(view) >= {"voxel_mm", "relative_measurements", "warnings"}
 
 
@@ -293,3 +299,121 @@ def test_the_x2ct_files_are_read_from_its_store() -> None:
 
     assert service.read_radiograph_output(CODE, "metadatos.json") == b"{}"
     service._radiograph_results.read_file.assert_called_once_with(CODE, "metadatos.json")
+
+
+# --- Validacion frontal (T3) ---------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_the_frontal_validation_is_saved_right_after_the_reconstruction() -> None:
+    h = Harness()
+
+    h.run.run(CODE, fake_dicom(), h.strategy, started=0.0)
+
+    code, files = h.results.save_files.call_args.args
+    assert code == CODE
+    assert set(files) == {"proyeccion_frontal_128.png", "validacion_superposicion.png", "validacion.json"}
+
+
+@pytest.mark.unit
+def test_a_validation_error_does_not_fail_the_study(monkeypatch) -> None:
+    import radvol3d.services.pipeline.x2ct_run as module
+
+    monkeypatch.setattr(module, "validate_files", Mock(side_effect=ValueError("sin pulmones")))
+    h = Harness()
+
+    h.run.run(CODE, fake_dicom(), h.strategy, started=0.0)
+
+    h.results.save_files.assert_not_called()
+    h.progress.fail_from_stage.assert_not_called()
+    h.progress.complete_study.assert_called_once()
+
+
+def x2ct_package() -> dict[str, bytes]:
+    """Los archivos guardados de un estudio X2CT: un torax sintetico repetido en profundidad."""
+    import io
+    import json
+
+    from tests.fixtures.x2ct_fakes import nifti_bytes, png_bytes
+    from tests.unit.services.test_frontal_validation import chest, volume_from_placa
+
+    placa = chest()
+    buffer = io.BytesIO()
+    np.save(buffer, placa)
+    return {
+        "volumen.nii.gz": nifti_bytes(np.round(volume_from_placa(placa)).astype(np.int16), (1, 1, 1)),
+        "entrada_modelo_128.npy": buffer.getvalue(),
+        "entrada_modelo_128.png": png_bytes(),
+        "metadatos.json": json.dumps({"preprocesamiento": {"mm_por_pixel_128": None}}).encode(),
+    }
+
+
+def service_with_saved(files: dict[str, bytes], status=StudyStatus.COMPLETED, mode=InputMode.RADIOGRAPH):
+    from radvol3d.domain.entities import Study
+
+    service, metadata, *_ = study_service_with_x2ct(None, X2ctStrategy(FakeX2ctReconstructor()))
+    metadata.get_study.return_value = Study(CODE, OrganName.LUNG, status, input_mode=mode)
+    store = service._radiograph_results
+    store.has_file.side_effect = lambda code, name: name in files
+    store.read_file.side_effect = lambda code, name: files[name]
+    return service, store
+
+
+@pytest.mark.unit
+def test_a_saved_validation_is_read_and_not_recalculated() -> None:
+    service, store = service_with_saved({"validacion.json": b'{"ncc": 0.788}', "volumen.nii.gz": b""})
+
+    assert service.radiograph_validation(CODE) == {"ncc": 0.788}
+    store.save_files.assert_not_called()
+
+
+@pytest.mark.unit
+def test_an_old_study_calculates_its_validation_once_with_the_npy() -> None:
+    service, store = service_with_saved(x2ct_package())
+
+    values = service.radiograph_validation(CODE)
+
+    assert values["placa_usada"] == "npy"
+    assert values["ncc"] == pytest.approx(1.0, abs=1e-3)
+    saved = store.save_files.call_args.args[1]
+    assert set(saved) == {"proyeccion_frontal_128.png", "validacion_superposicion.png", "validacion.json"}
+    read = [c.args[1] for c in store.read_file.call_args_list]
+    assert "entrada_modelo_128.npy" in read and "entrada_modelo_128.png" not in read
+
+
+@pytest.mark.unit
+def test_a_study_without_npy_uses_the_png() -> None:
+    files = x2ct_package()
+    del files["entrada_modelo_128.npy"]
+    service, store = service_with_saved(files)
+
+    values = service.radiograph_validation(CODE)
+
+    assert values["placa_usada"] == "png"
+    store.save_files.assert_called_once()
+
+
+@pytest.mark.unit
+def test_a_study_without_x2ct_files_has_no_validation() -> None:
+    from radvol3d.domain.exceptions import InvalidStudyStateError
+
+    service, store = service_with_saved({})
+
+    with pytest.raises(InvalidStudyStateError, match="X2CT-GAN"):
+        service.radiograph_validation(CODE)
+    store.save_files.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("status", "mode"),
+    [(StudyStatus.PROCESSING, InputMode.RADIOGRAPH), (StudyStatus.COMPLETED, InputMode.PROJECTIONS)],
+)
+def test_an_unfinished_or_projection_study_has_no_validation(status, mode) -> None:
+    from radvol3d.domain.exceptions import InvalidStudyStateError
+
+    service, store = service_with_saved(x2ct_package(), status=status, mode=mode)
+
+    with pytest.raises(InvalidStudyStateError):
+        service.radiograph_validation(CODE)
+    store.save_files.assert_not_called()

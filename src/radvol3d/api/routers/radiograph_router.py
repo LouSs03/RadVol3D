@@ -15,7 +15,10 @@ from starlette.concurrency import run_in_threadpool
 from radvol3d import config
 from radvol3d.api.dependencies import get_study_service
 from radvol3d.api.schemas.error_schema import ErrorResponse
-from radvol3d.api.schemas.radiograph_result_schema import RadiographResultResponse
+from radvol3d.api.schemas.radiograph_result_schema import (
+    RadiographResultResponse,
+    RadiographValidationResponse,
+)
 from radvol3d.api.schemas.study_schema import RadiographModeStatus, RadiographUploaded
 from radvol3d.domain.exceptions import RadiographTooLargeError
 from radvol3d.services.pipeline.radiograph_check import limit_text
@@ -70,8 +73,24 @@ OUTPUT_MEDIA_TYPES = {
     "volumen.nii.gz": "application/gzip",
     "entrada_modelo_128.png": "image/png",
     "metadatos.json": "application/json",
+    "proyeccion_frontal_128.png": "image/png",
+    "validacion_superposicion.png": "image/png",
+    "validacion.json": "application/json",
 }
-OutputFile = Literal["volumen.nii.gz", "entrada_modelo_128.png", "metadatos.json"]
+OutputFile = Literal[
+    "volumen.nii.gz",
+    "entrada_modelo_128.png",
+    "metadatos.json",
+    "proyeccion_frontal_128.png",
+    "validacion_superposicion.png",
+    "validacion.json",
+]
+# Las imagenes se muestran en el visor; el resto se descarga como archivo.
+INLINE_FILES = {
+    "entrada_modelo_128.png",
+    "proyeccion_frontal_128.png",
+    "validacion_superposicion.png",
+}
 
 
 def output_url(study_code: str, file_name: str) -> str:
@@ -110,6 +129,31 @@ def read_radiograph_result(
 
 
 @router.get(
+    "/studies/{study_code}/radiograph-validation",
+    response_model=RadiographValidationResponse,
+    summary="Validacion frontal de un estudio de una radiografia (X2CT-GAN)",
+    responses=RESULT_ERRORS,
+)
+def read_radiograph_validation(
+    study_code: str,
+    service: Annotated[StudyService, Depends(get_study_service)],
+) -> RadiographValidationResponse:
+    """La placa frente a la radiografia simulada desde la reconstruccion.
+
+    Un estudio anterior a la validacion la calcula aqui la primera vez (unos segundos) y la
+    guarda. Es sincrona a proposito: FastAPI la corre en su grupo de hilos.
+    """
+    return RadiographValidationResponse(
+        study_code=study_code,
+        validation=service.radiograph_validation(study_code),
+        input_image_url=output_url(study_code, "entrada_modelo_128.png"),
+        simulated_url=output_url(study_code, "proyeccion_frontal_128.png"),
+        overlay_url=output_url(study_code, "validacion_superposicion.png"),
+        json_url=output_url(study_code, "validacion.json"),
+    )
+
+
+@router.get(
     "/studies/{study_code}/radiograph-result/{file_name}",
     response_class=Response,
     summary="Archivo de X2CT-GAN: volumen en HU, placa del modelo o metadatos",
@@ -122,7 +166,7 @@ def read_radiograph_output(
 ) -> Response:
     content = service.read_radiograph_output(study_code, file_name)
     headers = {}
-    if file_name != "entrada_modelo_128.png":
+    if file_name not in INLINE_FILES:
         headers["Content-Disposition"] = f'attachment; filename="{study_code}_{file_name}"'
     return Response(content, media_type=OUTPUT_MEDIA_TYPES[file_name], headers=headers)
 

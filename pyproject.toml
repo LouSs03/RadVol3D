@@ -32,7 +32,7 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
 # Codigo del modelo X2CT-GAN tal como se entrego: no se reescribe para no tocar su logica.
-"src/radvol3d/services/reconstruction/x2ct/*" = ["E501", "E702", "N806", "I001"]
+"src/radvol3d/services/reconstruction/x2ct/*" = ["E501", "E702", "N806", "I001", "B905"]
 
 # ---------------------------------------------------------------------------
 # Pruebas. Cada marca corresponde a una carpeta de tests/.

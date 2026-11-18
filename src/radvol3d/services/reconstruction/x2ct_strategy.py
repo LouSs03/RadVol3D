@@ -59,9 +59,11 @@ X2CT_WEIGHTS_SHA256_PREFIX = "9d9241a5062f"
 
 NIFTI_FILE = "volumen.nii.gz"
 INPUT_IMAGE_FILE = "entrada_modelo_128.png"
+# La placa exacta (float32 en [0, 1]): la validacion frontal la prefiere al PNG redondeado.
+INPUT_ARRAY_FILE = "entrada_modelo_128.npy"
 METADATA_FILE = "metadatos.json"
 # Lo que se guarda de cada estudio, ademas del volumen del sistema y la malla.
-OUTPUT_FILES = (NIFTI_FILE, INPUT_IMAGE_FILE, METADATA_FILE)
+OUTPUT_FILES = (NIFTI_FILE, INPUT_IMAGE_FILE, INPUT_ARRAY_FILE, METADATA_FILE)
 
 # Ejes de X2CT (x, y, z) que se invierten para quedar en (R, A, S).
 FLIPPED_AXES = (0, 1)

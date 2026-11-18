@@ -78,8 +78,13 @@ def radiograph_path(study_code: str) -> str:
 RADIOGRAPH_OUTPUT_FILES: tuple[str, ...] = (
     "volumen.nii.gz",
     "entrada_modelo_128.png",
+    "entrada_modelo_128.npy",
     "metadatos.json",
     "visor.json",
+    # Validacion frontal (services/reconstruction/frontal_validation.py).
+    "proyeccion_frontal_128.png",
+    "validacion_superposicion.png",
+    "validacion.json",
 )
 
 

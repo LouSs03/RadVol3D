@@ -6,8 +6,12 @@ malla del tumor. Guarda, en el bucket del estudio:
 
     <study_code>/reconstruction/volumen.nii.gz          volumen de X2CT en HU, con su voxel
     <study_code>/reconstruction/entrada_modelo_128.png  la placa exacta que vio el modelo
+    <study_code>/reconstruction/entrada_modelo_128.npy  la misma placa, sin redondear
     <study_code>/reconstruction/metadatos.json          lo que informa X2CT (mm, avisos...)
     <study_code>/reconstruction/visor.json              voxel con que se muestra y avisos
+    <study_code>/reconstruction/validacion.json         validacion frontal (y sus dos PNG:
+                                                         proyeccion_frontal_128 y
+                                                         validacion_superposicion)
     <study_code>/meshes/organ.glb                       la superficie para el visor
 
 El volumen del sistema (<study_code>/volume.npy) lo guarda StudyMetadataStore, como
@@ -30,11 +34,16 @@ from radvol3d.persistence.storage_layout import (
 )
 
 VIEW_FILE = "visor.json"
+VALIDATION_FILE = "validacion.json"
 CONTENT_TYPES: dict[str, str] = {
     "volumen.nii.gz": "application/gzip",
     "entrada_modelo_128.png": "image/png",
+    "entrada_modelo_128.npy": "application/octet-stream",
     "metadatos.json": CONTENT_TYPE_JSON,
     VIEW_FILE: CONTENT_TYPE_JSON,
+    "proyeccion_frontal_128.png": "image/png",
+    "validacion_superposicion.png": "image/png",
+    VALIDATION_FILE: CONTENT_TYPE_JSON,
 }
 
 
@@ -61,6 +70,17 @@ class RadiographResultStore:
     def save_organ_mesh(self, study_code: str, organ_mesh: bytes) -> None:
         """Sube la superficie que dibuja el visor (la misma ruta que en los demas estudios)."""
         self._storage.upload_bytes(organ_mesh_path(study_code), organ_mesh, CONTENT_TYPE_MESH)
+
+    def save_files(self, study_code: str, files: Mapping[str, bytes]) -> None:
+        """Sube archivos de la reconstruccion ya armados (por ejemplo, la validacion)."""
+        for name, data in files.items():
+            self._storage.upload_bytes(
+                radiograph_output_path(study_code, name), data, CONTENT_TYPES[name]
+            )
+
+    def has_file(self, study_code: str, file_name: str) -> bool:
+        """True si el estudio tiene ese archivo de la reconstruccion."""
+        return self._storage.exists(radiograph_output_path(study_code, file_name))
 
     def has_view(self, study_code: str) -> bool:
         """True si el estudio tiene datos del visor (lo reconstruyo X2CT-GAN)."""
