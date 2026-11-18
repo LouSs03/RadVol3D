@@ -111,3 +111,46 @@ def test_other_files_cannot_be_requested(client, service) -> None:
 
     assert response.status_code == 422
     service.read_radiograph_output.assert_not_called()
+
+
+# --- Validacion frontal (T3) ---------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_the_validation_comes_with_the_urls_of_its_images(client, service) -> None:
+    service.radiograph_validation.return_value = {"ncc": 0.788, "pulmones": {"disponible": True}}
+
+    response = client.get(f"/studies/{CODE}/radiograph-validation")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["validation"]["ncc"] == 0.788
+    assert body["simulated_url"] == f"/studies/{CODE}/radiograph-result/proyeccion_frontal_128.png"
+    assert body["overlay_url"] == f"/studies/{CODE}/radiograph-result/validacion_superposicion.png"
+    assert body["json_url"] == f"/studies/{CODE}/radiograph-result/validacion.json"
+    service.radiograph_validation.assert_called_once_with(CODE)
+
+
+@pytest.mark.unit
+def test_a_study_without_validation_is_a_conflict(client, service) -> None:
+    service.radiograph_validation.side_effect = InvalidStudyStateError("no se reconstruyo con X2CT")
+
+    assert client.get(f"/studies/{CODE}/radiograph-validation").status_code == 409
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("name", "inline"),
+    [
+        ("proyeccion_frontal_128.png", True),
+        ("validacion_superposicion.png", True),
+        ("validacion.json", False),
+    ],
+)
+def test_the_validation_files_are_served(client, service, name, inline) -> None:
+    service.read_radiograph_output.return_value = b"contenido"
+
+    response = client.get(f"/studies/{CODE}/radiograph-result/{name}")
+
+    assert response.status_code == 200
+    assert ("content-disposition" in response.headers) is not inline
