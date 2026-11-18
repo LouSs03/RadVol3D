@@ -17,6 +17,8 @@ import {
   slice_extent,
   slice_offset_text,
   slice_position_text,
+  VALIDATION_IMAGES,
+  validation_rows,
 } from "../../../src/radvol3d/static/js/radiograph_view.js";
 
 const SHAPE = [128, 128, 128];
@@ -123,4 +125,64 @@ test("el aviso de sin tamano de pixel no se repite en la lista de avisos", () =>
   assert.deepEqual(other_warnings(warnings, true), [warnings[0]]);
   assert.deepEqual(other_warnings(warnings, false), warnings);
   assert.deepEqual(other_warnings(undefined, true), []);
+});
+
+// ---- Validacion frontal (T3) ----
+
+const VALIDATION_MM = {
+  ncc: 0.7881,
+  medidas_en_mm: true,
+  ajuste: {
+    escala_horizontal: 1.0093, escala_vertical: 1.0695,
+    desplazamiento_horizontal_px: 0.12, desplazamiento_vertical_px: 2.06,
+    desplazamiento_horizontal_mm: 0.4, desplazamiento_vertical_mm: 6.5,
+  },
+  pulmones: {
+    disponible: true, dice_2d: 0.7772,
+    placa: { ancho_px: 73, alto_px: 62, ancho_mm: 241.2, alto_mm: 194.3 },
+    reconstruccion: { ancho_px: 79, alto_px: 61, ancho_mm: 261.1, alto_mm: 191.2 },
+  },
+};
+
+test("el panel muestra NCC, escala, desplazamiento, Dice y medidas en mm", () => {
+  const rows = validation_rows(VALIDATION_MM);
+  const by_label = Object.fromEntries(rows.map((row) => [row.label, row]));
+
+  assert.equal(by_label["Similitud (NCC)"].value, "0,788");
+  assert.match(by_label["Similitud (NCC)"].explain, /0,72 a 0,82 con el mismo paciente y de 0,42/);
+  assert.equal(by_label["Escala de ajuste (H / V)"].value, "1,01 / 1,07");
+  assert.match(by_label["Escala de ajuste (H / V)"].explain, /1,10 = la reconstrucción es ~10 % más pequeña/);
+  assert.equal(by_label["Desplazamiento (H / V)"].value, "0,1 / 2,1 px");
+  assert.match(by_label["Desplazamiento (H / V)"].explain, /En mm: 0,4 \/ 6,5/);
+  assert.equal(by_label["Superposición de pulmones (Dice 2D)"].value, "0,777");
+  assert.equal(by_label["Pulmones, ancho × alto"].value, "placa 241 × 194 mm");
+  assert.equal(by_label["Pulmones, ancho × alto"].explain, "Reconstrucción: 261 × 191 mm.");
+});
+
+test("sin mm reales las medidas van en px y el desplazamiento sin mm", () => {
+  const values = { ...VALIDATION_MM, medidas_en_mm: false, ajuste: { ...VALIDATION_MM.ajuste } };
+  delete values.ajuste.desplazamiento_horizontal_mm;
+
+  const rows = validation_rows(values);
+
+  assert.equal(rows[4].value, "placa 73 × 62 px");
+  assert.doesNotMatch(rows[2].explain, /mm/);
+});
+
+test("sin los dos pulmones el Dice y las medidas dicen no disponible", () => {
+  const rows = validation_rows({ ...VALIDATION_MM, pulmones: { disponible: false } });
+
+  assert.equal(rows[3].value, "no disponible");
+  assert.equal(rows[4].value, "no disponible");
+  assert.equal(rows[0].value, "0,788");
+});
+
+test("no hay semaforos ni aprobado o reprobado", () => {
+  const text = JSON.stringify(validation_rows(VALIDATION_MM)).toLowerCase();
+
+  assert.doesNotMatch(text, /aprobad|reprobad|correcto|incorrecto/);
+});
+
+test("cada imagen del panel tiene su texto", () => {
+  assert.deepEqual(Object.keys(VALIDATION_IMAGES), ["input", "simulated", "overlay"]);
 });

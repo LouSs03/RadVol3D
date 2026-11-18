@@ -114,3 +114,65 @@ export function parse_npy(buffer) {
     data: new array_type(buffer.slice(start, end)),
   };
 }
+
+// ---------------- Validacion frontal (panel "Radiografia y validacion") ----------------
+
+// Que muestra cada boton del panel y su texto bajo la imagen.
+export const VALIDATION_IMAGES = {
+  input: "La placa exacta que recibió el modelo, reducida a 128 × 128.",
+  simulated: "Radiografía simulada: la TC reconstruida vista de frente (promedio a lo largo de la profundidad).",
+  overlay: "La placa con los contornos de los campos pulmonares de la placa y de la reconstrucción.",
+};
+
+function decimal(value, digits) {
+  return Number(value).toFixed(digits).replace(".", ",");
+}
+
+function size_text(size, in_mm) {
+  if (!size) return "—";
+  return in_mm && size.ancho_mm !== undefined
+    ? Math.round(size.ancho_mm) + " × " + Math.round(size.alto_mm) + " mm"
+    : size.ancho_px + " × " + size.alto_px + " px";
+}
+
+// Las filas del panel: rotulo, valor y una explicacion corta. Sin semaforos ni
+// "aprobado/reprobado": no hay umbrales estandar, solo valores y la referencia de T1.
+export function validation_rows(values) {
+  const fit = values.ajuste || {};
+  const lungs = values.pulmones || {};
+  const in_mm = Boolean(values.medidas_en_mm);
+  const shift = decimal(fit.desplazamiento_horizontal_px, 1) + " / " + decimal(fit.desplazamiento_vertical_px, 1) + " px";
+  let shift_explain = "Cuánto habría que mover la reconstrucción (horizontal / vertical) para calzar con la placa.";
+  if (in_mm && fit.desplazamiento_horizontal_mm !== undefined) {
+    shift_explain += " En mm: " + decimal(fit.desplazamiento_horizontal_mm, 1) + " / " + decimal(fit.desplazamiento_vertical_mm, 1) + ".";
+  }
+  return [
+    {
+      label: "Similitud (NCC)",
+      value: decimal(values.ncc, 3),
+      explain: "Parecido entre la placa y la radiografía simulada (−1 a 1). En la validación con 4 placas reales fue de 0,72 a 0,82 con el mismo paciente y de 0,42 en promedio con otro paciente.",
+    },
+    {
+      label: "Escala de ajuste (H / V)",
+      value: decimal(fit.escala_horizontal, 2) + " / " + decimal(fit.escala_vertical, 2),
+      explain: "Cuánto habría que agrandar la reconstrucción para calzar con la placa. 1,00 = mismo tamaño; 1,10 = la reconstrucción es ~10 % más pequeña.",
+    },
+    {
+      label: "Desplazamiento (H / V)",
+      value: shift,
+      explain: shift_explain,
+    },
+    {
+      label: "Superposición de pulmones (Dice 2D)",
+      value: lungs.disponible ? decimal(lungs.dice_2d, 3) : "no disponible",
+      explain: lungs.disponible
+        ? "De 0 a 1: cuánto coinciden los campos pulmonares de la placa y de la reconstrucción."
+        : "No se encontraron los dos pulmones en alguna de las dos imágenes.",
+    },
+    {
+      label: "Pulmones, ancho × alto",
+      value: lungs.disponible ? "placa " + size_text(lungs.placa, in_mm) : "no disponible",
+      explain: lungs.disponible ? "Reconstrucción: " + size_text(lungs.reconstruccion, in_mm) + "." : "",
+    },
+  ];
+}
