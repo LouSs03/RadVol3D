@@ -155,8 +155,6 @@
   .step h4{font-size:13.5px; margin-bottom:5px;}
   .step p{margin:0; font-size:12.5px; color:var(--muted); line-height:1.45;}
 
-  .organs{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
-  @media (max-width:700px){ .organs{grid-template-columns:1fr;} }
   .organ{
     display:flex; gap:14px; align-items:flex-start;
     background:var(--card); border:1px solid var(--line); border-radius:13px; padding:16px 17px;
@@ -554,26 +552,15 @@
 
     <div class="head" style="margin-bottom:12px">
       <div>
-        <h2 style="font-size:17px">Órganos dentro del alcance</h2>
-        <p>Seleccionados por disponibilidad de datasets públicos con anotación tumoral verificada.</p>
+        <h2 style="font-size:17px">Órgano dentro del alcance</h2>
       </div>
     </div>
-    <div class="organs">
-      <div class="organ">
-        <canvas class="mini" data-organ="lung" width="150" height="150" role="img" aria-label="Ejemplo de un pulmón reconstruido en 3D, con una lesión marcada en rojo"></canvas>
-        <div>
-          <h3 class="card-h">Pulmón</h3>
-          <p>Nódulos y tumores primarios de pulmón. Línea base del estado del arte: Dice 0,63 sobre TC.</p>
-          <div class="ds">LIDC-IDRI · LUNA16 · NSCLC-Radiomics · MSD Task06</div>
-        </div>
-      </div>
-      <div class="organ">
-        <canvas class="mini" data-organ="liver" width="150" height="150" role="img" aria-label="Ejemplo de un hígado reconstruido en 3D, con una lesión marcada en rojo"></canvas>
-        <div>
-          <h3 class="card-h">Hígado</h3>
-          <p>Lesiones hepáticas focales. Línea base del estado del arte: Dice 0,832 sobre 3DIRCADb.</p>
-          <div class="ds">LiTS17 · 3DIRCADb · MSD Task03</div>
-        </div>
+    <div class="organ">
+      <canvas class="mini" data-organ="lung" width="150" height="150" role="img" aria-label="Ejemplo de un pulmón reconstruido en 3D, con una lesión marcada en rojo"></canvas>
+      <div>
+        <h3 class="card-h">Pulmón</h3>
+        <p>Nódulos y tumores primarios de pulmón. Línea base del estado del arte: Dice 0,63 sobre TC.</p>
+        <div class="ds">LIDC-IDRI · LUNA16 · NSCLC-Radiomics · MSD Task06</div>
       </div>
     </div>
   </div>
@@ -584,7 +571,7 @@
       <div>
         <div class="eyebrow">Paso 1 de 2</div>
         <h1 style="margin-top:5px">Nuevo estudio</h1>
-        <p id="new-intro">Crea el estudio con su código y órgano, carga las cuatro proyecciones radiográficas y mándalo a procesar.</p>
+        <p id="new-intro">Crea el estudio con su código, carga las cuatro proyecciones radiográficas y mándalo a procesar.</p>
       </div>
     </div>
 
@@ -625,19 +612,7 @@
         </button>
       </div>
       <div class="mode-status hidden" id="mode-status" role="status"></div>
-      <h2 class="sec">Órgano</h2>
-      <div class="pick" id="pick" role="radiogroup" aria-label="Órgano">
-        <button class="opt" data-organ="lung" type="button" role="radio" aria-checked="false">
-          <div class="ic"><canvas class="mini" data-organ="lung" width="42" height="42" aria-hidden="true"></canvas></div>
-          <div><b>Pulmón</b><span>Tórax · 4 proyecciones</span></div>
-          <div class="chk"></div>
-        </button>
-        <button class="opt" data-organ="liver" type="button" role="radio" aria-checked="false">
-          <div class="ic"><canvas class="mini" data-organ="liver" width="42" height="42" aria-hidden="true"></canvas></div>
-          <div><b>Hígado</b><span>Abdomen superior · 4 proyecciones</span></div>
-          <div class="chk"></div>
-        </button>
-      </div>
+      <p><strong>Órgano:</strong> <span id="study-organ">Pulmón</span></p>
       <div class="row-end">
         <span class="tag ok hidden" id="study-created"></span>
         <button class="btn" id="btn-create" type="submit">Crear estudio</button>
@@ -1142,18 +1117,8 @@ function lung_inside(x, y, z) {
   return true;
 }
 
-function liver_inside(x, y, z) {
-  if (y < -0.40 + 0.16 * x) return false;
-  if (Math.abs(x + 0.08) < 0.045 && z > 0.04 && y > -0.02) return false;
-  let dx = (x - 0.30) / 0.58, dy = y / 0.42, dz = z / 0.40;
-  if (dx * dx + dy * dy + dz * dz <= 1) return true;
-  dx = (x + 0.40) / 0.42; dy = (y + 0.04) / 0.26; dz = (z - 0.04) / 0.30;
-  return dx * dx + dy * dy + dz * dz <= 1;
-}
-
 const MINI_ORGANS = {
   lung: { inside: lung_inside, box: [1.02, 1.02, 0.60], tissue: [168, 190, 212], tumor: { x: 0.50, y: 0.38, z: 0.06, r: 0.145 }, seed: 1337 },
-  liver: { inside: liver_inside, box: [0.95, 0.62, 0.48], tissue: [198, 138, 106], tumor: { x: 0.36, y: 0.06, z: 0.11, r: 0.155 }, seed: 9001 },
 };
 
 function mulberry(seed) {
@@ -1425,18 +1390,10 @@ function render_new() {
     opt.disabled = s.created || s.busy || (opt.dataset.mode === 'radiograph' && rx_mode.available === false);
   });
   render_mode_status();
-  $$('#pick .opt').forEach((opt) => {
-    const elegido = opt.dataset.organ === s.organ;
-    opt.classList.toggle('sel', elegido);
-    opt.setAttribute('aria-checked', String(elegido));
-    // El modo de una radiografia solo admite pulmon (el modelo vio radiografias de torax).
-    opt.disabled = s.created || s.busy || (radiograph && opt.dataset.organ !== 'lung');
-    const input_text = radiograph ? (opt.dataset.organ === 'lung' ? '1 radiografía' : 'no disponible en este modo') : '4 proyecciones';
-    opt.querySelector('span').textContent = { lung: 'Tórax', liver: 'Abdomen superior' }[opt.dataset.organ] + ' · ' + input_text;
-  });
+  $('#study-organ').textContent = ORGAN_LABELS[s.organ] || s.organ;
   $('#new-intro').textContent = radiograph
     ? 'Crea el estudio, sube una radiografía de tórax frontal (DICOM) y mándala a reconstruir.'
-    : 'Crea el estudio con su código y órgano, carga las cuatro proyecciones radiográficas y mándalo a procesar.';
+    : 'Crea el estudio con su código, carga las cuatro proyecciones radiográficas y mándalo a procesar.';
   $('#proj-card').classList.toggle('hidden', radiograph);
   $('#proj-note').classList.toggle('hidden', radiograph);
   $('#rx-card').classList.toggle('hidden', !radiograph);
@@ -1508,14 +1465,6 @@ function mover_entre_opciones(grupo, evento) {
   siguiente.click();
 }
 $('#mode-pick').addEventListener('keydown', (e) => mover_entre_opciones('#mode-pick', e));
-$('#pick').addEventListener('keydown', (e) => mover_entre_opciones('#pick', e));
-
-$$('#pick .opt').forEach((opt) => opt.addEventListener('click', () => {
-  if (new_state.created) return;
-  if (new_state.mode === 'radiograph' && opt.dataset.organ !== 'lung') return;
-  new_state.organ = opt.dataset.organ;
-  render_new();
-}));
 
 function render_mode_status() {
   const line = $('#mode-status');
@@ -1535,7 +1484,6 @@ $$('#mode-pick .opt').forEach((opt) => opt.addEventListener('click', () => {
   if (mode === 'radiograph' && rx_mode.available === false) return;
   new_state.mode = mode;
   if (mode === 'radiograph') {
-    new_state.organ = 'lung';
     // Al intentar usarlo se vuelve a comprobar que el servicio responda (requisito 4).
     check_radiograph_mode();
   }
